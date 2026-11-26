@@ -6,16 +6,20 @@ import math
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-
 from motion_service.app import create_app
 from motion_service.backends.fake import FakeBackend
-
 from vrma_check import assert_valid_vrma
 
 REST = {"hips": [0, 0.8, 0], "spine": [0, 0.9, 0], "chest": [0, 1.0, 0], "upperChest": [0, 1.1, 0]}
 for _side, _sx in (("left", 0.2), ("right", -0.2)):
-    REST.update({f"{_side}Shoulder": [_sx / 2, 1.2, 0], f"{_side}UpperArm": [_sx, 1.2, 0],
-                 f"{_side}LowerArm": [_sx * 2, 1.2, 0], f"{_side}Hand": [_sx * 3, 1.2, 0]})
+    REST.update(
+        {
+            f"{_side}Shoulder": [_sx / 2, 1.2, 0],
+            f"{_side}UpperArm": [_sx, 1.2, 0],
+            f"{_side}LowerArm": [_sx * 2, 1.2, 0],
+            f"{_side}Hand": [_sx * 3, 1.2, 0],
+        }
+    )
 
 
 @pytest.fixture
@@ -48,8 +52,12 @@ def test_plain_request_is_unchanged_but_has_end_pose_and_session(client, backend
 
 
 def test_path_walks_to_the_end_point_in_avatar_units(client):
-    body = {"prompt": "a person walks calmly", "duration": 6, "avatar_rest": REST,
-            "path": {"points": [[0, 0], [0, 1.6]], "speed": 0.8, "start_s": 0.0}}
+    body = {
+        "prompt": "a person walks calmly",
+        "duration": 6,
+        "avatar_rest": REST,
+        "path": {"points": [[0, 0], [0, 1.6]], "speed": 0.8, "start_s": 0.0},
+    }
     chunks, _ = chunks_of(client.post("/v1/motion/stream", json=body))
     ends = [c["end_pose"]["root"] for c in chunks]
     assert ends[0][1] < ends[1][1] <= 1.6 + 1e-3  # walking
@@ -88,8 +96,11 @@ def test_snap_corrects_a_drifting_backend_and_can_be_turned_off():
 
 
 def test_height_and_heading_targets_reach_end_pose(client):
-    body = {"prompt": "sit", "duration": 4, "targets": [{"t": 2.0, "until": 4.0, "root": [0, 1], "height": 0.5,
-                                                         "heading": 3.0}]}
+    body = {
+        "prompt": "sit",
+        "duration": 4,
+        "targets": [{"t": 2.0, "until": 4.0, "root": [0, 1], "height": 0.5, "heading": 3.0}],
+    }
     chunks, _ = chunks_of(client.post("/v1/motion/stream", json=body))
     pose = chunks[-1]["end_pose"]
     assert pose["height"] == pytest.approx(0.5, abs=0.01)
@@ -97,8 +108,11 @@ def test_height_and_heading_targets_reach_end_pose(client):
 
 
 def test_phases_switch_prompts_at_chunk_boundaries(client, backend):
-    body = {"prompt": "walk", "duration": 8,
-            "phases": [{"prompt": "sit down", "start_s": 3.0}, {"prompt": "stand up", "start_s": 6.0}]}
+    body = {
+        "prompt": "walk",
+        "duration": 8,
+        "phases": [{"prompt": "sit down", "start_s": 3.0}, {"prompt": "stand up", "start_s": 6.0}],
+    }
     chunks_of(client.post("/v1/motion/stream", json=body))
     call = backend.calls[0]
     assert [f for f, _ in call["phase_texts"]] == [90, 180]
@@ -107,21 +121,37 @@ def test_phases_switch_prompts_at_chunk_boundaries(client, backend):
 
 
 def test_reveal_s_hides_targets_from_early_chunks(client, backend):
-    body = {"prompt": "x", "duration": 6, "path": {"points": [[0, 0], [0, 1]], "start_s": 0},
-            "targets": [{"t": 5.0, "root": [0, 2], "height": 0.5, "reveal_s": 4.0}]}
+    body = {
+        "prompt": "x",
+        "duration": 6,
+        "path": {"points": [[0, 0], [0, 1]], "start_s": 0},
+        "targets": [{"t": 5.0, "root": [0, 2], "height": 0.5, "reveal_s": 4.0}],
+    }
     chunks_of(client.post("/v1/motion/stream", json=body))
     vis = backend.calls[0]["visible"]
     assert 150 not in vis[0].root2d and 150 not in vis[60].root2d and 150 in vis[120].root2d
 
 
 def test_continue_from_keeps_the_frame_and_the_hips_origin(client, backend):
-    first = chunks_of(client.post("/v1/motion/stream", json={
-        "prompt": "walk", "duration": 4, "path": {"points": [[0, 0], [0, 2]], "start_s": 0}}))
+    first = chunks_of(
+        client.post(
+            "/v1/motion/stream",
+            json={"prompt": "walk", "duration": 4, "path": {"points": [[0, 0], [0, 2]], "start_s": 0}},
+        )
+    )
     sid = first[1]["session"]
     end_z = first[0][-1]["end_pose"]["root"][1]
-    second, done2 = chunks_of(client.post("/v1/motion/stream", json={
-        "prompt": "stand", "duration": 2, "continue_from": sid,
-        "targets": [{"t": 1.0, "until": 2.0, "root": [0.5, 2.0], "height": 0.6, "heading": 1.0}]}))
+    second, done2 = chunks_of(
+        client.post(
+            "/v1/motion/stream",
+            json={
+                "prompt": "stand",
+                "duration": 2,
+                "continue_from": sid,
+                "targets": [{"t": 1.0, "until": 2.0, "root": [0.5, 2.0], "height": 0.6, "heading": 1.0}],
+            },
+        )
+    )
     assert backend.calls[1]["history"] is not None
     # continues from where the first ended and shares its origin: no reset to zero
     hips_z = second[0]["vrma"]["hips"]["position"]["keyframes"][0]["p"][2] * 0.989
@@ -131,7 +161,9 @@ def test_continue_from_keeps_the_frame_and_the_hips_origin(client, backend):
     assert second[-1]["end_pose"]["height"] == pytest.approx(0.6, abs=0.01)
     assert done2["session"] != sid
     # the new session continues too
-    third, _ = chunks_of(client.post("/v1/motion/stream", json={"prompt": "x", "duration": 1, "continue_from": done2["session"]}))
+    third, _ = chunks_of(
+        client.post("/v1/motion/stream", json={"prompt": "x", "duration": 1, "continue_from": done2["session"]})
+    )
     assert len(third) == 1
 
 
@@ -148,9 +180,17 @@ def test_sessions_expire_and_only_the_last_eight_are_kept(backend):
         time.sleep(0.1)
         assert c.post("/v1/motion/stream", json={"prompt": "x", "continue_from": sid}).status_code == 404
     with TestClient(create_app(FakeBackend(), load_in_background=False)) as c:
-        ids = [chunks_of(c.post("/v1/motion/stream", json={"prompt": "x", "duration": 1}))[1]["session"] for _ in range(10)]
-        gone = [c.post("/v1/motion/stream", json={"prompt": "x", "duration": 1, "continue_from": i}).status_code for i in ids[:2]]
-        kept = [c.post("/v1/motion/stream", json={"prompt": "x", "duration": 1, "continue_from": i}).status_code for i in ids[-6:-2]]
+        ids = [
+            chunks_of(c.post("/v1/motion/stream", json={"prompt": "x", "duration": 1}))[1]["session"] for _ in range(10)
+        ]
+        gone = [
+            c.post("/v1/motion/stream", json={"prompt": "x", "duration": 1, "continue_from": i}).status_code
+            for i in ids[:2]
+        ]
+        kept = [
+            c.post("/v1/motion/stream", json={"prompt": "x", "duration": 1, "continue_from": i}).status_code
+            for i in ids[-6:-2]
+        ]
         assert gone == [404, 404] and kept == [200] * 4
 
 
@@ -169,47 +209,61 @@ def test_chunk_vrma_is_valid_with_constraints(client):
 HAND = {"t": 1.0, "hand": "right", "position": [-0.18, 0.75, 0.5], "root": [0, 0], "height": 0.9, "heading": 0}
 
 
-@pytest.mark.parametrize("patch", [
-    {"path": {"points": []}},
-    {"path": {"points": [[0, 0, 0]]}},
-    {"path": {"points": [[0, "x"]]}},
-    {"path": {"points": [[0, 0]], "mode": "follow"}},
-    {"path": {"points": [[0, 0]], "speed": 0}},
-    {"path": {"points": [[0, 0]], "corner_radius": -1}},
-    {"path": {"points": [[0, 1e9]]}},
-    {"targets": [{**HAND, "hand": "middle"}]},
-    {"targets": [{**HAND, "position": None}]},
-    {"targets": [{**HAND, "root": None}]},
-    {"targets": [{**HAND, "height": None}]},
-    {"targets": [{**HAND, "heading": None}]},
-    {"targets": [{"t": 1.0}]},
-    {"targets": [{"t": 1.0, "heading": 0, "position": [0, 0, 0]}]},
-    {"targets": [{"t": 2.0, "until": 1.0, "root": [0, 0]}]},
-    {"targets": [{"t": -1.0, "root": [0, 0]}]},
-    {"targets": [{"t": "NaN", "root": [0, 0]}]},
-    {"targets": [{"t": 1.0, "root": [0, 0], "height": 0}]},
-    {"targets": [{"t": 1.0, "root": [0, 0], "heading": 1e999}]},
-    {"phases": [{"prompt": "  ", "start_s": 1}]},
-    {"phases": [{"prompt": "x", "start_s": -1}]},
-    {"constraint_weight": -1},
-    {"snap_s": -0.1},
-    {"duration": 31},
-])
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"path": {"points": []}},
+        {"path": {"points": [[0, 0, 0]]}},
+        {"path": {"points": [[0, "x"]]}},
+        {"path": {"points": [[0, 0]], "mode": "follow"}},
+        {"path": {"points": [[0, 0]], "speed": 0}},
+        {"path": {"points": [[0, 0]], "corner_radius": -1}},
+        {"path": {"points": [[0, 1e9]]}},
+        {"targets": [{**HAND, "hand": "middle"}]},
+        {"targets": [{**HAND, "position": None}]},
+        {"targets": [{**HAND, "root": None}]},
+        {"targets": [{**HAND, "height": None}]},
+        {"targets": [{**HAND, "heading": None}]},
+        {"targets": [{"t": 1.0}]},
+        {"targets": [{"t": 1.0, "heading": 0, "position": [0, 0, 0]}]},
+        {"targets": [{"t": 2.0, "until": 1.0, "root": [0, 0]}]},
+        {"targets": [{"t": -1.0, "root": [0, 0]}]},
+        {"targets": [{"t": "NaN", "root": [0, 0]}]},
+        {"targets": [{"t": 1.0, "root": [0, 0], "height": 0}]},
+        {"targets": [{"t": 1.0, "root": [0, 0], "heading": 1e999}]},
+        {"phases": [{"prompt": "  ", "start_s": 1}]},
+        {"phases": [{"prompt": "x", "start_s": -1}]},
+        {"constraint_weight": -1},
+        {"snap_s": -0.1},
+        {"duration": 31},
+    ],
+)
 def test_invalid_constraint_fields_are_400(client, patch):
-    r = client.post("/v1/motion/stream", content=json.dumps({"prompt": "x", **patch}),
-                    headers={"content-type": "application/json"})
+    r = client.post(
+        "/v1/motion/stream", content=json.dumps({"prompt": "x", **patch}), headers={"content-type": "application/json"}
+    )
     assert r.status_code == 400 and r.json()["error"]
 
 
 def test_valid_full_request_is_accepted(client):
     body = {
-        "prompt": "a person walks calmly", "duration": 6.0, "avatar_rest": REST,
+        "prompt": "a person walks calmly",
+        "duration": 6.0,
+        "avatar_rest": REST,
         "phases": [{"prompt": "a person turns around and sits down on a chair", "start_s": 4.0}],
-        "path": {"points": [[0, 0], [0, 2.5], [1.2, 3.0]], "corner_radius": 0.6, "speed": 1.0, "start_s": 0.3,
-                 "mode": "dense"},
-        "targets": [{"t": 5.5, "until": 5.9, "root": [0.0, 2.65], "height": 0.5, "heading": math.pi, "reveal_s": 4.0},
-                    HAND],
-        "constraint_weight": 2.0, "snap_s": 0.3,
+        "path": {
+            "points": [[0, 0], [0, 2.5], [1.2, 3.0]],
+            "corner_radius": 0.6,
+            "speed": 1.0,
+            "start_s": 0.3,
+            "mode": "dense",
+        },
+        "targets": [
+            {"t": 5.5, "until": 5.9, "root": [0.0, 2.65], "height": 0.5, "heading": math.pi, "reveal_s": 4.0},
+            HAND,
+        ],
+        "constraint_weight": 2.0,
+        "snap_s": 0.3,
     }
     r = client.post("/v1/motion/stream", json=body)
     assert r.status_code == 200 and lines(r)[-1]["type"] == "done"
@@ -221,14 +275,30 @@ def test_clip_endpoint_ignores_none_of_the_stream_fields_but_stays_10s(client):
 
 def test_continue_after_a_cut_short_stream_does_not_rewind(client):
     # 46 frames: the stream keeps 44 (whole 4-frame groups), so the continuation restarts 2 frames back.
-    first = chunks_of(client.post("/v1/motion/stream", json={
-        "prompt": "walk", "duration": 46 / 30, "path": {"points": [[0, 0], [0, 6]], "speed": 1.0, "start_s": 0.0}}))
+    first = chunks_of(
+        client.post(
+            "/v1/motion/stream",
+            json={
+                "prompt": "walk",
+                "duration": 46 / 30,
+                "path": {"points": [[0, 0], [0, 6]], "speed": 1.0, "start_s": 0.0},
+            },
+        )
+    )
     end_z = first[0][-1]["end_pose"]["root"][1]
     assert end_z == pytest.approx(45 / 30, abs=1e-3)
     # the continuation walks on the same line: its frame 0 is the stream's frame 44
-    second, _ = chunks_of(client.post("/v1/motion/stream", json={
-        "prompt": "walk", "duration": 3.0, "continue_from": first[1]["session"],
-        "path": {"points": [[0, 44 / 30], [0, 8]], "speed": 1.0, "start_s": 0.0}}))
+    second, _ = chunks_of(
+        client.post(
+            "/v1/motion/stream",
+            json={
+                "prompt": "walk",
+                "duration": 3.0,
+                "continue_from": first[1]["session"],
+                "path": {"points": [[0, 44 / 30], [0, 8]], "speed": 1.0, "start_s": 0.0},
+            },
+        )
+    )
     hips = second[0]["vrma"]["hips"]["position"]["keyframes"]
     assert hips[0]["t"] == 0.0
     # the first frame played is the one after the last frame already played, not two frames before it
@@ -240,8 +310,9 @@ def test_continue_after_a_cut_short_stream_does_not_rewind(client):
 
 def test_continue_after_a_whole_chunk_drops_nothing(client):
     first = chunks_of(client.post("/v1/motion/stream", json={"prompt": "walk", "duration": 2.0}))
-    second, _ = chunks_of(client.post("/v1/motion/stream", json={
-        "prompt": "walk", "duration": 2.0, "continue_from": first[1]["session"]}))
+    second, _ = chunks_of(
+        client.post("/v1/motion/stream", json={"prompt": "walk", "duration": 2.0, "continue_from": first[1]["session"]})
+    )
     assert len(second[0]["vrma"]["hips"]["position"]["keyframes"]) == 60 and second[0]["start"] == 0.0
 
 
@@ -253,10 +324,16 @@ def _visible_at(backend, start=0):
 
 
 def test_joint_target_maps_to_soma_names_and_scales_to_model_units(client, backend):
-    body = {"prompt": "sit", "duration": 2, "avatar_rest": REST,
-            "targets": [{"t": 1.0, "until": 1.5, "root": [0, 0.5], "height": 0.4},
-                        {"t": 1.0, "until": 1.5, "joint": "left_knee", "position": [0.1, 0.5, 0.6]},
-                        {"t": 1.6, "joint": "right_ankle", "position": [-0.1, 0.1, 0.7]}]}
+    body = {
+        "prompt": "sit",
+        "duration": 2,
+        "avatar_rest": REST,
+        "targets": [
+            {"t": 1.0, "until": 1.5, "root": [0, 0.5], "height": 0.4},
+            {"t": 1.0, "until": 1.5, "joint": "left_knee", "position": [0.1, 0.5, 0.6]},
+            {"t": 1.6, "joint": "right_ankle", "position": [-0.1, 0.1, 0.7]},
+        ],
+    }
     assert client.post("/v1/motion/stream", json=body).status_code == 200
     tg = _visible_at(backend)
     scale = 0.8 / 0.989
@@ -268,22 +345,39 @@ def test_joint_target_maps_to_soma_names_and_scales_to_model_units(client, backe
 
 
 def test_joint_target_with_its_own_root_is_kept(client, backend):
-    body = {"prompt": "sit", "duration": 2,
-            "targets": [{"t": 1.0, "joint": "right_knee", "position": [-0.1, 0.5, 0.6], "root": [0, 0.5]}]}
+    body = {
+        "prompt": "sit",
+        "duration": 2,
+        "targets": [{"t": 1.0, "joint": "right_knee", "position": [-0.1, 0.5, 0.6], "root": [0, 0.5]}],
+    }
     assert client.post("/v1/motion/stream", json=body).status_code == 200
     assert (30, "RightShin") in _visible_at(backend).joints
 
 
-@pytest.mark.parametrize("target", [
-    {"t": 1, "joint": "left_elbow", "position": [0, 0, 0]},
-    {"t": 1, "joint": "left_knee"},
-    {"t": 1, "joint": "left_knee", "position": [0, 0, float("nan")]},
-    {"t": 1, "joint": "left_knee", "position": [0, 0, 1e9]},
-    {"t": 1, "joint": "left_knee", "position": [0, 0, 0], "hand": "left", "root": [0, 0], "height": 1, "heading": 0},
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"t": 1, "joint": "left_elbow", "position": [0, 0, 0]},
+        {"t": 1, "joint": "left_knee"},
+        {"t": 1, "joint": "left_knee", "position": [0, 0, float("nan")]},
+        {"t": 1, "joint": "left_knee", "position": [0, 0, 1e9]},
+        {
+            "t": 1,
+            "joint": "left_knee",
+            "position": [0, 0, 0],
+            "hand": "left",
+            "root": [0, 0],
+            "height": 1,
+            "heading": 0,
+        },
+    ],
+)
 def test_bad_joint_targets_are_400(client, target):
-    r = client.post("/v1/motion/stream", content=json.dumps({"prompt": "x", "targets": [target]}),
-                    headers={"content-type": "application/json"})
+    r = client.post(
+        "/v1/motion/stream",
+        content=json.dumps({"prompt": "x", "targets": [target]}),
+        headers={"content-type": "application/json"},
+    )
     assert r.status_code == 400 and "error" in r.json()
 
 
@@ -294,9 +388,17 @@ def _session(client):
 
 def test_observed_pins_the_first_frames_of_a_continuation(client, backend):
     sid = _session(client)
-    body = {"prompt": "sit", "duration": 2, "avatar_rest": REST, "continue_from": sid,
-            "observed": {"joints": {"left_knee": [0.1, 0.5, 0.3], "right_ankle": [-0.1, 0.05, 0.4]},
-                         "root": [0.0, 0.2], "height": 0.6}}
+    body = {
+        "prompt": "sit",
+        "duration": 2,
+        "avatar_rest": REST,
+        "continue_from": sid,
+        "observed": {
+            "joints": {"left_knee": [0.1, 0.5, 0.3], "right_ankle": [-0.1, 0.05, 0.4]},
+            "root": [0.0, 0.2],
+            "height": 0.6,
+        },
+    }
     assert client.post("/v1/motion/stream", json=body).status_code == 200
     tg = _visible_at(backend)
     scale = 0.8 / 0.989
@@ -310,21 +412,35 @@ def test_observed_pins_the_first_frames_of_a_continuation(client, backend):
 
 def test_observed_beats_an_explicit_target_on_the_same_frames(client, backend):
     sid = _session(client)
-    body = {"prompt": "x", "duration": 2, "continue_from": sid, "observed": {"root": [0.5, 0.5]},
-            "targets": [{"t": 0, "until": 10 / 30, "root": [0, 0]}]}
+    body = {
+        "prompt": "x",
+        "duration": 2,
+        "continue_from": sid,
+        "observed": {"root": [0.5, 0.5]},
+        "targets": [{"t": 0, "until": 10 / 30, "root": [0, 0]}],
+    }
     assert client.post("/v1/motion/stream", json=body).status_code == 200
     tg = _visible_at(backend)
     assert tg.root2d[2] == pytest.approx((0.5, 0.5)) and tg.root2d[6] == pytest.approx((0, 0))
 
 
-@pytest.mark.parametrize("observed", [
-    {}, {"joints": {"left_elbow": [0, 0, 0]}}, {"joints": {"left_knee": [0, 0]}}, {"root": [0, float("inf")]},
-    {"height": -1},
-])
+@pytest.mark.parametrize(
+    "observed",
+    [
+        {},
+        {"joints": {"left_elbow": [0, 0, 0]}},
+        {"joints": {"left_knee": [0, 0]}},
+        {"root": [0, float("inf")]},
+        {"height": -1},
+    ],
+)
 def test_bad_observed_is_400(client, observed):
     sid = _session(client)
-    r = client.post("/v1/motion/stream", content=json.dumps({"prompt": "x", "continue_from": sid, "observed": observed}).replace("Infinity", "1e999"),
-                    headers={"content-type": "application/json"})
+    r = client.post(
+        "/v1/motion/stream",
+        content=json.dumps({"prompt": "x", "continue_from": sid, "observed": observed}).replace("Infinity", "1e999"),
+        headers={"content-type": "application/json"},
+    )
     assert r.status_code == 400
 
 

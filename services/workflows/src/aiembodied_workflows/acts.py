@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import httpx
 
 from .timeutil import iso_z
 
 ACT_TIMEOUTS: dict[str, float] = {
-    "context": 15, "think": 180, "say": 15, "tool": 3600, "ask": 6 * 3600,
-    "start_pursuit": 30, "return_home": 30, "sleep_state": 15,
+    "context": 15,
+    "think": 180,
+    "say": 15,
+    "tool": 3600,
+    "ask": 6 * 3600,
+    "start_pursuit": 30,
+    "return_home": 30,
+    "sleep_state": 15,
 }
 THINK_QUEUE_KINDS = ("think", "tool", "ask")
 POLL_SECONDS = 0.5
@@ -37,7 +44,11 @@ def act_timeout(kind: str) -> float:
 
 def build_act_event(avatar_id: str, kind: str, args: dict, workflow_id: str, txn_id: str, deadline: datetime) -> dict:
     return {
-        "type": "agent.act", "producer": PRODUCER, "to": ["service:app"], "audience": "private", "priority": "normal",
+        "type": "agent.act",
+        "producer": PRODUCER,
+        "to": ["service:app"],
+        "audience": "private",
+        "priority": "normal",
         "txn": {"id": txn_id, "state": "open", "title": f"{kind} for {avatar_id}", "deadline": iso_z(deadline)},
         "payload": {"avatarId": avatar_id, "kind": kind, "args": args, "workflowId": workflow_id},
     }
@@ -52,9 +63,16 @@ def read_result(txn_body: dict) -> dict | None:
 
 
 async def run_act(
-    http: httpx.AsyncClient, avatar_id: str, kind: str, args: dict[str, Any] | None = None, *,
-    workflow_id: str = "", timeout: float | None = None, heartbeat: Callable[[], None] | None = None,
-    poll: float = POLL_SECONDS, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    http: httpx.AsyncClient,
+    avatar_id: str,
+    kind: str,
+    args: dict[str, Any] | None = None,
+    *,
+    workflow_id: str = "",
+    timeout: float | None = None,
+    heartbeat: Callable[[], None] | None = None,
+    poll: float = POLL_SECONDS,
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> dict[str, Any]:
     """Publish one act and wait until the app has answered. Returns the result dict.
@@ -107,6 +125,10 @@ async def publish_event(http: httpx.AsyncClient, event: dict) -> None:
 
 def journal_event(kind: str, workflow_id: str, avatar_id: str | None, text: str, extra: dict | None = None) -> dict:
     return {
-        "type": f"workflow.{kind}", "producer": PRODUCER, "to": [], "audience": "private", "priority": "low",
+        "type": f"workflow.{kind}",
+        "producer": PRODUCER,
+        "to": [],
+        "audience": "private",
+        "priority": "low",
         "payload": {"workflowId": workflow_id, "avatarId": avatar_id, "text": text, **(extra or {})},
     }

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Iterator, Optional, Sequence
+from collections.abc import Iterator, Sequence
 
 import numpy as np
 
@@ -35,8 +35,13 @@ def build_conditions(rep, tg: Targets, win_start: int, gen_start: int, num_frame
     import torch
 
     lo, hi = gen_start, win_start + num_frames
-    idx = {"root_2d": [], "global_root_heading": [], "root_y_pos": [], "global_joints_positions": [],
-           "global_joints_rots": []}
+    idx = {
+        "root_2d": [],
+        "global_root_heading": [],
+        "root_y_pos": [],
+        "global_joints_positions": [],
+        "global_joints_rots": [],
+    }
     dat = {k: [] for k in idx}
     r2 = sorted(f for f in tg.root2d if lo <= f < hi)
     if r2:
@@ -46,7 +51,8 @@ def build_conditions(rep, tg: Targets, win_start: int, gen_start: int, num_frame
     if hd:
         idx["global_root_heading"].append(torch.tensor([f - win_start for f in hd]))
         dat["global_root_heading"].append(
-            torch.tensor([[math.cos(tg.heading[f]), math.sin(tg.heading[f])] for f in hd], dtype=torch.float32))
+            torch.tensor([[math.cos(tg.heading[f]), math.sin(tg.heading[f])] for f in hd], dtype=torch.float32)
+        )
     ry = sorted(f for f in tg.root_y if lo <= f < hi)
     if ry:
         idx["root_y_pos"].append(torch.tensor([f - win_start for f in ry]))
@@ -89,7 +95,7 @@ class ArdyBackend(Backend):
         self.max_window = (int(10 * self.fps) // patch) * patch
         self.history_frames = max(patch, (int(HISTORY_S * self.fps) // patch) * patch)
         self.joint_index = {n: i for i, n in enumerate(self.model.motion_rep.skeleton.bone_order_names)}
-        self._texts: "OrderedDict[str, tuple]" = OrderedDict()
+        self._texts: OrderedDict[str, tuple] = OrderedDict()
         self.max_steps = int(self.model.diffusion.num_base_steps)
         self.default_steps = self.max_steps
         self.device_label = device + (f" {torch.cuda.get_device_name(0)}" if device.startswith("cuda") else "")
@@ -120,8 +126,17 @@ class ArdyBackend(Backend):
         r = out["root_positions"][0].float().cpu().numpy()
         return Motion(g, p, r)
 
-    def stream(self, text, frames: int, steps: int, *, plan=None, phase_texts: Optional[Sequence] = None,
-               history: Optional[StreamHistory] = None, constraint_weight: float = 2.0) -> Iterator[Chunk]:
+    def stream(
+        self,
+        text,
+        frames: int,
+        steps: int,
+        *,
+        plan=None,
+        phase_texts: Sequence | None = None,
+        history: StreamHistory | None = None,
+        constraint_weight: float = 2.0,
+    ) -> Iterator[Chunk]:
         """One 60-frame `autoregressive_step` per chunk, as in steer_test.py (verified on the real model).
 
         Each chunk sees HISTORY_S of history, the new horizon and, when constraints are visible, up to
@@ -142,17 +157,19 @@ class ArdyBackend(Backend):
             for phase_start, phase_text in phases:
                 if phase_start <= start:
                     text_feat, text_pad_mask = phase_text
-            hist = None if feats is None else feats[:, -self.history_frames:]
+            hist = None if feats is None else feats[:, -self.history_frames :]
             hist_len = 0 if hist is None else hist.shape[1]
             win_start = start - hist_len
             n_window = hist_len + self.horizon
             mask = observed = None
             tg = None if plan is None else plan.visible(start)
             if tg is not None and not tg.empty:
-                n_window = window_frames(hist_len, win_start, tg.max_frame(start), FUTURE_CROP, self.horizon,
-                                         self.patch, self.max_window)
-                mask, observed = build_conditions(self.model.motion_rep, tg, win_start, start, n_window, device,
-                                                  self.joint_index)
+                n_window = window_frames(
+                    hist_len, win_start, tg.max_frame(start), FUTURE_CROP, self.horizon, self.patch, self.max_window
+                )
+                mask, observed = build_conditions(
+                    self.model.motion_rep, tg, win_start, start, n_window, device, self.joint_index
+                )
             first = hist is None
             with torch.no_grad():
                 window = self.model.autoregressive_step(
@@ -173,13 +190,17 @@ class ArdyBackend(Backend):
                 keep = self.horizon if n == self.horizon else (n // self.patch) * self.patch
                 new = window[:, hist_len : hist_len + keep]
                 feats = new if feats is None else torch.cat([feats, new], dim=1)
-                feats = feats[:, -self.history_frames:]
+                feats = feats[:, -self.history_frames :]
                 decoded = self._decode(window[:, : hist_len + self.horizon])
             chunk = decoded.slice(hist_len, hist_len + n)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            yield Chunk(chunk, start, generate_ms=(time.perf_counter() - t0) * 1000,
-                        history=StreamHistory(base + start + keep, feats, emitted_ahead=n - keep))
+            yield Chunk(
+                chunk,
+                start,
+                generate_ms=(time.perf_counter() - t0) * 1000,
+                history=StreamHistory(base + start + keep, feats, emitted_ahead=n - keep),
+            )
 
     def generate(self, text, frames: int, steps: int) -> Motion:
         return Motion.concat([c.motion for c in self.stream(text, frames, steps)])

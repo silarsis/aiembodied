@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import Optional
 
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -18,7 +17,7 @@ def encode(ms: int, rand: int) -> str:
     return "".join(ALPHABET[(n >> shift) & 31] for shift in range(125, -1, -5))
 
 
-def new_ulid(ms: Optional[int] = None) -> str:
+def new_ulid(ms: int | None = None) -> str:
     global _last
     ms = int(time.time() * 1000) if ms is None else ms
     with _lock:

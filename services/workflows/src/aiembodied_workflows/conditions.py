@@ -163,7 +163,7 @@ def describe(cond: dict) -> str:
         held = f" for {int(cond['forSeconds'])} s" if cond.get("forSeconds") else ""
         return f"{cond.get('entityId')} {what}{held}"
     if kind == "search":
-        return f"a new result for \"{cond.get('query')}\""
+        return f'a new result for "{cond.get("query")}"'
     if kind == "service":
         return f"{cond.get('url')} is down"
     if kind == "coding_task":

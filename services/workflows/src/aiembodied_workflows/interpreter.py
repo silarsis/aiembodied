@@ -81,7 +81,9 @@ def evaluate(cond: dict[str, Any], variables: dict[str, str]) -> bool:
     right = substitute(cond.get("value", ""), variables)
     ln, rn = _num(left), _num(right)
     if op in ("eq", "ne"):
-        same = ln == rn if ln is not None and rn is not None else str(left).strip().lower() == str(right).strip().lower()
+        same = (
+            ln == rn if ln is not None and rn is not None else str(left).strip().lower() == str(right).strip().lower()
+        )
         return same if op == "eq" else not same
     if op == "contains":
         return str(right).strip().lower() in str(left).lower()
@@ -217,11 +219,14 @@ def _describe(kind: str, result: str) -> str:
     return result or "ok"
 
 
-async def run_steps(steps: list[dict], inputs: dict[str, Any], runner: Runner, *,
-                    max_steps: int = MAX_EXECUTED_STEPS) -> FlowResult:
+async def run_steps(
+    steps: list[dict], inputs: dict[str, Any], runner: Runner, *, max_steps: int = MAX_EXECUTED_STEPS
+) -> FlowResult:
     """Run a flow's steps. `inputs` become variables. Raises FlowError when the step cap is passed."""
-    variables = {k: v if isinstance(v, str) else json.dumps(v) if isinstance(v, (dict, list)) else str(v)
-                 for k, v in inputs.items()}
+    variables = {
+        k: v if isinstance(v, str) else json.dumps(v) if isinstance(v, (dict, list)) else str(v)
+        for k, v in inputs.items()
+    }
     run = _Run(runner, variables, max_steps, count_steps(steps))
     await run.block(steps, "")
     return FlowResult(vars=run.vars, executed=run.executed, last=run.last)

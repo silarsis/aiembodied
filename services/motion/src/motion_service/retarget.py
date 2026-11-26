@@ -20,38 +20,124 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
 SOMA77 = [
-    "Hips", "Spine1", "Spine2", "Chest", "Neck1", "Neck2", "Head", "HeadEnd", "Jaw", "LeftEye", "RightEye",
-    "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
-    "LeftHandThumb1", "LeftHandThumb2", "LeftHandThumb3", "LeftHandThumbEnd",
-    "LeftHandIndex1", "LeftHandIndex2", "LeftHandIndex3", "LeftHandIndex4", "LeftHandIndexEnd",
-    "LeftHandMiddle1", "LeftHandMiddle2", "LeftHandMiddle3", "LeftHandMiddle4", "LeftHandMiddleEnd",
-    "LeftHandRing1", "LeftHandRing2", "LeftHandRing3", "LeftHandRing4", "LeftHandRingEnd",
-    "LeftHandPinky1", "LeftHandPinky2", "LeftHandPinky3", "LeftHandPinky4", "LeftHandPinkyEnd",
-    "RightShoulder", "RightArm", "RightForeArm", "RightHand",
-    "RightHandThumb1", "RightHandThumb2", "RightHandThumb3", "RightHandThumbEnd",
-    "RightHandIndex1", "RightHandIndex2", "RightHandIndex3", "RightHandIndex4", "RightHandIndexEnd",
-    "RightHandMiddle1", "RightHandMiddle2", "RightHandMiddle3", "RightHandMiddle4", "RightHandMiddleEnd",
-    "RightHandRing1", "RightHandRing2", "RightHandRing3", "RightHandRing4", "RightHandRingEnd",
-    "RightHandPinky1", "RightHandPinky2", "RightHandPinky3", "RightHandPinky4", "RightHandPinkyEnd",
-    "LeftLeg", "LeftShin", "LeftFoot", "LeftToeBase", "LeftToeEnd",
-    "RightLeg", "RightShin", "RightFoot", "RightToeBase", "RightToeEnd",
+    "Hips",
+    "Spine1",
+    "Spine2",
+    "Chest",
+    "Neck1",
+    "Neck2",
+    "Head",
+    "HeadEnd",
+    "Jaw",
+    "LeftEye",
+    "RightEye",
+    "LeftShoulder",
+    "LeftArm",
+    "LeftForeArm",
+    "LeftHand",
+    "LeftHandThumb1",
+    "LeftHandThumb2",
+    "LeftHandThumb3",
+    "LeftHandThumbEnd",
+    "LeftHandIndex1",
+    "LeftHandIndex2",
+    "LeftHandIndex3",
+    "LeftHandIndex4",
+    "LeftHandIndexEnd",
+    "LeftHandMiddle1",
+    "LeftHandMiddle2",
+    "LeftHandMiddle3",
+    "LeftHandMiddle4",
+    "LeftHandMiddleEnd",
+    "LeftHandRing1",
+    "LeftHandRing2",
+    "LeftHandRing3",
+    "LeftHandRing4",
+    "LeftHandRingEnd",
+    "LeftHandPinky1",
+    "LeftHandPinky2",
+    "LeftHandPinky3",
+    "LeftHandPinky4",
+    "LeftHandPinkyEnd",
+    "RightShoulder",
+    "RightArm",
+    "RightForeArm",
+    "RightHand",
+    "RightHandThumb1",
+    "RightHandThumb2",
+    "RightHandThumb3",
+    "RightHandThumbEnd",
+    "RightHandIndex1",
+    "RightHandIndex2",
+    "RightHandIndex3",
+    "RightHandIndex4",
+    "RightHandIndexEnd",
+    "RightHandMiddle1",
+    "RightHandMiddle2",
+    "RightHandMiddle3",
+    "RightHandMiddle4",
+    "RightHandMiddleEnd",
+    "RightHandRing1",
+    "RightHandRing2",
+    "RightHandRing3",
+    "RightHandRing4",
+    "RightHandRingEnd",
+    "RightHandPinky1",
+    "RightHandPinky2",
+    "RightHandPinky3",
+    "RightHandPinky4",
+    "RightHandPinkyEnd",
+    "LeftLeg",
+    "LeftShin",
+    "LeftFoot",
+    "LeftToeBase",
+    "LeftToeEnd",
+    "RightLeg",
+    "RightShin",
+    "RightFoot",
+    "RightToeBase",
+    "RightToeEnd",
 ]
 SOMA30 = [
-    "Hips", "Spine1", "Spine2", "Chest", "Neck1", "Neck2", "Head", "Jaw", "LeftEye", "RightEye",
-    "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "LeftHandThumbEnd", "LeftHandMiddleEnd",
-    "RightShoulder", "RightArm", "RightForeArm", "RightHand", "RightHandThumbEnd", "RightHandMiddleEnd",
-    "LeftLeg", "LeftShin", "LeftFoot", "LeftToeBase",
-    "RightLeg", "RightShin", "RightFoot", "RightToeBase",
+    "Hips",
+    "Spine1",
+    "Spine2",
+    "Chest",
+    "Neck1",
+    "Neck2",
+    "Head",
+    "Jaw",
+    "LeftEye",
+    "RightEye",
+    "LeftShoulder",
+    "LeftArm",
+    "LeftForeArm",
+    "LeftHand",
+    "LeftHandThumbEnd",
+    "LeftHandMiddleEnd",
+    "RightShoulder",
+    "RightArm",
+    "RightForeArm",
+    "RightHand",
+    "RightHandThumbEnd",
+    "RightHandMiddleEnd",
+    "LeftLeg",
+    "LeftShin",
+    "LeftFoot",
+    "LeftToeBase",
+    "RightLeg",
+    "RightShin",
+    "RightFoot",
+    "RightToeBase",
 ]
 
 # (vrm bone, soma joint, vrm parent) in parent-before-child order
-BODY_MAP: list[tuple[str, str, Optional[str]]] = [
+BODY_MAP: list[tuple[str, str, str | None]] = [
     ("hips", "Hips", None),
     ("spine", "Spine1", "hips"),
     ("chest", "Spine2", "spine"),
@@ -59,7 +145,7 @@ BODY_MAP: list[tuple[str, str, Optional[str]]] = [
     ("neck", "Neck1", "upperChest"),
     ("head", "Head", "neck"),
 ]
-FINGER_MAP: list[tuple[str, str, Optional[str]]] = []
+FINGER_MAP: list[tuple[str, str, str | None]] = []
 for _side, _S in (("left", "Left"), ("right", "Right")):
     BODY_MAP += [
         (f"{_side}Shoulder", f"{_S}Shoulder", "upperChest"),
@@ -117,11 +203,14 @@ class RootFrame:
     origin_z: float
 
     @classmethod
-    def from_motion(cls, posed_joints: np.ndarray, root_positions: np.ndarray, names: list[str]) -> "RootFrame":
+    def from_motion(cls, posed_joints: np.ndarray, root_positions: np.ndarray, names: list[str]) -> RootFrame:
         idx = {n: i for i, n in enumerate(names)}
         toes = posed_joints[:, [idx["LeftToeBase"], idx["RightToeBase"]], 1]
-        return cls(floor_y=float(np.percentile(toes, 5)), origin_x=float(root_positions[0, 0]),
-                   origin_z=float(root_positions[0, 2]))
+        return cls(
+            floor_y=float(np.percentile(toes, 5)),
+            origin_x=float(root_positions[0, 0]),
+            origin_z=float(root_positions[0, 2]),
+        )
 
 
 def joint_names(num_joints: int) -> list[str]:
@@ -159,16 +248,16 @@ def _squeeze_batch(a: np.ndarray, ndim: int) -> np.ndarray:
 def to_vrma(
     global_rot_mats: np.ndarray,
     posed_joints: np.ndarray,
-    root_positions: Optional[np.ndarray],
+    root_positions: np.ndarray | None,
     name: str,
     fps: float = 30.0,
     kind: str = "motion",
     loop: bool = False,
-    root_frame: Optional[RootFrame] = None,
+    root_frame: RootFrame | None = None,
     fingers: bool = True,
     in_place: bool = False,
-    chest_forward: Optional[float] = None,
-    arm_forward: Optional[float] = None,
+    chest_forward: float | None = None,
+    arm_forward: float | None = None,
 ) -> dict:
     """Build a VRMA JSON dict (app schema) from SOMA global rotations [T,J,3,3] and joints [T,J,3]."""
     G = _squeeze_batch(global_rot_mats, 4).astype(np.float64)
@@ -206,17 +295,17 @@ def to_vrma(
         q = Rotation.from_matrix(local).as_quat()  # x, y, z, w
         flip = np.cumsum(np.r_[False, np.einsum("ij,ij->i", q[1:], q[:-1]) < 0]) % 2 == 1
         q[flip] = -q[flip]  # sign continuity so LINEAR sampling never takes the long way round
-        tracks.append({"bone": vrm, "keyframes": [
-            {"t": times[t], "q": [round(float(v), 6) for v in q[t]]} for t in range(T)
-        ]})
+        tracks.append(
+            {"bone": vrm, "keyframes": [{"t": times[t], "q": [round(float(v), 6) for v in q[t]]} for t in range(T)]}
+        )
 
     if not SLUG_RE.match(name):
         name = slugify(name)
     return {
         "meta": {"name": name, "fps": fps, "loop": loop, "duration": round((T - 1) / fps, 5), "kind": kind},
         "tracks": tracks,
-        "hips": {"position": {"keyframes": [
-            {"t": times[t], "p": [round(float(v), 5) for v in p[t]]} for t in range(T)
-        ]}},
+        "hips": {
+            "position": {"keyframes": [{"t": times[t], "p": [round(float(v), 5) for v in p[t]]} for t in range(T)]}
+        },
         "expressions": [],
     }

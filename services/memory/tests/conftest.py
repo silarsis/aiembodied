@@ -32,7 +32,6 @@ def schema(database_url):
 @pytest.fixture
 def client(database_url, schema):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -48,7 +47,9 @@ class FakeLlm:
 
     def __init__(self, reply=None):
         self.prompts = []
-        self.reply = reply or (lambda prompt: {"title": "A chat", "summary": "They talked.", "topics": ["chat"], "facts": []})
+        self.reply = reply or (
+            lambda prompt: {"title": "A chat", "summary": "They talked.", "topics": ["chat"], "facts": []}
+        )
 
     def complete_json(self, system, user, schema):
         self.prompts.append(user)
@@ -65,7 +66,6 @@ def summary_client(database_url, schema, llm):
     from datetime import timezone as tz
 
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
     from memory_engine.summaries import Summariser

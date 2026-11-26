@@ -1,5 +1,4 @@
 import pytest
-
 from aiembodied_workflows.interpreter import FlowError, evaluate, parse_choice, run_steps, substitute, truthy
 
 
@@ -69,8 +68,11 @@ async def test_variables_and_substitution():
         {"say": "{{s}} / {{city}}", "urgent": True},
     ]
     res = await run_steps(steps, {"city": "Singapore"}, r)
-    assert r.calls == [("search", "weather in Singapore"), ("think", "Summarise sunny, 31C for !", True),
-                       ("say", "A short summary / Singapore", True)]
+    assert r.calls == [
+        ("search", "weather in Singapore"),
+        ("think", "Summarise sunny, 31C for !", True),
+        ("say", "A short summary / Singapore", True),
+    ]
     assert res.vars["s"] == "A short summary" and res.executed == 3
     assert [s[0] for s in r.steps] == ["1/3", "2/3", "3/3"]
     assert r.steps[1] == ("2/3", "think", "15 chars")
@@ -99,12 +101,22 @@ async def test_if_then_else():
     assert r.calls == []
 
 
-@pytest.mark.parametrize("op,left,value,expected", [
-    ("eq", "Yes", "yes", True), ("eq", "1.0", 1, True), ("ne", "a", "b", True), ("ne", "a", "A", False),
-    ("contains", "Hello World", "world", True), ("contains", "abc", "z", False),
-    ("gt", "10", 9, True), ("gt", "9", "10", False), ("lt", "2", 3, True), ("lt", "b", "a", False),
-    ("gt", "b", "a", True),
-])
+@pytest.mark.parametrize(
+    "op,left,value,expected",
+    [
+        ("eq", "Yes", "yes", True),
+        ("eq", "1.0", 1, True),
+        ("ne", "a", "b", True),
+        ("ne", "a", "A", False),
+        ("contains", "Hello World", "world", True),
+        ("contains", "abc", "z", False),
+        ("gt", "10", 9, True),
+        ("gt", "9", "10", False),
+        ("lt", "2", 3, True),
+        ("lt", "b", "a", False),
+        ("gt", "b", "a", True),
+    ],
+)
 def test_evaluate(op, left, value, expected):
     assert evaluate({"var": "x", "op": op, "value": value}, {"x": left}) is expected
 
@@ -126,8 +138,12 @@ async def test_repeat_times_and_round_variable():
 
 async def test_repeat_until():
     r = FakeRunner(asks=[False, False, True])
-    steps = [{"repeat": {"until": {"var": "done", "op": "eq", "value": "yes"}},
-              "steps": [{"ask": "finished?", "as": "done"}]}]
+    steps = [
+        {
+            "repeat": {"until": {"var": "done", "op": "eq", "value": "yes"}},
+            "steps": [{"ask": "finished?", "as": "done"}],
+        }
+    ]
     res = await run_steps(steps, {}, r)
     assert len([c for c in r.calls if c[0] == "ask"]) == 3 and res.vars["done"] == "yes"
 
@@ -149,7 +165,13 @@ async def test_step_cap():
 
 
 async def test_choose_parses_the_answer():
-    for answer, expected in (("no", "no"), ("  Yes. ", "yes"), ("I would say NO because", "no"), ("???", "yes"), ("", "yes")):
+    for answer, expected in (
+        ("no", "no"),
+        ("  Yes. ", "yes"),
+        ("I would say NO because", "no"),
+        ("???", "yes"),
+        ("", "yes"),
+    ):
         r = FakeRunner(thoughts=[answer])
         res = await run_steps([{"choose": "Umbrella?", "options": ["yes", "no"], "as": "c"}], {}, r)
         assert res.vars["c"] == expected, answer
@@ -163,12 +185,14 @@ def test_parse_choice_prefers_earliest_mention():
 async def test_waits_and_signals_and_results():
     r = FakeRunner()
     steps = [
-        {"wait": {"seconds": 30}}, {"wait": {"until": "07:30"}},
+        {"wait": {"seconds": 30}},
+        {"wait": {"until": "07:30"}},
         {"wait_for": {"entityId": "a.b", "state": "on"}, "timeoutSeconds": 99, "as": "e"},
         {"wait_for": {"signal": "go"}, "as": "g"},
         {"run_flow": "child", "inputs": {"k": "{{e}}"}, "as": "c"},
         {"set_intention": "water plants", "kind": "goal"},
-        {"recall": "plants", "as": "m"}, {"remember": "I watered {{m}}"},
+        {"recall": "plants", "as": "m"},
+        {"remember": "I watered {{m}}"},
         {"ask": "ok?", "as": "a"},
     ]
     res = await run_steps(steps, {}, r)

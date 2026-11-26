@@ -21,14 +21,26 @@ THINK_ACTIVITY_NAMES = ("app_act",)
 def sandbox_runner() -> SandboxedWorkflowRunner:
     """The workflow sandbox, with this package passed through (its modules are pure and deterministic)."""
     return SandboxedWorkflowRunner(
-        restrictions=SandboxRestrictions.default.with_passthrough_modules("aiembodied_workflows"))
+        restrictions=SandboxRestrictions.default.with_passthrough_modules("aiembodied_workflows")
+    )
 
 
 def make_workers(client: Client, acts: Activities) -> list[Worker]:
     """Two workers: `agents` (workflows and light activities) and `think` (one model call or tool at a time)."""
     interceptors = [ActivityLogInterceptor()]
-    agents = Worker(client, task_queue=TASK_QUEUE, workflows=WORKFLOWS, activities=acts.all(),
-                    workflow_runner=sandbox_runner(), interceptors=interceptors)
-    think = Worker(client, task_queue=THINK_QUEUE, activities=[acts.app_act], max_concurrent_activities=1,
-                   interceptors=interceptors)
+    agents = Worker(
+        client,
+        task_queue=TASK_QUEUE,
+        workflows=WORKFLOWS,
+        activities=acts.all(),
+        workflow_runner=sandbox_runner(),
+        interceptors=interceptors,
+    )
+    think = Worker(
+        client,
+        task_queue=THINK_QUEUE,
+        activities=[acts.app_act],
+        max_concurrent_activities=1,
+        interceptors=interceptors,
+    )
     return [agents, think]

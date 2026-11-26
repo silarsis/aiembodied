@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 from .models import CLOSED_STATES, Event
 
@@ -39,8 +40,20 @@ CREATE INDEX IF NOT EXISTS txns_parent ON txns(parent);
 CREATE INDEX IF NOT EXISTS txns_state ON txns(state);
 """
 
-TXN_COLUMNS = ("id", "parent", "root", "state", "title", "opened_by", "owner", "opened_at", "updated_at",
-               "closed_at", "deadline", "last_event")
+TXN_COLUMNS = (
+    "id",
+    "parent",
+    "root",
+    "state",
+    "title",
+    "opened_by",
+    "owner",
+    "opened_at",
+    "updated_at",
+    "closed_at",
+    "deadline",
+    "last_event",
+)
 _CLOSED_SQL = "(" + ",".join(f"'{s}'" for s in CLOSED_STATES) + ")"
 
 
@@ -79,13 +92,33 @@ class Store:
             cur = self.db.execute(
                 "INSERT OR IGNORE INTO events(id, at, type, producer, node, to_json, scene, txn_id, audience, priority, body)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (ev.id, ev.at, ev.type, ev.producer.address, ev.producer.node, json.dumps(ev.to), ev.scene,
-                 ev.txn.id if ev.txn else None, ev.audience, ev.priority, json.dumps(body, ensure_ascii=False)))
+                (
+                    ev.id,
+                    ev.at,
+                    ev.type,
+                    ev.producer.address,
+                    ev.producer.node,
+                    json.dumps(ev.to),
+                    ev.scene,
+                    ev.txn.id if ev.txn else None,
+                    ev.audience,
+                    ev.priority,
+                    json.dumps(body, ensure_ascii=False),
+                ),
+            )
             return cur.rowcount == 1
 
-    def events(self, since: Optional[str] = None, type: Optional[str] = None, producer: Optional[str] = None,
-               txn: Optional[str] = None, root: Optional[str] = None, scene: Optional[str] = None,
-               to: Optional[str] = None, limit: int = 200) -> list[dict[str, Any]]:
+    def events(
+        self,
+        since: str | None = None,
+        type: str | None = None,
+        producer: str | None = None,
+        txn: str | None = None,
+        root: str | None = None,
+        scene: str | None = None,
+        to: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
         """Envelopes oldest first. `since` is exclusive; an id that is not (or no longer) in the journal
         is compared as a plain ULID, so any time-based id works."""
         where: list[str] = []
@@ -95,14 +128,20 @@ class Store:
                 row = self.db.execute("SELECT seq FROM events WHERE id=?", (since,)).fetchone()
                 where.append("seq > ?" if row else "id > ?")
                 args.append(row["seq"] if row else since)
-            for clause, value in (("type GLOB ?", type), ("producer=?", producer), ("txn_id=?", txn),
-                                  ("scene=?", scene),
-                                  ("txn_id IN (SELECT id FROM txns WHERE root=?)", root),
-                                  ("EXISTS (SELECT 1 FROM json_each(events.to_json) WHERE value=?)", to)):
+            for clause, value in (
+                ("type GLOB ?", type),
+                ("producer=?", producer),
+                ("txn_id=?", txn),
+                ("scene=?", scene),
+                ("txn_id IN (SELECT id FROM txns WHERE root=?)", root),
+                ("EXISTS (SELECT 1 FROM json_each(events.to_json) WHERE value=?)", to),
+            ):
                 if value:
                     where.append(clause)
                     args.append(value)
-            sql = "SELECT body FROM events" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY seq LIMIT ?"
+            sql = (
+                "SELECT body FROM events" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY seq LIMIT ?"
+            )
             rows = self.db.execute(sql, (*args, limit)).fetchall()
         return [json.loads(r["body"]) for r in rows]
 
@@ -112,18 +151,22 @@ class Store:
 
     # txns
 
-    def get_txn(self, txn_id: str) -> Optional[dict[str, Any]]:
+    def get_txn(self, txn_id: str) -> dict[str, Any] | None:
         with self.lock:
             row = self.db.execute("SELECT * FROM txns WHERE id=?", (txn_id,)).fetchone()
         return dict(row) if row else None
 
     def put_txn(self, row: dict[str, Any]) -> None:
         with self.lock:
-            self.db.execute(f"INSERT OR REPLACE INTO txns({','.join(TXN_COLUMNS)}) "
-                            f"VALUES ({','.join(':' + c for c in TXN_COLUMNS)})", row)
+            self.db.execute(
+                f"INSERT OR REPLACE INTO txns({','.join(TXN_COLUMNS)}) "
+                f"VALUES ({','.join(':' + c for c in TXN_COLUMNS)})",
+                row,
+            )
 
-    def txns(self, state: Optional[str] = None, root: Optional[str] = None, parent: Optional[str] = None,
-             limit: int = 200) -> list[dict[str, Any]]:
+    def txns(
+        self, state: str | None = None, root: str | None = None, parent: str | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
         """Newest updated first. state: "open" = not closed, "closed" = any closed state, else that exact state."""
         where: list[str] = []
         args: list[Any] = []
@@ -138,14 +181,19 @@ class Store:
             if value:
                 where.append(clause)
                 args.append(value)
-        sql = "SELECT * FROM txns" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY updated_at DESC, last_event DESC LIMIT ?"
+        sql = (
+            "SELECT * FROM txns"
+            + (" WHERE " + " AND ".join(where) if where else "")
+            + " ORDER BY updated_at DESC, last_event DESC LIMIT ?"
+        )
         with self.lock:
             return [dict(r) for r in self.db.execute(sql, (*args, limit)).fetchall()]
 
     def overdue(self, now: str) -> list[dict[str, Any]]:
         with self.lock:
-            rows = self.db.execute(f"SELECT * FROM txns WHERE deadline IS NOT NULL AND deadline < ? "
-                                   f"AND state NOT IN {_CLOSED_SQL}", (now,)).fetchall()
+            rows = self.db.execute(
+                f"SELECT * FROM txns WHERE deadline IS NOT NULL AND deadline < ? AND state NOT IN {_CLOSED_SQL}", (now,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def count_open_txns(self) -> int:

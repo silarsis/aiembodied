@@ -8,13 +8,15 @@ import shutil
 import subprocess
 import threading
 import time
-from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
-from . import github, gitops, review as review_mod
+from . import github, gitops
+from . import review as review_mod
 from .config import Config
 from .gitops import GitError
 from .procs import clean_env, kill_tree, popen_flags
@@ -35,9 +37,11 @@ RUNNING = ("starting", "working", "question", "checks")
 # Statuses in which a local task needs the local model server.
 LOCAL_NEEDED = ("starting", "working", "question", "paused")
 PAUSE_DETAIL = "paused while Kevin talks to Echo"
-PAUSE_PROMPT = ("You were paused while the local model was needed elsewhere. Continue where you left off.")
-RESUME_PROMPT = ("The runner restarted while you were working. Check the state of the files and continue the "
-                 "task where you left off.")
+PAUSE_PROMPT = "You were paused while the local model was needed elsewhere. Continue where you left off."
+RESUME_PROMPT = (
+    "The runner restarted while you were working. Check the state of the files and continue the "
+    "task where you left off."
+)
 
 
 class CoderError(Exception):
@@ -50,24 +54,24 @@ class Run:
     """In-memory state of one task's pi process and worker thread."""
 
     def __init__(self) -> None:
-        self.pi: Optional[PiProcess] = None
-        self.thread: Optional[threading.Thread] = None
+        self.pi: PiProcess | None = None
+        self.thread: threading.Thread | None = None
         self.active = False
         self.used_s = 0.0  # time already spent working, kept across pauses so they do not count against the limit
-        self.sup_start: Optional[float] = None
+        self.sup_start: float | None = None
         self.q_s = 0.0  # time spent waiting for answers since sup_start
         self.reset()
 
     def reset(self) -> None:
-        self.stopped: Optional[str] = None
+        self.stopped: str | None = None
         self.settled = threading.Event()
-        self.agent_end_at: Optional[float] = None
+        self.agent_end_at: float | None = None
         self.last_activity = time.monotonic()
-        self.prompt_error: Optional[str] = None
+        self.prompt_error: str | None = None
         self.pending_question = False
-        self.checks_proc: Optional[subprocess.Popen] = None
+        self.checks_proc: subprocess.Popen | None = None
         self.setup_done = False  # the setup command has run (or was not needed) in this worktree
-        self.setup_ok: Optional[bool] = None  # None: not run; False: it failed
+        self.setup_ok: bool | None = None  # None: not run; False: it failed
 
 
 def slugify(text: str, limit: int = 40) -> str:
@@ -98,13 +102,19 @@ def build_brief(goal: str, acceptance: list[str], scope: list[str]) -> str:
         "- Do not push, and do not touch git remotes or open pull requests.\n"
         "- Do not commit; the runner commits your changes when you finish.\n"
         "- Run the project's checks (tests, type checks) if you can.\n"
-        "- End with a short summary of what you changed and why.")
+        "- End with a short summary of what you changed and why."
+    )
     return "\n\n".join(parts)
 
 
 class TaskManager:
-    def __init__(self, cfg: Config, store: Store, workspaces: WorkspaceRegistry,
-                 on_change: Optional[Callable[[dict], None]] = None):
+    def __init__(
+        self,
+        cfg: Config,
+        store: Store,
+        workspaces: WorkspaceRegistry,
+        on_change: Callable[[dict], None] | None = None,
+    ):
         self.cfg, self.store, self.workspaces = cfg, store, workspaces
         self.on_change = on_change
         self.keys: dict[str, str] = {}
@@ -115,7 +125,7 @@ class TaskManager:
         self._hold = False
         self._to_resume: list[str] = []
         self._stop_poll = threading.Event()
-        self._poller: Optional[threading.Thread] = None
+        self._poller: threading.Thread | None = None
         self._recover()
 
     # ---- restart recovery -------------------------------------------------------------------
@@ -132,8 +142,12 @@ class TaskManager:
             elif t["status"] == "question" and t["questions"] and all(q.get("kind") == "text" for q in t["questions"]):
                 continue  # waiting for a text answer; pi is not running, nothing to resume
             elif t["status"] == "pushing":
-                self.store.update_task(tid, status="review", error="runner restarted during push",
-                                       phase_detail="runner restarted during push")
+                self.store.update_task(
+                    tid,
+                    status="review",
+                    error="runner restarted during push",
+                    phase_detail="runner restarted during push",
+                )
                 self.store.add_event(tid, "runner", {"message": "runner restarted during push; back to review"})
             else:
                 self._to_resume.append(tid)
@@ -155,8 +169,9 @@ class TaskManager:
                     entry = self._rerun_checks
                 else:
                     entry = self._restart_pi(RESUME_PROMPT, "resumed after a runner restart")
-                run.thread = threading.Thread(target=self._worker, args=(tid, run, entry), daemon=True,
-                                              name=f"task-{tid}")
+                run.thread = threading.Thread(
+                    target=self._worker, args=(tid, run, entry), daemon=True, name=f"task-{tid}"
+                )
                 run.thread.start()
         self._notify_all()
 
@@ -171,7 +186,7 @@ class TaskManager:
 
     # ---- keys -------------------------------------------------------------------------------
 
-    def set_keys(self, keys: dict[str, Optional[str]]) -> None:
+    def set_keys(self, keys: dict[str, str | None]) -> None:
         with self._lock:
             for name in KEY_NAMES:
                 if name in keys:
@@ -186,8 +201,10 @@ class TaskManager:
     # ---- helpers ----------------------------------------------------------------------------
 
     def local_model_needed(self) -> bool:
-        return any(t["provider"] == "local" and t["status"] in LOCAL_NEEDED and not self._text_question_only(t)
-                   for t in self.store.list_tasks())
+        return any(
+            t["provider"] == "local" and t["status"] in LOCAL_NEEDED and not self._text_question_only(t)
+            for t in self.store.list_tasks()
+        )
 
     @staticmethod
     def _text_question_only(t: dict) -> bool:
@@ -204,14 +221,20 @@ class TaskManager:
             try:
                 needed = self.local_model_needed()
                 self._needed = needed
-                self.on_change({"task_id": task["id"], "status": task["status"],
-                                "current_tool": task["current_tool"], "question": task["question"],
-                                "questions": task["questions"],
-                                "local_model_needed": needed})
+                self.on_change(
+                    {
+                        "task_id": task["id"],
+                        "status": task["status"],
+                        "current_tool": task["current_tool"],
+                        "question": task["question"],
+                        "questions": task["questions"],
+                        "local_model_needed": needed,
+                    }
+                )
             except Exception:
                 pass
 
-    def _update(self, tid: str, force: bool = False, **fields: Any) -> Optional[dict]:
+    def _update(self, tid: str, force: bool = False, **fields: Any) -> dict | None:
         if "question" in fields and fields["question"] is None and "questions" not in fields:
             fields["questions"] = []
         with self._lock:
@@ -220,8 +243,11 @@ class TaskManager:
                 return self.store.get_task(tid)
             task = self.store.update_task(tid, **fields)
         if "status" in fields:
-            self.store.add_event(tid, "status", {"status": fields["status"], "detail": fields.get("phase_detail"),
-                                                 "error": fields.get("error")})
+            self.store.add_event(
+                tid,
+                "status",
+                {"status": fields["status"], "detail": fields.get("phase_detail"), "error": fields.get("error")},
+            )
         if task and {"status", "current_tool", "question", "questions"} & set(fields):
             self._notify(task)
         return task
@@ -235,15 +261,16 @@ class TaskManager:
     def _fail(self, tid: str, run: Run, error: str) -> None:
         if run.pi:
             run.pi.kill()
-        self._update(tid, status="failed", error=error, current_tool=None, question=None, finished_at=now(),
-                     phase_detail=error)
+        self._update(
+            tid, status="failed", error=error, current_tool=None, question=None, finished_at=now(), phase_detail=error
+        )
 
     def _on_log(self, tid: str, stream: str, line: str) -> None:
         self.store.add_event(tid, "log", {"stream": stream, "line": line[:4000]})
 
     # ---- creating and scheduling ------------------------------------------------------------
 
-    def _resolve_model(self, ws: Workspace, model: Optional[ModelRef]) -> tuple[str, str]:
+    def _resolve_model(self, ws: Workspace, model: ModelRef | None) -> tuple[str, str]:
         m = model or ws.model
         if m:
             provider, mid = m.provider, m.id
@@ -254,16 +281,25 @@ class TaskManager:
             raise CoderError(400, f"no {provider} API key has been set (PUT /v1/keys)")
         return provider, mid
 
-    def create_task(self, workspace_id: str, goal: str, acceptance: list[str], scope: list[str],
-                    model: Optional[ModelRef]) -> dict:
+    def create_task(
+        self, workspace_id: str, goal: str, acceptance: list[str], scope: list[str], model: ModelRef | None
+    ) -> dict:
         ws = self.workspaces.get(workspace_id)
         if not ws:
             raise CoderError(404, f"unknown workspace {workspace_id!r}")
         provider, mid = self._resolve_model(ws, model)
         tid = self.store.new_id()
         task = self.store.create_task(
-            id=tid, workspace_id=workspace_id, goal=goal, acceptance=acceptance, scope=scope, provider=provider,
-            model=mid, branch=f"echo/{tid}-{slugify(goal)}", files_touched=[])
+            id=tid,
+            workspace_id=workspace_id,
+            goal=goal,
+            acceptance=acceptance,
+            scope=scope,
+            provider=provider,
+            model=mid,
+            branch=f"echo/{tid}-{slugify(goal)}",
+            files_touched=[],
+        )
         self.store.add_event(tid, "status", {"status": "queued"})
         self._notify(task)
         self.pump()
@@ -285,11 +321,12 @@ class TaskManager:
                 self.store.update_task(t["id"], status="starting")
                 self.store.add_event(t["id"], "status", {"status": "starting"})
                 self._notify(self.store.get_task(t["id"]))  # type: ignore[arg-type]
-                run.thread = threading.Thread(target=self._worker, args=(t["id"], run, self._start), daemon=True,
-                                              name=f"task-{t['id']}")
+                run.thread = threading.Thread(
+                    target=self._worker, args=(t["id"], run, self._start), daemon=True, name=f"task-{t['id']}"
+                )
                 run.thread.start()
 
-    def _worker(self, tid: str, run: Run, entry: Optional[Callable[[str, Run], bool]] = None) -> None:
+    def _worker(self, tid: str, run: Run, entry: Callable[[str, Run], bool] | None = None) -> None:
         try:
             if entry and not entry(tid, run):
                 return
@@ -310,13 +347,13 @@ class TaskManager:
             return False
         wt = self.cfg.worktrees_dir / tid
         try:
-            _, base_commit = gitops.create_worktree(Path(ws.path), self.cfg.git_remote, ws.base_branch,
-                                                    task["branch"], wt)
+            _, base_commit = gitops.create_worktree(
+                Path(ws.path), self.cfg.git_remote, ws.base_branch, task["branch"], wt
+            )
         except GitError as e:
             self._fail(tid, run, f"could not create worktree: {e}")
             return False
-        self._update(tid, worktree=str(wt), base_commit=base_commit, started_at=now(),
-                     phase_detail="worktree ready")
+        self._update(tid, worktree=str(wt), base_commit=base_commit, started_at=now(), phase_detail="worktree ready")
         if run.stopped:
             return False
         self._ensure_setup(tid, run, ws, wt)
@@ -365,6 +402,7 @@ class TaskManager:
 
     def _restart_pi(self, message: str, detail: str, check_continue: bool = False):
         """Entry for a worker: wait for the local model, start pi with --continue and send a prompt."""
+
         def entry(tid: str, run: Run) -> bool:
             task = self._get(tid)
             wt = Path(task["worktree"] or "")
@@ -372,8 +410,14 @@ class TaskManager:
                 self._fail(tid, run, "worktree is gone")
                 return False
             if task["provider"] == "local":
-                self._update(tid, status="starting", phase_detail="waiting for the local model", question=None,
-                             error=None, finished_at=None)
+                self._update(
+                    tid,
+                    status="starting",
+                    phase_detail="waiting for the local model",
+                    question=None,
+                    error=None,
+                    finished_at=None,
+                )
             if not self._wait_local(tid, run, task):
                 return False
             if not (run.pi and run.pi.alive):
@@ -387,6 +431,7 @@ class TaskManager:
                 self._fail(tid, run, "pi did not accept the message")
                 return False
             return True
+
         return entry
 
     def _spawn(self, tid: str, run: Run, task: dict, wt: Path, continue_: bool) -> bool:
@@ -398,15 +443,26 @@ class TaskManager:
         env_name = PROVIDER_KEY_ENV.get(task["provider"])
         if env_name and task["provider"] in self.keys:
             extra[env_name] = self.keys[task["provider"]]
-        argv = self.cfg.pi_argv() + ["--mode", "rpc", "--session-dir", str(session_dir),
-                                     "--provider", task["provider"], "--model", task["model"]]
+        argv = self.cfg.pi_argv() + [
+            "--mode",
+            "rpc",
+            "--session-dir",
+            str(session_dir),
+            "--provider",
+            task["provider"],
+            "--model",
+            task["model"],
+        ]
         if continue_:
             argv.append("--continue")
         pi: PiProcess = PiProcess(
-            argv, wt, clean_env(extra=extra),
+            argv,
+            wt,
+            clean_env(extra=extra),
             on_event=lambda ev: self._on_event(tid, run, ev),
-            on_log=lambda s, l: self._on_log(tid, s, l),
-            on_exit=lambda code: self.store.add_event(tid, "exit", {"code": code}))
+            on_log=lambda s, line: self._on_log(tid, s, line),
+            on_exit=lambda code: self.store.add_event(tid, "exit", {"code": code}),
+        )
         try:
             pi.start()
         except OSError as e:
@@ -463,14 +519,17 @@ class TaskManager:
                 run.prompt_error = str(ev.get("error") or "pi rejected the prompt")
                 run.settled.set()
         elif t == "extension_ui_request" and ev.get("method") in QUESTION_METHODS:
-            q = {k: ev.get(k) for k in ("id", "method", "title", "message", "options", "placeholder", "prefill",
-                                        "timeout") if k in ev}
+            q = {
+                k: ev.get(k)
+                for k in ("id", "method", "title", "message", "options", "placeholder", "prefill", "timeout")
+                if k in ev
+            }
             method = ev.get("method")
             # confirm -> answer with `confirmed`; select -> `value` (one of options); input/editor -> `value`
             q["kind"] = {"confirm": "confirm", "select": "select"}.get(method, "input")
             title = str(q.get("title") or "")
             if method == "input" and title.startswith(ASK_PREFIX):
-                q.update(kind="ask_echo", title="Question from pi", message=title[len(ASK_PREFIX):])
+                q.update(kind="ask_echo", title="Question from pi", message=title[len(ASK_PREFIX) :])
             q["asked_at"] = now()
             run.pending_question = True
             with self._lock:
@@ -478,14 +537,23 @@ class TaskManager:
                 qs = list(task["questions"]) if task else []
                 if not any(x.get("id") == q.get("id") for x in qs):
                     qs.append(q)
-                self._update(tid, status="question", question=qs[0], questions=qs,
-                             phase_detail=str(qs[0].get("message") or qs[0].get("title") or "waiting for an answer"))
+                self._update(
+                    tid,
+                    status="question",
+                    question=qs[0],
+                    questions=qs,
+                    phase_detail=str(qs[0].get("message") or qs[0].get("title") or "waiting for an answer"),
+                )
 
     @staticmethod
-    def _relative(task: Optional[dict], p: str) -> str:
+    def _relative(task: dict | None, p: str) -> str:
         if task and task.get("worktree"):
             try:
-                return Path(p).resolve().relative_to(Path(task["worktree"]).resolve()).as_posix() if Path(p).is_absolute() else p
+                return (
+                    Path(p).resolve().relative_to(Path(task["worktree"]).resolve()).as_posix()
+                    if Path(p).is_absolute()
+                    else p
+                )
             except ValueError:
                 return p
         return p
@@ -513,8 +581,11 @@ class TaskManager:
             t = time.monotonic()
             if t > deadline:
                 return "timeout"
-            if (run.agent_end_at and not run.pending_question
-                    and t - max(run.agent_end_at, run.last_activity) >= self.cfg.settle_s):
+            if (
+                run.agent_end_at
+                and not run.pending_question
+                and t - max(run.agent_end_at, run.last_activity) >= self.cfg.settle_s
+            ):
                 return "settled"
             if run.pi and run.pi.exited.is_set():
                 return "settled" if run.agent_end_at else "exited"
@@ -552,19 +623,37 @@ class TaskManager:
             return self._fail(tid, run, f"commit failed: {e}")
         if unchanged and self._asks_in_text(task):
             qid = f"text-{len(self.store.events(tid, 0, 100000))}"
-            q = {"id": qid, "method": "text", "kind": "text", "title": "Question from pi",
-                 "message": task["last_text"].strip(), "options": None, "asked_at": now()}
-            self._update(tid, status="question", question=q, questions=[q], current_tool=None,
-                         phase_detail="pi ended its turn with a question")
+            q = {
+                "id": qid,
+                "method": "text",
+                "kind": "text",
+                "title": "Question from pi",
+                "message": task["last_text"].strip(),
+                "options": None,
+                "asked_at": now(),
+            }
+            self._update(
+                tid,
+                status="question",
+                question=q,
+                questions=[q],
+                current_tool=None,
+                phase_detail="pi ended its turn with a question",
+            )
             return
         if unchanged:
             if run.pi:
                 run.pi.stop(1)
             gitops.remove_worktree(Path(ws.path), wt, task["branch"])
-            self._update(tid, status="done", review=review_mod.no_changes_review(), finished_at=now(),
-                         phase_detail="no changes were made")
+            self._update(
+                tid,
+                status="done",
+                review=review_mod.no_changes_review(),
+                finished_at=now(),
+                phase_detail="no changes were made",
+            )
             return
-        checks_ok: Optional[bool] = None
+        checks_ok: bool | None = None
         if ws.checks:
             self._update(tid, status="checks", phase_detail="running checks")
             self._ensure_setup(tid, run, ws, wt)
@@ -585,7 +674,7 @@ class TaskManager:
         return (task.get("last_text") or "").strip().endswith("?")
 
     @staticmethod
-    def detect_setup(wt: Path) -> Optional[str]:
+    def detect_setup(wt: Path) -> str | None:
         """The install command to use when a workspace has no setup command, judged by the lockfile."""
         if (wt / "pnpm-lock.yaml").exists():
             return "pnpm install --frozen-lockfile --prefer-offline"
@@ -618,8 +707,15 @@ class TaskManager:
 
     def _run_command(self, run: Run, command: str, cwd: Path, timeout_s: float, label: str) -> tuple[bool, str]:
         """Run a shell command with the stripped environment; returns (succeeded, the last lines of output)."""
-        p = subprocess.Popen(command, shell=True, cwd=str(cwd), env=clean_env(), stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, **popen_flags())
+        p = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=str(cwd),
+            env=clean_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            **popen_flags(),
+        )
         run.checks_proc = p
         timed_out = False
         try:
@@ -673,11 +769,21 @@ class TaskManager:
             run.active = True
         if task["provider"] == "local":
             # The local model may have been swapped out: wait for it in the worker.
-            self._update(tid, status="starting", phase_detail="waiting for the local model", error=None, finished_at=None,
-                         question=None)
+            self._update(
+                tid,
+                status="starting",
+                phase_detail="waiting for the local model",
+                error=None,
+                finished_at=None,
+                question=None,
+            )
             self.store.add_event(tid, "runner", {"follow_up": message})
-            run.thread = threading.Thread(target=self._worker, args=(tid, run, self._restart_pi(message, "follow-up")),
-                                          daemon=True, name=f"task-{tid}")
+            run.thread = threading.Thread(
+                target=self._worker,
+                args=(tid, run, self._restart_pi(message, "follow-up")),
+                daemon=True,
+                name=f"task-{tid}",
+            )
             run.thread.start()
             return self._get(tid)
         try:
@@ -699,8 +805,14 @@ class TaskManager:
         run.thread.start()
         return self._get(tid)
 
-    def answer(self, tid: str, value: Optional[str], confirmed: Optional[bool], cancelled: Optional[bool],
-               dialog_id: Optional[str] = None) -> dict:
+    def answer(
+        self,
+        tid: str,
+        value: str | None,
+        confirmed: bool | None,
+        cancelled: bool | None,
+        dialog_id: str | None = None,
+    ) -> dict:
         with self._lock:
             task = self._get(tid)
             qs = task["questions"]
@@ -742,11 +854,19 @@ class TaskManager:
             pi.send(msg)
             self.store.add_event(tid, "runner", {"answer": {k: v for k, v in msg.items() if k != "type"}})
             if rest:
-                return self._update(tid, status="question", question=rest[0], questions=rest,
-                                    phase_detail=str(rest[0].get("message") or rest[0].get("title"))) or task
+                return (
+                    self._update(
+                        tid,
+                        status="question",
+                        question=rest[0],
+                        questions=rest,
+                        phase_detail=str(rest[0].get("message") or rest[0].get("title")),
+                    )
+                    or task
+                )
             return self._update(tid, status="working", question=None, phase_detail="answered") or task
 
-    def _stop_run(self, tid: str, why: str) -> Optional[Run]:
+    def _stop_run(self, tid: str, why: str) -> Run | None:
         run = self._runs.get(tid)
         if not run:
             return None
@@ -766,23 +886,37 @@ class TaskManager:
         if task["status"] not in ("queued", "starting", "working", "question", "checks", "review", "paused"):
             raise CoderError(409, f"cannot cancel a task that is {task['status']}")
         self._stop_run(tid, "cancelled")
-        out = self._update(tid, force=True, status="cancelled", current_tool=None, question=None,
-                           finished_at=now(), phase_detail="cancelled") or task
+        out = (
+            self._update(
+                tid,
+                force=True,
+                status="cancelled",
+                current_tool=None,
+                question=None,
+                finished_at=now(),
+                phase_detail="cancelled",
+            )
+            or task
+        )
         if task["status"] == "paused":
             self.pump()  # a paused task held a slot but has no worker to free it
         return out
 
     # ---- hold: Echo needs the local model server ---------------------------------------------
 
-    def set_hold(self, hold: bool, reason: Optional[str] = None) -> dict:
+    def set_hold(self, hold: bool, reason: str | None = None) -> dict:
         """While held, local tasks are paused (pi stopped, session kept) and new ones wait. Releasing resumes them."""
         with self._lock:
             if self._closed:
                 return self.status()
             self._hold = hold
-            ids = [t["id"] for t in self.store.list_tasks()
-                   if t["provider"] == "local" and (t["status"] in ("working", "question") if hold else t["status"] == "paused")
-                   and not self._text_question_only(t)]
+            ids = [
+                t["id"]
+                for t in self.store.list_tasks()
+                if t["provider"] == "local"
+                and (t["status"] in ("working", "question") if hold else t["status"] == "paused")
+                and not self._text_question_only(t)
+            ]
         for tid in ids:
             (self._pause if hold else self._resume)(tid, reason)
         if self.on_change:
@@ -792,7 +926,7 @@ class TaskManager:
                 pass
         return self.status()
 
-    def _pause(self, tid: str, reason: Optional[str]) -> None:
+    def _pause(self, tid: str, reason: str | None) -> None:
         run = self._runs.get(tid)
         task = self.store.get_task(tid)
         if not run or not task:
@@ -805,10 +939,11 @@ class TaskManager:
         if run.thread and run.thread.is_alive() and run.thread is not threading.current_thread():
             run.thread.join(10)
         self.store.add_event(tid, "runner", {"message": "paused", "reason": reason})
-        self._update(tid, force=True, status="paused", current_tool=None, question=None, questions=[],
-                     phase_detail=PAUSE_DETAIL)
+        self._update(
+            tid, force=True, status="paused", current_tool=None, question=None, questions=[], phase_detail=PAUSE_DETAIL
+        )
 
-    def _resume(self, tid: str, reason: Optional[str] = None) -> None:
+    def _resume(self, tid: str, reason: str | None = None) -> None:
         run = self._runs.setdefault(tid, Run())
         with self._lock:
             if run.active:
@@ -816,8 +951,12 @@ class TaskManager:
             run.reset()
             run.active = True
         self.store.add_event(tid, "runner", {"message": "resuming after pause"})
-        run.thread = threading.Thread(target=self._worker, args=(tid, run, self._restart_pi(PAUSE_PROMPT, "resumed after a pause")),
-                                      daemon=True, name=f"task-{tid}")
+        run.thread = threading.Thread(
+            target=self._worker,
+            args=(tid, run, self._restart_pi(PAUSE_PROMPT, "resumed after a pause")),
+            daemon=True,
+            name=f"task-{tid}",
+        )
         run.thread.start()
 
     def discard(self, tid: str) -> dict:
@@ -833,8 +972,18 @@ class TaskManager:
             gitops.remove_worktree(Path(ws.path), wt, task["branch"])
         else:
             shutil.rmtree(wt, ignore_errors=True)
-        return self._update(tid, force=True, status="discarded", current_tool=None, question=None,
-                            finished_at=now(), phase_detail="discarded") or task
+        return (
+            self._update(
+                tid,
+                force=True,
+                status="discarded",
+                current_tool=None,
+                question=None,
+                finished_at=now(),
+                phase_detail="discarded",
+            )
+            or task
+        )
 
     # ---- apply ------------------------------------------------------------------------------
 
@@ -858,7 +1007,7 @@ class TaskManager:
             gitops.git("push", "-u", remote, task["branch"], cwd=wt, timeout=300)
         except GitError as e:
             self._update(tid, status="review", error=f"push failed: {e}", phase_detail="push failed")
-            raise CoderError(502, f"push failed: {e}")
+            raise CoderError(502, f"push failed: {e}") from e
         pr_url, detail = None, f"Branch {task['branch']} pushed."
         owner_repo = gitops.parse_owner_repo(gitops.remote_url(repo, remote))
         if not owner_repo:
@@ -868,8 +1017,16 @@ class TaskManager:
             body = self._pr_body(task)
             try:
                 if self.keys.get("github"):
-                    pr_url = github.create_pr_api(self.cfg.github_api, self.keys["github"], *owner_repo,
-                                                  task["branch"], ws.base_branch, title, body, draft)
+                    pr_url = github.create_pr_api(
+                        self.cfg.github_api,
+                        self.keys["github"],
+                        *owner_repo,
+                        task["branch"],
+                        ws.base_branch,
+                        title,
+                        body,
+                        draft,
+                    )
                 elif github.gh_available():
                     pr_url = github.create_pr_gh(wt, task["branch"], ws.base_branch, title, body, draft)
                 else:
@@ -877,7 +1034,9 @@ class TaskManager:
             except github.PrError as e:
                 detail += f" The pull request could not be opened: {e}"
         gitops.remove_worktree(repo, wt)
-        return self._update(tid, status="done", pr_url=pr_url, error=None, finished_at=now(), phase_detail=detail) or task
+        return (
+            self._update(tid, status="done", pr_url=pr_url, error=None, finished_at=now(), phase_detail=detail) or task
+        )
 
     @staticmethod
     def _pr_body(task: dict) -> str:
@@ -890,8 +1049,11 @@ class TaskManager:
         if task["checks_ok"] is None:
             parts += ["## Checks", "No checks were configured."]
         else:
-            parts += ["## Checks", "Passed." if task["checks_ok"] else "Failed.",
-                      "```\n" + "\n".join((task["checks_output"] or "").splitlines()[-30:]) + "\n```"]
+            parts += [
+                "## Checks",
+                "Passed." if task["checks_ok"] else "Failed.",
+                "```\n" + "\n".join((task["checks_output"] or "").splitlines()[-30:]) + "\n```",
+            ]
         parts += ["## Changes", rev.get("summary", "")]
         if rev.get("flags"):
             parts += ["## Review flags"] + [f"- {f}" for f in rev["flags"]]
@@ -948,7 +1110,7 @@ class TaskManager:
         try:
             return self._check_pr(task)
         except github.PrError as e:
-            raise CoderError(502, str(e))
+            raise CoderError(502, str(e)) from e
 
     def _check_pr(self, task: dict) -> dict:
         parsed = github.parse_pr_url(task["pr_url"])
@@ -971,8 +1133,9 @@ class TaskManager:
     def _emit_pr(self, task: dict) -> None:
         if self.on_change:
             try:
-                self.on_change({"type": "pr", "task_id": task["id"], "pr_state": task["pr_state"],
-                                "ci_state": task["ci_state"]})
+                self.on_change(
+                    {"type": "pr", "task_id": task["id"], "pr_state": task["pr_state"], "ci_state": task["ci_state"]}
+                )
             except Exception:
                 log.exception("could not publish a pull request update")
 

@@ -7,7 +7,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,12 +33,12 @@ class Workspace(BaseModel):
     path: str
     kind: Literal["project", "self"] = "project"
     base_branch: str = "main"
-    checks: Optional[str] = None
+    checks: str | None = None
     # Run in the fresh worktree before pi starts. Unset means auto-detect from the lockfile.
-    setup: Optional[str] = None
-    protected_paths: Optional[list[str]] = None
-    model: Optional[ModelRef] = None
-    time_limit_min: Optional[float] = Field(default=None, gt=0)
+    setup: str | None = None
+    protected_paths: list[str] | None = None
+    model: ModelRef | None = None
+    time_limit_min: float | None = Field(default=None, gt=0)
 
 
 class WorkspaceError(ValueError):
@@ -76,7 +76,7 @@ class WorkspaceRegistry:
         with self._lock:
             return list(self._items)
 
-    def get(self, wid: str) -> Optional[Workspace]:
+    def get(self, wid: str) -> Workspace | None:
         return next((w for w in self.all() if w.id == wid), None)
 
     def replace(self, items: list[Workspace]) -> list[Workspace]:

@@ -51,7 +51,8 @@ def main(argv=None) -> int:
 
     if a.host not in ("127.0.0.1", "localhost", "::1"):
         logging.getLogger("switchboard").warning(
-            "Listening on %s: anyone who can reach this port can read and publish every event.", a.host)
+            "Listening on %s: anyone who can reach this port can read and publish every event.", a.host
+        )
     uvicorn.run(create_app(Config.from_env()), host=a.host, port=a.port, log_level=a.log_level.lower())
     return 0
 

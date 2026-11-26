@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-
 from aiembodied_workflows import acts
 
 
@@ -40,8 +39,9 @@ async def no_sleep(_):
 async def test_done_returns_the_result_and_publishes_the_contract_shape():
     sb = FakeSwitchboard(["open", "accepted", "done"], {"ok": True, "result": {"hour": 9}})
     beats = []
-    out = await acts.run_act(client(sb), "echo", "context", {}, workflow_id="life:echo", heartbeat=lambda: beats.append(1),
-                             sleep=no_sleep)
+    out = await acts.run_act(
+        client(sb), "echo", "context", {}, workflow_id="life:echo", heartbeat=lambda: beats.append(1), sleep=no_sleep
+    )
     assert out == {"hour": 9} and len(beats) == 2 and sb.gets == 3
     ev = sb.posted[0]
     assert ev["type"] == "agent.act" and ev["to"] == ["service:app"] and ev["audience"] == "private"
@@ -107,7 +107,9 @@ async def test_http_error_is_raised_for_retry():
         return httpx.Response(500)
 
     with pytest.raises(httpx.HTTPStatusError):
-        await acts.run_act(httpx.AsyncClient(base_url="http://sb", transport=httpx.MockTransport(boom)), "echo", "say", {})
+        await acts.run_act(
+            httpx.AsyncClient(base_url="http://sb", transport=httpx.MockTransport(boom)), "echo", "say", {}
+        )
 
 
 def test_journal_event_shape():

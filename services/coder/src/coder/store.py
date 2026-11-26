@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 ACTIVE = ("starting", "working", "question", "checks", "pushing", "paused")
 JSON_COLS = ("acceptance", "scope", "files_touched", "question", "questions", "review")
@@ -87,12 +87,12 @@ class Store:
             self.db.commit()
         return self.get_task(f["id"])  # type: ignore[return-value]
 
-    def get_task(self, tid: str) -> Optional[dict]:
+    def get_task(self, tid: str) -> dict | None:
         with self.lock:
             r = self.db.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
         return self._row(r) if r else None
 
-    def update_task(self, tid: str, **f: Any) -> Optional[dict]:
+    def update_task(self, tid: str, **f: Any) -> dict | None:
         f["updated_at"] = now()
         for c in JSON_COLS:
             if c in f and f[c] is not None:
@@ -105,7 +105,7 @@ class Store:
             self.db.commit()
         return self.get_task(tid)
 
-    def list_tasks(self, status: Optional[str] = None) -> list[dict]:
+    def list_tasks(self, status: str | None = None) -> list[dict]:
         q, args = "SELECT * FROM tasks", []
         if status:
             q += " WHERE status=?"
@@ -119,7 +119,9 @@ class Store:
         if len(text) > EVENT_CAP:
             text = json.dumps({"truncated": True, "original_bytes": len(text), "preview": text[:2000]})
         with self.lock:
-            seq = (self.db.execute("SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id=?", (tid,)).fetchone()[0]) + 1
+            seq = (
+                (self.db.execute("SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id=?", (tid,)).fetchone()[0]) + 1
+            )
             self.db.execute("INSERT INTO events VALUES (?,?,?,?,?)", (tid, seq, now(), type_, text))
             self.db.commit()
         return seq
@@ -128,16 +130,31 @@ class Store:
         with self.lock:
             rows = self.db.execute(
                 "SELECT seq, ts, type, payload FROM events WHERE task_id=? AND seq>? ORDER BY seq LIMIT ?",
-                (tid, after, limit)).fetchall()
-        return [{"seq": r["seq"], "ts": r["ts"], "type": r["type"], "payload": json.loads(r["payload"]) if r["payload"] else None}
-                for r in rows]
+                (tid, after, limit),
+            ).fetchall()
+        return [
+            {
+                "seq": r["seq"],
+                "ts": r["ts"],
+                "type": r["type"],
+                "payload": json.loads(r["payload"]) if r["payload"] else None,
+            }
+            for r in rows
+        ]
 
     def mark_stale_failed(self) -> list[str]:
         marks = ",".join("?" * len(ACTIVE))
         with self.lock:
             ids = [r[0] for r in self.db.execute(f"SELECT id FROM tasks WHERE status IN ({marks})", ACTIVE)]
         for tid in ids:
-            self.update_task(tid, status="failed", error="runner restarted", question=None, questions=[], current_tool=None,
-                             finished_at=now())
+            self.update_task(
+                tid,
+                status="failed",
+                error="runner restarted",
+                question=None,
+                questions=[],
+                current_tool=None,
+                finished_at=now(),
+            )
             self.add_event(tid, "runner", {"message": "runner restarted; task marked failed"})
         return ids

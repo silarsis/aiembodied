@@ -13,6 +13,7 @@ The model lands in <output-dir>/<slug>.onnx with <slug>.json beside it.
 
 These are the settings of the shipped "hey echo" model (v4 in experiments/wakeword/README.md).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,9 +66,22 @@ def near_misses(phrase: str) -> list[str]:
     phoneme-based ones; these are the everyday sentences those miss (v1/v2 woke on "the echo...")."""
     words = phrase.lower().split()
     first, last = words[0], words[-1]
-    out = [last, f"the {last}", f"a {last}", f"an {last}", f"that {last}", f"this {last}", f"they {last}",
-           f"{last}s", f"{last} {last}", f"there's a {last}", f"the {last} was really loud", f"I said {last}",
-           f"the {last} in here", f"say {last}"]
+    out = [
+        last,
+        f"the {last}",
+        f"a {last}",
+        f"an {last}",
+        f"that {last}",
+        f"this {last}",
+        f"they {last}",
+        f"{last}s",
+        f"{last} {last}",
+        f"there's a {last}",
+        f"the {last} was really loud",
+        f"I said {last}",
+        f"the {last} in here",
+        f"say {last}",
+    ]
     if len(words) > 1:
         rest = " ".join(words[1:])
         head = " ".join(words[:-1])
@@ -147,8 +161,15 @@ class Job:
         (tqdm's carriage-return updates included); the heartbeat keeps status.json fresh meanwhile."""
         self.log("$ " + " ".join(command))
         with self.log_path.open("a") as log:
-            self.child = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                          text=True, bufsize=1, env={**os.environ, "PYTHONUNBUFFERED": "1"})
+            self.child = subprocess.Popen(
+                command,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            )
             assert self.child.stdout is not None
             buffer = ""
             while True:
@@ -176,10 +197,16 @@ class Job:
                 self.write_status()
 
     def generated_fraction(self) -> float:
-        targets = {"positive_train": self.n_samples, "positive_test": self.n_val,
-                   "negative_train": self.n_samples, "negative_test": self.n_val}
-        counts = [min(target, len(list((self.clip_dir / name).glob("*.wav"))) if (self.clip_dir / name).exists() else 0)
-                  for name, target in targets.items()]
+        targets = {
+            "positive_train": self.n_samples,
+            "positive_test": self.n_val,
+            "negative_train": self.n_samples,
+            "negative_test": self.n_val,
+        }
+        counts = [
+            min(target, len(list((self.clip_dir / name).glob("*.wav"))) if (self.clip_dir / name).exists() else 0)
+            for name, target in targets.items()
+        ]
         return sum(counts) / sum(targets.values())
 
     # -- stages -----------------------------------------------------------------------------
@@ -258,11 +285,21 @@ target_false_positives_per_hour: 1.0
             return
         scale = 0.1 if self.quick else 1.0
         script = HERE / "generate_extra_clips.py"
-        code = self.run([str(VENV_PYTHON), str(script), "--clip-dir", str(self.clip_dir),
-                         "--negatives", json.dumps(near_misses(self.phrase)),
-                         "--positives", json.dumps(positive_variants(self.phrase)),
-                         "--scale", str(scale)],
-                        progress=lambda line: self.batch_progress(line))
+        code = self.run(
+            [
+                str(VENV_PYTHON),
+                str(script),
+                "--clip-dir",
+                str(self.clip_dir),
+                "--negatives",
+                json.dumps(near_misses(self.phrase)),
+                "--positives",
+                json.dumps(positive_variants(self.phrase)),
+                "--scale",
+                str(scale),
+            ],
+            progress=lambda line: self.batch_progress(line),
+        )
         if code != 0:
             raise RuntimeError("Generating near-miss clips failed; see train.log.")
         marker.touch()
@@ -274,8 +311,11 @@ target_false_positives_per_hour: 1.0
 
     def augment(self) -> None:
         self.enter("augment")
-        features = [self.clip_dir / f"{kind}_features_{split}.npy" for kind in ("positive", "negative")
-                    for split in ("train", "test")]
+        features = [
+            self.clip_dir / f"{kind}_features_{split}.npy"
+            for kind in ("positive", "negative")
+            for split in ("train", "test")
+        ]
         if all(path.exists() for path in features):
             return
 
@@ -283,7 +323,9 @@ target_false_positives_per_hour: 1.0
             self.write_status(stageProgress=sum(path.exists() for path in features) / len(features))
 
         # --overwrite: a feature file left by an interrupted run would otherwise make train.py skip the whole stage.
-        if self.train_py("--augment_clips", "--overwrite", progress=progress) != 0 or not all(path.exists() for path in features):
+        if self.train_py("--augment_clips", "--overwrite", progress=progress) != 0 or not all(
+            path.exists() for path in features
+        ):
             raise RuntimeError("Augmenting clips failed; see train.log.")
 
     def train(self) -> dict:
@@ -294,8 +336,11 @@ target_false_positives_per_hour: 1.0
         phase = {"done": 0, "last": 0}
 
         def progress(line: str) -> None:
-            for name, key in (("Accuracy", "accuracy"), ("Recall", "recall"),
-                              ("False Positives per Hour", "falsePositivesPerHour")):
+            for name, key in (
+                ("Accuracy", "accuracy"),
+                ("Recall", "recall"),
+                ("False Positives per Hour", "falsePositivesPerHour"),
+            ):
                 match = re.search(rf"Final Model {name}:\s*([0-9.]+)", line)
                 if match:
                     metrics[key] = float(match[1])
@@ -306,7 +351,9 @@ target_false_positives_per_hour: 1.0
                 if step < phase["last"]:
                     phase["done"] += phase["last"]
                 phase["last"] = step
-                self.write_status(stageProgress=min(0.99, (phase["done"] + step) / total), message=f"step {step:,} of {steps:,}")
+                self.write_status(
+                    stageProgress=min(0.99, (phase["done"] + step) / total), message=f"step {step:,} of {steps:,}"
+                )
 
         started = time.time()
         code = self.train_py("--train_model", progress=progress)

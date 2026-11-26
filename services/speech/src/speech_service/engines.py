@@ -39,8 +39,9 @@ class Synthesizer(Protocol):
 class WhisperTranscriber:
     """faster-whisper (CTranslate2). On a Ryzen AI Max CPU, small.en takes ~1 s per 4 s utterance."""
 
-    def __init__(self, model: str = "small.en", device: str = "auto", compute_type: str = "default",
-                 beam_size: int = 1):
+    def __init__(
+        self, model: str = "small.en", device: str = "auto", compute_type: str = "default", beam_size: int = 1
+    ):
         self.model_name = model
         self.device = device
         self.compute_type = compute_type
@@ -57,8 +58,12 @@ class WhisperTranscriber:
     def transcribe(self, audio: np.ndarray, language: str | None) -> str:
         assert self._model is not None, "load() first"
         segments, _info = self._model.transcribe(
-            audio, language=language, beam_size=self.beam_size, condition_on_previous_text=False,
-            vad_filter=True, without_timestamps=True,
+            audio,
+            language=language,
+            beam_size=self.beam_size,
+            condition_on_previous_text=False,
+            vad_filter=True,
+            without_timestamps=True,
         )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
@@ -96,14 +101,26 @@ class ChatAudioTranscriber:
             "model": self.model,
             "temperature": 0,
             "max_tokens": 512,
-            "messages": [{"role": "user", "content": [{
-                "type": "input_audio",
-                "input_audio": {"data": base64.b64encode(buffer.getvalue()).decode("ascii"), "format": "wav"},
-            }]}],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": base64.b64encode(buffer.getvalue()).decode("ascii"),
+                                "format": "wav",
+                            },
+                        }
+                    ],
+                }
+            ],
         }
         request = urllib.request.Request(
-            f"{self.base_url}/chat/completions", data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"}, method="POST",
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             reply = json.loads(response.read())
@@ -145,7 +162,7 @@ class KokoroSynthesizer:
         style = voice
         if self.style_row is not None:
             row = min(self.style_row, 509)
-            style = self._kokoro.get_voice_style(voice)[row:row + 1]
+            style = self._kokoro.get_voice_style(voice)[row : row + 1]
         samples, rate = self._kokoro.create(text, voice=style, speed=speed, lang=lang)
         return np.asarray(samples, dtype=np.float32), int(rate)
 

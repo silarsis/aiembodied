@@ -37,14 +37,17 @@ def main():
     clip_ms, server = [], []
     for i in range(a.runs):
         t = time.perf_counter()
-        body = json.load(post(a.url + "/v1/motion/clip",
-                              {"prompt": a.prompt, "duration": a.clip_duration, "name": "wave-hello"}))
+        body = json.load(
+            post(a.url + "/v1/motion/clip", {"prompt": a.prompt, "duration": a.clip_duration, "name": "wave-hello"})
+        )
         clip_ms.append((time.perf_counter() - t) * 1000)
         server.append(body["timings"])
         if a.out and i == 0:
             (a.out / "clip.json").write_text(json.dumps(body["vrma"]))
-    print(f"clip {a.clip_duration}s: wall median {statistics.median(clip_ms):.0f} ms {[round(x) for x in clip_ms]}; "
-          f"server {server[-1]}")
+    print(
+        f"clip {a.clip_duration}s: wall median {statistics.median(clip_ms):.0f} ms {[round(x) for x in clip_ms]}; "
+        f"server {server[-1]}"
+    )
 
     first, total, per_chunk = [], [], []
     for i in range(a.runs):
@@ -64,8 +67,10 @@ def main():
                 print(f"  stream run {i}: chunk arrivals {[round(x) for x in arrivals[:-1]]} ms, done {msg}")
         first.append(arrivals[0])
         total.append(arrivals[-1])
-    print(f"stream {a.stream_duration}s: first chunk wall median {statistics.median(first):.0f} ms, "
-          f"done median {statistics.median(total):.0f} ms")
+    print(
+        f"stream {a.stream_duration}s: first chunk wall median {statistics.median(first):.0f} ms, "
+        f"done median {statistics.median(total):.0f} ms"
+    )
 
 
 if __name__ == "__main__":

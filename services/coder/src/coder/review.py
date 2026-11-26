@@ -4,18 +4,33 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
 
 from . import gitops
 
-LOCKFILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock", "uv.lock", "Cargo.lock",
-             "Pipfile.lock", "bun.lockb", "composer.lock", "Gemfile.lock", "go.sum"}
+LOCKFILES = {
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "poetry.lock",
+    "uv.lock",
+    "Cargo.lock",
+    "Pipfile.lock",
+    "bun.lockb",
+    "composer.lock",
+    "Gemfile.lock",
+    "go.sum",
+}
 TEST_DIR = re.compile(r"(^|/)(tests?|__tests__|spec|specs)/", re.I)
 MAX_LINES = 1000
 
 
-def build_review(worktree: Path, base_commit: str, protected: list[str], checks_ok: Optional[bool] = None,
-                 setup_ok: Optional[bool] = None) -> dict:
+def build_review(
+    worktree: Path,
+    base_commit: str,
+    protected: list[str],
+    checks_ok: bool | None = None,
+    setup_ok: bool | None = None,
+) -> dict:
     files = gitops.numstat(worktree, base_commit)
     deleted = gitops.deleted_files(worktree, base_commit)
     added = sum(f["added"] for f in files)
@@ -51,5 +66,14 @@ def build_review(worktree: Path, base_commit: str, protected: list[str], checks_
 
 
 def no_changes_review() -> dict:
-    return {"no_changes": True, "summary": "No changes were made.", "files": [], "changed_files": [], "added": 0,
-            "deleted": 0, "changed_lines": 0, "protected_violations": [], "flags": []}
+    return {
+        "no_changes": True,
+        "summary": "No changes were made.",
+        "files": [],
+        "changed_files": [],
+        "added": 0,
+        "deleted": 0,
+        "changed_lines": 0,
+        "protected_violations": [],
+        "flags": [],
+    }

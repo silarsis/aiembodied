@@ -15,7 +15,8 @@ import os
 import re
 import threading
 import time
-from typing import Optional, Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 DIMENSION = 384
 
@@ -34,13 +35,13 @@ class FastEmbedEmbedder:
 
     RETRY_SECONDS = 300.0
 
-    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", cache_dir: Optional[str] = None):
+    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", cache_dir: str | None = None):
         self.name = model
         self.dimension = DIMENSION
         self._cache_dir = cache_dir or default_cache_dir()
         self._model = None
-        self._failed_at: Optional[float] = None
-        self._failure: Optional[str] = None
+        self._failed_at: float | None = None
+        self._failure: str | None = None
         self._lock = threading.Lock()
 
     def _load(self):
@@ -100,7 +101,7 @@ class FakeEmbedder:
         return [x / norm for x in vector]
 
 
-def make_embedder(kind: str, model: Optional[str] = None) -> Optional[Embedder]:
+def make_embedder(kind: str, model: str | None = None) -> Embedder | None:
     """kind: fastembed (default), fake, or off (full-text search only)."""
     if kind == "off":
         return None

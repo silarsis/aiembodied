@@ -1,4 +1,5 @@
 """Tests for run_finetune.py that need neither torch nor laya (and never touch the real hold-out files)."""
+
 import json
 import os
 import sys
@@ -16,22 +17,37 @@ def acc(a, w, o, all3):
 
 
 def fake_set(all3, misses=()):
-    return {"rows": 10, "counted": 10, "accuracy": {"addressed": 0.99, "wants": 0.98, "other": 0.97},
-            "all_three": all3, "mean_top_prob_right": 0.9, "mean_top_prob_wrong": 0.6,
-            "latency_median": 0.02, "misses": list(misses)}
+    return {
+        "rows": 10,
+        "counted": 10,
+        "accuracy": {"addressed": 0.99, "wants": 0.98, "other": 0.97},
+        "all_three": all3,
+        "mean_top_prob_right": 0.9,
+        "mean_top_prob_wrong": 0.6,
+        "latency_median": 0.02,
+        "misses": list(misses),
+    }
 
 
 def fake_miss(text, top, counted=True):
-    return {"text": text, "group": "g", "counted": counted,
-            "expected": {"addressed": ["lenha"], "wants": ["answer"], "other": ["none"]},
-            "got": {"addressed": "everyone", "wants": "answer", "other": "none"},
-            "raw": {"addressed": {"key": "everyone", "top": top, "probabilities": {"everyone": top}}},
-            "error": None}
+    return {
+        "text": text,
+        "group": "g",
+        "counted": counted,
+        "expected": {"addressed": ["lenha"], "wants": ["answer"], "other": ["none"]},
+        "got": {"addressed": "everyone", "wants": "answer", "other": "none"},
+        "raw": {"addressed": {"key": "everyone", "top": top, "probabilities": {"everyone": top}}},
+        "error": None,
+    }
 
 
 def fake_results(floor, fresh, misses=()):
-    return {"val": fake_set(0.99), "holdout_floor": fake_set(floor, misses), "holdout_fresh": fake_set(fresh),
-            "latency": {"device": "cuda", "device_median": 0.01, "cpu_median": 0.05}}
+    return {
+        "val": fake_set(0.99),
+        "holdout_floor": fake_set(floor, misses),
+        "holdout_fresh": fake_set(fresh),
+        "latency": {"device": "cuda", "device_median": 0.01, "cpu_median": 0.05},
+    }
 
 
 class PlainLayerNormTests(unittest.TestCase):
@@ -54,9 +70,13 @@ class PlainLayerNormTests(unittest.TestCase):
         except Exception:
             self.skipTest("torch is not installed")
         F = torch.nn.functional
-        for shape, affine, bias, dtype in (((2, 5, 8), True, True, torch.float32), ((3, 4), False, True, torch.float32),
-                                           ((4, 6), True, False, torch.float32), ((2, 3, 4), True, True, torch.float32),
-                                           ((2, 5, 8), True, True, torch.bfloat16)):
+        for shape, affine, bias, dtype in (
+            ((2, 5, 8), True, True, torch.float32),
+            ((3, 4), False, True, torch.float32),
+            ((4, 6), True, False, torch.float32),
+            ((2, 3, 4), True, True, torch.float32),
+            ((2, 5, 8), True, True, torch.bfloat16),
+        ):
             norm_shape = shape[-2:] if shape == (2, 3, 4) else shape[-1:]
             kw = {"elementwise_affine": affine}
             if affine:
@@ -81,7 +101,7 @@ class PlainLayerNormTests(unittest.TestCase):
                 p.grad = None
             out.backward(g)
             self.assertTrue(torch.allclose(x1.grad.float(), x2.grad.float(), atol=tol * 5, rtol=tol * 5))
-            for a, p in zip(gw, ln.parameters()):
+            for a, p in zip(gw, ln.parameters(), strict=True):
                 self.assertTrue(torch.allclose(a.float(), p.grad.float(), atol=tol * 5, rtol=tol * 5))
 
     def test_apply_counts(self):
@@ -89,7 +109,9 @@ class PlainLayerNormTests(unittest.TestCase):
             import torch
         except Exception:
             self.skipTest("torch is not installed")
-        m = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.LayerNorm(4), torch.nn.LayerNorm(4, elementwise_affine=False))
+        m = torch.nn.Sequential(
+            torch.nn.Linear(4, 4), torch.nn.LayerNorm(4), torch.nn.LayerNorm(4, elementwise_affine=False)
+        )
         self.assertEqual(rf.apply_plain_layernorm(m), 2)
         m(torch.randn(2, 4))
 
@@ -97,20 +119,44 @@ class PlainLayerNormTests(unittest.TestCase):
 class ArgsTests(unittest.TestCase):
     def test_defaults(self):
         a = rf.parse_args(["--work", "w"])
-        self.assertEqual((a.n, a.seed, a.epochs, a.precision, a.loss, a.device, a.micro_batch),
-                         (8000, 0, 4, "auto", "rlcd", "auto", 8))
+        self.assertEqual(
+            (a.n, a.seed, a.epochs, a.precision, a.loss, a.device, a.micro_batch),
+            (8000, 0, 4, "auto", "rlcd", "auto", 8),
+        )
         self.assertEqual(a.base, "convaiinnovations/laya")
         self.assertFalse(a.trial or a.skip_baseline or a.math_attention)
 
     def test_flags(self):
-        a = rf.parse_args(["--work", "w", "--trial", "--skip-baseline", "--math-attention", "--precision", "fp32",
-                           "--loss", "soft-ce", "--epochs", "2", "--device", "cpu", "--micro-batch", "4"])
+        a = rf.parse_args(
+            [
+                "--work",
+                "w",
+                "--trial",
+                "--skip-baseline",
+                "--math-attention",
+                "--precision",
+                "fp32",
+                "--loss",
+                "soft-ce",
+                "--epochs",
+                "2",
+                "--device",
+                "cpu",
+                "--micro-batch",
+                "4",
+            ]
+        )
         self.assertTrue(a.trial and a.skip_baseline and a.math_attention)
         self.assertEqual((a.precision, a.loss, a.epochs, a.device, a.micro_batch), ("fp32", "soft-ce", 2, "cpu", 4))
 
     def test_rejects_bad(self):
-        for bad in (["--work", "w", "--precision", "fp8"], ["--work", "w", "--loss", "x"], [],
-                    ["--work", "w", "--micro-batch", "5"], ["--work", "w", "--epochs", "0"]):
+        for bad in (
+            ["--work", "w", "--precision", "fp8"],
+            ["--work", "w", "--loss", "x"],
+            [],
+            ["--work", "w", "--micro-batch", "5"],
+            ["--work", "w", "--epochs", "0"],
+        ):
             with self.assertRaises(SystemExit):
                 rf.parse_args(bad)
 
@@ -157,12 +203,24 @@ class EstimateTests(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     def test_render(self):
-        misses = [fake_miss("low | one", 0.6), fake_miss("high one", 0.99), fake_miss("debatable", 0.999, counted=False)]
+        misses = [
+            fake_miss("low | one", 0.6),
+            fake_miss("high one", 0.99),
+            fake_miss("debatable", 0.999, counted=False),
+        ]
         res = fake_results(0.96, 0.9, misses)
-        info = {"args": {"loss": "rlcd", "epochs": 4, "n": 8000, "seed": 0, "base": "b", "math_attention": False},
-                "precision": "bf16", "device_text": "Test GPU, 12.0 GB", "versions": {"torch": "2.x", "laya": "0.4.31"},
-                "timings": {"Train": 3600.0}, "epoch_seconds": [900.0, 880.0], "baseline": fake_results(0.5, 0.4),
-                "results": res, "worst": rf.worst_misses(res), "checkpoint": {"path": "/x/checkpoint", "size_mb": 600.1}}
+        info = {
+            "args": {"loss": "rlcd", "epochs": 4, "n": 8000, "seed": 0, "base": "b", "math_attention": False},
+            "precision": "bf16",
+            "device_text": "Test GPU, 12.0 GB",
+            "versions": {"torch": "2.x", "laya": "0.4.31"},
+            "timings": {"Train": 3600.0},
+            "epoch_seconds": [900.0, 880.0],
+            "baseline": fake_results(0.5, 0.4),
+            "results": res,
+            "worst": rf.worst_misses(res),
+            "checkpoint": {"path": "/x/checkpoint", "size_mb": 600.1},
+        }
         text = rf.render_report(info)
         self.assertIn("**Verdict: NEEDS WORK**", text)
         self.assertIn("| hold-out floor | **all three** | 50.0% | **96.0%** |", text)
@@ -173,8 +231,13 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn(chr(0x2014), text)
 
     def test_pass_render_without_baseline(self):
-        info = {"args": {}, "results": fake_results(0.97, 0.96), "baseline": None, "worst": [],
-                "checkpoint": {"path": "p", "size_mb": 1}}
+        info = {
+            "args": {},
+            "results": fake_results(0.97, 0.96),
+            "baseline": None,
+            "worst": [],
+            "checkpoint": {"path": "p", "size_mb": 1},
+        }
         text = rf.render_report(info)
         self.assertIn("**Verdict: PASS**", text)
         self.assertIn("None.", text)
@@ -204,7 +267,9 @@ class ExcludeTests(unittest.TestCase):
     def test_real_holdout_paths_are_next_to_script(self):
         for p in rf.HOLDOUT_FILES:
             self.assertEqual(os.path.dirname(p), os.path.dirname(os.path.abspath(rf.__file__)))
-        self.assertEqual([os.path.basename(p) for p in rf.HOLDOUT_FILES], ["holdout_floor.jsonl", "holdout_fresh.jsonl"])
+        self.assertEqual(
+            [os.path.basename(p) for p in rf.HOLDOUT_FILES], ["holdout_floor.jsonl", "holdout_fresh.jsonl"]
+        )
 
 
 class ScoreDatasetTests(unittest.TestCase):
@@ -218,27 +283,29 @@ class ScoreDatasetTests(unittest.TestCase):
             by_text = {r["meta"]["text"]: r["expected"] for r in rows}
 
             def oracle(payload):
-                text = payload["state"].splitlines()[-1] if isinstance(payload["state"], str) else ""
                 exp = next((e for t, e in by_text.items() if t in payload["state"]), None)
                 return {"answers": {q: {"choice": exp[q], "probabilities": {exp[q]: 0.9}} for q in rf.QIDS}}
+
             res = rf.score_dataset(oracle, p, limit=10)
             self.assertEqual(res["rows"], 10)
             self.assertEqual(res["all_three"], 1.0)
 
             def boom(payload):
                 raise RuntimeError("nope")
+
             with self.assertRaises(rf.StepFailed):
                 rf.score_dataset(boom, p)
 
             def nan(payload):
                 return {"answers": {q: {"choice": "x", "probabilities": {"x": float("nan")}} for q in rf.QIDS}}
+
             with self.assertRaises(rf.NonFiniteError):
                 rf.score_dataset(nan, p)
 
 
 class MiscTests(unittest.TestCase):
     def test_install_help_mentions_pinned_version(self):
-        self.assertIn('laya[serve]==0.4.31', rf.install_help("linux"))
+        self.assertIn("laya[serve]==0.4.31", rf.install_help("linux"))
         self.assertIn("Scripts", rf.install_help("win32"))
         self.assertIn("cu128", rf.install_help("win32"))
 

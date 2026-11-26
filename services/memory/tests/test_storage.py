@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-
 from test_recall import message, post
 
 
@@ -23,7 +22,6 @@ def second_database(database_url):
 
 def make_client(database_url, schema, settings_file):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -45,7 +43,9 @@ def count(url, schema, table):
         return conn.execute(f"SELECT count(*) FROM {schema}.{table}").fetchone()[0]
 
 
-def test_moving_to_an_empty_database_copies_everything_and_is_remembered(database_url, schema, second_database, tmp_path):
+def test_moving_to_an_empty_database_copies_everything_and_is_remembered(
+    database_url, schema, second_database, tmp_path
+):
     settings = tmp_path / "engine-settings.json"
     engine, client = make_client(database_url, schema, settings)
     with client:
@@ -100,7 +100,9 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
             sessions = conn.execute(f"SELECT id FROM {schema}.sessions").fetchall()
             pinned = conn.execute(f"SELECT pinned FROM {schema}.facts WHERE id = %s", (fact,)).fetchone()[0]
             messages = conn.execute(f"SELECT count(*) FROM {schema}.messages").fetchone()[0]
-            embedded = conn.execute(f"SELECT count(*) FROM {schema}.recall_index WHERE embedding IS NOT NULL").fetchone()[0]
+            embedded = conn.execute(
+                f"SELECT count(*) FROM {schema}.recall_index WHERE embedding IS NOT NULL"
+            ).fetchone()[0]
         assert [str(r[0]) for r in sessions] == [str(keep)]
         assert count(second_database, schema, "handoffs") == 0
         # One session forgotten, one message forgotten: only keep's first query is left.
@@ -139,7 +141,9 @@ def test_storage_rejects_other_addresses_and_tests_a_connection(client, database
     assert failed["ok"] is False and "reached" in failed["error"]
 
 
-def test_a_move_from_a_database_that_cannot_be_read_stays_put(database_url, schema, second_database, tmp_path, monkeypatch):
+def test_a_move_from_a_database_that_cannot_be_read_stays_put(
+    database_url, schema, second_database, tmp_path, monkeypatch
+):
     from memory_engine import mirror
 
     def unreadable(*_args, **_kwargs):
@@ -169,4 +173,3 @@ def test_a_second_move_waits_for_the_first(database_url, schema, second_database
             engine.moving = False
         assert response.status_code == 503
         assert engine.database_url == database_url
-

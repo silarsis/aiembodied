@@ -11,8 +11,19 @@ def test_build_event_addresses_the_inbox():
 
 def test_unreachable_switchboard_is_reported():
     out = io.StringIO()
-    assert send.run("http://127.0.0.1:1", "hi", to="avatar:echo", source="me", urgent=False,
-                    type_="avatar.inbox", producer="person:cli", out=out) == 1
+    assert (
+        send.run(
+            "http://127.0.0.1:1",
+            "hi",
+            to="avatar:echo",
+            source="me",
+            urgent=False,
+            type_="avatar.inbox",
+            producer="person:cli",
+            out=out,
+        )
+        == 1
+    )
     assert "Could not reach" in out.getvalue()
 
 
@@ -33,6 +44,17 @@ def test_send_reaches_the_journal(client, monkeypatch):
 
     monkeypatch.setattr(send.urllib.request, "urlopen", fake_open)
     out = io.StringIO()
-    assert send.run("http://x", "hello", to="avatar:echo", source="me", urgent=False, type_="avatar.inbox",
-                    producer="person:cli", out=out) == 0
+    assert (
+        send.run(
+            "http://x",
+            "hello",
+            to="avatar:echo",
+            source="me",
+            urgent=False,
+            type_="avatar.inbox",
+            producer="person:cli",
+            out=out,
+        )
+        == 0
+    )
     assert [e["type"] for e in client.get("/v1/events").json()["events"]] == ["avatar.inbox"]

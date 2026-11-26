@@ -1,6 +1,5 @@
 import pytest
 from fastapi.testclient import TestClient
-
 from switchboard.app import create_app
 from switchboard.models import Config
 
@@ -29,4 +28,5 @@ def publish(client):
         r = client.post("/v1/events", json={"events": list(events)})
         assert r.status_code == 200, r.text
         return r.json()["ids"]
+
     return go

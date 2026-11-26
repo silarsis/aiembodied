@@ -1,33 +1,40 @@
 import pytest
-
 from aiembodied_workflows import conditions as c
 
 
-@pytest.mark.parametrize("cond", [
-    {"kind": "entity", "entityId": "binary_sensor.front_door", "state": "on"},
-    {"kind": "entity", "entityId": "sensor.washer_power", "below": 5, "forSeconds": 180},
-    {"kind": "entity", "entityId": "sensor.x", "above": 30},
-    {"kind": "search", "query": "new gpu", "everyMinutes": 60},
-    {"kind": "service", "url": "http://localhost:8080/health", "everyMinutes": 5},
-    {"kind": "coding_task", "taskId": "20261108-1a2b"},
-])
+@pytest.mark.parametrize(
+    "cond",
+    [
+        {"kind": "entity", "entityId": "binary_sensor.front_door", "state": "on"},
+        {"kind": "entity", "entityId": "sensor.washer_power", "below": 5, "forSeconds": 180},
+        {"kind": "entity", "entityId": "sensor.x", "above": 30},
+        {"kind": "search", "query": "new gpu", "everyMinutes": 60},
+        {"kind": "service", "url": "http://localhost:8080/health", "everyMinutes": 5},
+        {"kind": "coding_task", "taskId": "20261108-1a2b"},
+    ],
+)
 def test_good_conditions(cond):
     assert c.validate_condition(cond) == []
     assert c.describe(cond)
 
 
-@pytest.mark.parametrize("cond", [
-    None, {}, {"kind": "weather"},
-    {"kind": "entity", "state": "on"},
-    {"kind": "entity", "entityId": "a.b"},
-    {"kind": "entity", "entityId": "a.b", "state": "on", "below": 3},
-    {"kind": "entity", "entityId": "a.b", "below": "low"},
-    {"kind": "entity", "entityId": "a.b", "below": 3, "forSeconds": -1},
-    {"kind": "search"},
-    {"kind": "search", "query": "x", "everyMinutes": 0},
-    {"kind": "service", "url": "ftp://x"},
-    {"kind": "coding_task"},
-])
+@pytest.mark.parametrize(
+    "cond",
+    [
+        None,
+        {},
+        {"kind": "weather"},
+        {"kind": "entity", "state": "on"},
+        {"kind": "entity", "entityId": "a.b"},
+        {"kind": "entity", "entityId": "a.b", "state": "on", "below": 3},
+        {"kind": "entity", "entityId": "a.b", "below": "low"},
+        {"kind": "entity", "entityId": "a.b", "below": 3, "forSeconds": -1},
+        {"kind": "search"},
+        {"kind": "search", "query": "x", "everyMinutes": 0},
+        {"kind": "service", "url": "ftp://x"},
+        {"kind": "coding_task"},
+    ],
+)
 def test_bad_conditions(cond):
     assert c.validate_condition(cond)
 
@@ -57,7 +64,9 @@ def test_entity_matches():
     assert not c.entity_matches(on, None)
     assert c.entity_matches(on, {"state": "on"})
     below = {"kind": "entity", "entityId": "x", "below": 5}
-    assert c.entity_matches(below, "3.2") and not c.entity_matches(below, 5) and not c.entity_matches(below, "unavailable")
+    assert (
+        c.entity_matches(below, "3.2") and not c.entity_matches(below, 5) and not c.entity_matches(below, "unavailable")
+    )
     above = {"kind": "entity", "entityId": "x", "above": 5}
     assert c.entity_matches(above, 7) and not c.entity_matches(above, "5")
 

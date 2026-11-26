@@ -2,12 +2,13 @@ import json
 
 import httpx
 import pytest
-
 from aiembodied_workflows.memory import MemoryClient, MemoryError
 
 
 def make(handler):
-    return MemoryClient("http://mem", "tok", client=httpx.AsyncClient(base_url="http://mem", transport=httpx.MockTransport(handler)))
+    return MemoryClient(
+        "http://mem", "tok", client=httpx.AsyncClient(base_url="http://mem", transport=httpx.MockTransport(handler))
+    )
 
 
 async def test_intentions_and_flows_shapes():

@@ -6,8 +6,8 @@ import secrets
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 from .backends.base import StreamHistory
 from .retarget import RootFrame
@@ -29,7 +29,7 @@ class SessionStore:
         self.max_entries = max_entries
         self.ttl_s = ttl_s
         self.clock = clock
-        self._items: "OrderedDict[str, Session]" = OrderedDict()
+        self._items: OrderedDict[str, Session] = OrderedDict()
         self._lock = threading.Lock()
 
     def _expire(self) -> None:
@@ -49,7 +49,7 @@ class SessionStore:
                 self._items.popitem(last=False)
             return sid
 
-    def get(self, sid: str) -> Optional[Session]:
+    def get(self, sid: str) -> Session | None:
         with self._lock:
             self._expire()
             return self._items.get(sid)

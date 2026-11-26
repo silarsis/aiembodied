@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -29,9 +29,9 @@ def put_handoff(
     session_id: UUID,
     text: str,
     *,
-    agent: Optional[str] = None,
-    model: Optional[str] = None,
-    now: Optional[datetime] = None,
+    agent: str | None = None,
+    model: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Write (or replace) the note for this conversation. The conversation is created if its
     own write is still queued."""
@@ -46,7 +46,14 @@ def put_handoff(
         ON CONFLICT (session_id) DO UPDATE SET
             agent = excluded.agent, model = excluded.model, text = excluded.text, updated_at = excluded.updated_at
         """,
-        {"id": note_id, "session": session_id, "agent": agent, "model": (model or "").strip() or None, "text": text, "at": at},
+        {
+            "id": note_id,
+            "session": session_id,
+            "agent": agent,
+            "model": (model or "").strip() or None,
+            "text": text,
+            "at": at,
+        },
     )
     conn.execute(
         """
@@ -61,12 +68,19 @@ def put_handoff(
             embed_model = CASE WHEN recall_index.text = excluded.text THEN recall_index.embed_model END,
             updated_at = now()
         """,
-        {"id": note_id, "session": session_id, "agent": agent, "at": at, "text": text, "importance": HANDOFF_IMPORTANCE},
+        {
+            "id": note_id,
+            "session": session_id,
+            "agent": agent,
+            "at": at,
+            "text": text,
+            "importance": HANDOFF_IMPORTANCE,
+        },
     )
     return {"id": str(note_id), "session_id": str(session_id)}
 
 
-def latest(conn: psycopg.Connection, *, exclude_session: Optional[UUID] = None) -> Optional[dict[str, Any]]:
+def latest(conn: psycopg.Connection, *, exclude_session: UUID | None = None) -> dict[str, Any] | None:
     """The newest note left in any conversation but `exclude_session` (the one starting)."""
     row = conn.execute(
         """

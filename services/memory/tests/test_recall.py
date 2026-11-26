@@ -9,8 +9,14 @@ def at(seconds):
 
 
 def message(session_id, role, content, seconds, **extra):
-    return {"id": str(uuid4()), "session_id": str(session_id), "role": role, "content": content,
-            "created_at": at(seconds), **extra}
+    return {
+        "id": str(uuid4()),
+        "session_id": str(session_id),
+        "role": role,
+        "content": content,
+        "created_at": at(seconds),
+        **extra,
+    }
 
 
 def post(client, *messages):
@@ -40,7 +46,11 @@ def test_hybrid_search_matches_any_word_of_a_spoken_question(client):
 
 def test_hybrid_search_filters_and_excludes(client):
     session = uuid4()
-    post(client, message(session, "user", "garden plans for spring", 0), message(session, "user", "garden plans for autumn", 86400 * 40))
+    post(
+        client,
+        message(session, "user", "garden plans for spring", 0),
+        message(session, "user", "garden plans for autumn", 86400 * 40),
+    )
     later = client.get("/v1/search", params={"q": "garden plans", "from": at(86400)}).json()["results"]
     assert [r["text"] for r in later] == ["User: garden plans for autumn"]
     skip = client.get("/v1/search", params={"q": "garden plans", "exclude": [later[0]["id"]]}).json()["results"]
@@ -89,7 +99,13 @@ def test_memory_detail_gives_the_turn_verbatim_with_its_neighbours(client):
     )
     hit = client.get("/v1/search", params={"q": "car"}).json()["results"][0]
     detail = client.get(f"/v1/memories/{hit['id']}", params={"around": 1}).json()
-    assert [m["content"] for m in detail["messages"]] == ["first", "second about the car", "full page text", "the car answer", "third"]
+    assert [m["content"] for m in detail["messages"]] == [
+        "first",
+        "second about the car",
+        "full page text",
+        "the car answer",
+        "third",
+    ]
     alone = client.get(f"/v1/memories/{hit['id']}", params={"around": 0}).json()
     assert len(alone["messages"]) == 3
     assert client.get(f"/v1/memories/{uuid4()}").status_code == 404
@@ -132,7 +148,6 @@ def test_background_worker_embeds_without_blocking_writes(database_url, schema):
     import time
 
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -155,7 +170,6 @@ def test_embedder_is_only_woken_once_the_write_is_visible(database_url, schema):
 
     import psycopg
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -182,7 +196,6 @@ def test_embedder_is_only_woken_once_the_write_is_visible(database_url, schema):
 
 def test_failed_model_load_waits_before_retrying(monkeypatch):
     import fastembed
-
     from memory_engine.embed import FastEmbedEmbedder
 
     calls = []
@@ -227,8 +240,13 @@ def test_text_search_honours_exclude(client):
 def test_auto_recall_looks_past_a_conversation_full_of_the_same_words(client):
     old, current = uuid4(), uuid4()
     post(client, message(old, "user", "the bees swarmed in the apple tree last spring", 0))
-    post(client, *[message(current, "user", f"the bees swarmed in the apple tree again {i}", 86400 * 30 + i) for i in range(20)])
-    body = client.post("/v1/recall", json={"text": "the bees swarmed in the apple tree", "session_id": str(current)}).json()
+    post(
+        client,
+        *[message(current, "user", f"the bees swarmed in the apple tree again {i}", 86400 * 30 + i) for i in range(20)],
+    )
+    body = client.post(
+        "/v1/recall", json={"text": "the bees swarmed in the apple tree", "session_id": str(current)}
+    ).json()
     assert [item["session_id"] for item in body["items"]] == [str(old)]
 
 
@@ -237,7 +255,12 @@ def test_forgetting_a_session_tombstones_its_extracted_facts_index_rows(summary_
 
     session = uuid4()
     post(summary_client, message(session, "user", "I adopted a cat called Miso", 0))
-    llm.reply = lambda prompt: {"title": "Cat", "summary": "A cat.", "topics": [], "facts": [{"text": "The user has a cat called Miso"}]}
+    llm.reply = lambda prompt: {
+        "title": "Cat",
+        "summary": "A cat.",
+        "topics": [],
+        "facts": [{"text": "The user has a cat called Miso"}],
+    }
     summary_client.post("/v1/summaries/run", json={"now": (T0 + timedelta(minutes=11)).isoformat()})
     fact_index = summary_client.get("/v1/search", params={"q": "Miso", "kind": "fact"}).json()["results"][0]["id"]
     summary_client.delete(f"/v1/sessions/{session}")

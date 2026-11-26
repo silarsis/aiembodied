@@ -13,7 +13,8 @@ import logging
 import os
 import threading
 from collections import deque
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 from urllib import request
 
 log = logging.getLogger("memory_engine.bus")
@@ -31,11 +32,11 @@ class Publisher:
         self._queue: deque[dict[str, Any]] = deque(maxlen=QUEUE_SIZE)
         self._lock = threading.Lock()
         self._wake = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._down = False
 
     @classmethod
-    def from_env(cls, environ: Mapping[str, str] = os.environ) -> "Publisher":
+    def from_env(cls, environ: Mapping[str, str] = os.environ) -> Publisher:
         enabled = (environ.get("SWITCHBOARD_ENABLED") or "1").strip().lower() not in ("0", "false", "no", "off")
         return cls(environ.get("SWITCHBOARD_URL") or DEFAULT_URL, enabled)
 
@@ -74,11 +75,15 @@ class Publisher:
             self._down = False
         except Exception as error:  # noqa: BLE001
             if not self._down:
-                log.warning("Could not publish to the switchboard at %s: %s", self.url, str(error).splitlines()[0] if str(error) else type(error).__name__)
+                log.warning(
+                    "Could not publish to the switchboard at %s: %s",
+                    self.url,
+                    str(error).splitlines()[0] if str(error) else type(error).__name__,
+                )
             self._down = True
 
 
-_default: Optional[Publisher] = None
+_default: Publisher | None = None
 
 
 def default() -> Publisher:
@@ -88,7 +93,7 @@ def default() -> Publisher:
     return _default
 
 
-def set_default(publisher: Optional[Publisher]) -> None:
+def set_default(publisher: Publisher | None) -> None:
     """Replace the shared publisher (tests); None makes the next call read the environment again."""
     global _default
     _default = publisher

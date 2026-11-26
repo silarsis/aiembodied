@@ -8,7 +8,7 @@ import json
 import re
 import urllib.error
 import urllib.request
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 
 class Llm(Protocol):
@@ -40,7 +40,7 @@ def parse_json_object(text: str) -> dict[str, Any]:
 
 
 class OpenAICompatibleLlm:
-    def __init__(self, base_url: str, model: str, api_key: Optional[str] = None, timeout: float = 300.0):
+    def __init__(self, base_url: str, model: str, api_key: str | None = None, timeout: float = 300.0):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.name = model
@@ -78,7 +78,7 @@ class OpenAICompatibleLlm:
         return parse_json_object(content)
 
 
-def make_llm(url: Optional[str], model: str, api_key: Optional[str] = None) -> Optional[Llm]:
+def make_llm(url: str | None, model: str, api_key: str | None = None) -> Llm | None:
     if not url or url.strip().lower() in ("off", "none", "0"):
         return None
     return OpenAICompatibleLlm(url, model, api_key)

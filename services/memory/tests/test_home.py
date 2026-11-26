@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-
 from memory_engine import home
 from memory_engine.home import classify, deadband, describe_change, keep_reading, ws_url
 
@@ -20,8 +19,9 @@ def iso(seconds):
 @pytest.fixture
 def second_database(database_url):
     """A second, empty database on the same server."""
-    import psycopg
     from urllib.parse import urlsplit, urlunsplit
+
+    import psycopg
 
     name = f"memtest_{uuid4().hex[:10]}"
     with psycopg.connect(database_url, autocommit=True) as conn:
@@ -81,16 +81,38 @@ def test_keep_reading():
 
 
 def test_describe_change():
-    assert describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on") == "Front door (Hallway) opened, was closed."
-    assert describe_change("Front door", "Hallway", "binary_sensor", "door", "on", "off") == "Front door (Hallway) closed, was open."
-    assert describe_change("Hall motion", None, "binary_sensor", "motion", "off", "on") == "Hall motion detected, was clear."
-    assert describe_change("Sink", "Kitchen", "binary_sensor", "moisture", "off", "on") == "Sink (Kitchen) wet, was dry."
-    assert describe_change("Smoke", "Hall", "binary_sensor", "smoke", "off", "on") == "Smoke (Hall) detected, was clear."
-    assert describe_change("Front lock", "Hall", "lock", None, "locked", "unlocked") == "Front lock (Hall) unlocked, was locked."
+    assert (
+        describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on")
+        == "Front door (Hallway) opened, was closed."
+    )
+    assert (
+        describe_change("Front door", "Hallway", "binary_sensor", "door", "on", "off")
+        == "Front door (Hallway) closed, was open."
+    )
+    assert (
+        describe_change("Hall motion", None, "binary_sensor", "motion", "off", "on")
+        == "Hall motion detected, was clear."
+    )
+    assert (
+        describe_change("Sink", "Kitchen", "binary_sensor", "moisture", "off", "on") == "Sink (Kitchen) wet, was dry."
+    )
+    assert (
+        describe_change("Smoke", "Hall", "binary_sensor", "smoke", "off", "on") == "Smoke (Hall) detected, was clear."
+    )
+    assert (
+        describe_change("Front lock", "Hall", "lock", None, "locked", "unlocked")
+        == "Front lock (Hall) unlocked, was locked."
+    )
     assert describe_change("Lamp", "Study", "light", None, "off", "on") == "Lamp (Study) turned on, was off."
     assert describe_change("Plug", None, "binary_sensor", "plug", "on", "off") == "Plug turned off, was on."
-    assert describe_change("Alarm", None, "alarm_control_panel", None, "disarmed", "armed_away") == "Alarm changed to armed away, was disarmed."
-    assert describe_change("Temp", "Kitchen", "sensor", None, "21.5", "unavailable", "°C") == "Temp (Kitchen) changed to unavailable, was 21.5 °C."
+    assert (
+        describe_change("Alarm", None, "alarm_control_panel", None, "disarmed", "armed_away")
+        == "Alarm changed to armed away, was disarmed."
+    )
+    assert (
+        describe_change("Temp", "Kitchen", "sensor", None, "21.5", "unavailable", "°C")
+        == "Temp (Kitchen) changed to unavailable, was 21.5 °C."
+    )
     assert describe_change("Door", None, "binary_sensor", "door", None, "on") == "Door opened."
 
 
@@ -98,8 +120,13 @@ def test_describe_change():
 
 
 def entity_state(entity_id, state, seconds, **attributes):
-    return {"entity_id": entity_id, "state": state, "attributes": attributes,
-            "last_changed": iso(seconds), "last_updated": iso(seconds)}
+    return {
+        "entity_id": entity_id,
+        "state": state,
+        "attributes": attributes,
+        "last_changed": iso(seconds),
+        "last_updated": iso(seconds),
+    }
 
 
 def event(entity_id, new, old=None):
@@ -109,10 +136,36 @@ def event(entity_id, new, old=None):
 def seed(conn):
     config = home.HomeConfig(url="http://ha:8123", token="t")
     home.upsert_home(conn, config, connected=True)
-    home.upsert_entity(conn, "home", entity_state("binary_sensor.front_door", "off", 0, friendly_name="Front door", device_class="door"), area="Hallway")
-    home.upsert_entity(conn, "home", entity_state("sensor.kitchen_temp", "20.0", 0, friendly_name="Kitchen temperature", device_class="temperature", unit_of_measurement="°C"), area="Kitchen")
-    home.upsert_entity(conn, "home", entity_state("binary_sensor.smoke", "off", 0, friendly_name="Hall smoke alarm", device_class="smoke"), area="Hallway")
-    for entity_id, state in (("binary_sensor.front_door", "off"), ("sensor.kitchen_temp", "20.0"), ("binary_sensor.smoke", "off")):
+    home.upsert_entity(
+        conn,
+        "home",
+        entity_state("binary_sensor.front_door", "off", 0, friendly_name="Front door", device_class="door"),
+        area="Hallway",
+    )
+    home.upsert_entity(
+        conn,
+        "home",
+        entity_state(
+            "sensor.kitchen_temp",
+            "20.0",
+            0,
+            friendly_name="Kitchen temperature",
+            device_class="temperature",
+            unit_of_measurement="°C",
+        ),
+        area="Kitchen",
+    )
+    home.upsert_entity(
+        conn,
+        "home",
+        entity_state("binary_sensor.smoke", "off", 0, friendly_name="Hall smoke alarm", device_class="smoke"),
+        area="Hallway",
+    )
+    for entity_id, state in (
+        ("binary_sensor.front_door", "off"),
+        ("sensor.kitchen_temp", "20.0"),
+        ("binary_sensor.smoke", "off"),
+    ):
         home.record_state(conn, "home", entity_id, entity_state(entity_id, state, 0))
 
 
@@ -138,8 +191,12 @@ def test_state_change_is_stored_and_indexed(client, db):
     # An attribute-only update is not a change.
     assert handle(db, entity_state("binary_sensor.front_door", "on", 90, friendly_name="Front door")) is None
     with db.pool.connection() as conn:
-        events = conn.execute("SELECT kind, state, old_state FROM ha_events WHERE entity_id = 'binary_sensor.front_door'").fetchall()
-        rows = conn.execute("SELECT kind, source, text, importance, session_id, agent FROM recall_index WHERE source = 'home_assistant'").fetchall()
+        events = conn.execute(
+            "SELECT kind, state, old_state FROM ha_events WHERE entity_id = 'binary_sensor.front_door'"
+        ).fetchall()
+        rows = conn.execute(
+            "SELECT kind, source, text, importance, session_id, agent FROM recall_index WHERE source = 'home_assistant'"
+        ).fetchall()
     assert events == [("change", "on", "off")]
     assert rows == [("ha_event", "home_assistant", "Front door (Hallway) opened, was closed.", 0.4, None, None)]
 
@@ -147,7 +204,9 @@ def test_state_change_is_stored_and_indexed(client, db):
 def test_alert_is_prefixed_and_important(client, db):
     assert handle(db, entity_state("binary_sensor.smoke", "on", 60))["kind"] == "alert"
     with db.pool.connection() as conn:
-        text, importance = conn.execute("SELECT text, importance FROM recall_index WHERE source = 'home_assistant'").fetchone()
+        text, importance = conn.execute(
+            "SELECT text, importance FROM recall_index WHERE source = 'home_assistant'"
+        ).fetchone()
         kind = conn.execute("SELECT kind FROM ha_events WHERE entity_id = 'binary_sensor.smoke'").fetchone()[0]
     assert text == "Alert: Hall smoke alarm (Hallway) detected, was clear."
     assert importance == 0.9 and kind == "alert"
@@ -173,7 +232,9 @@ def test_numeric_going_unavailable_is_a_change(client, db):
     assert handle(db, entity_state("sensor.kitchen_temp", "unavailable", 60))["kind"] == "change"
     assert handle(db, entity_state("sensor.kitchen_temp", "unavailable", 70)) is None
     with db.pool.connection() as conn:
-        state, value, old = conn.execute("SELECT state, value, old_state FROM ha_events WHERE kind = 'change'").fetchone()
+        state, value, old = conn.execute(
+            "SELECT state, value, old_state FROM ha_events WHERE kind = 'change'"
+        ).fetchone()
         text = conn.execute("SELECT text FROM recall_index WHERE source = 'home_assistant'").fetchone()[0]
     assert (state, value, old) == ("unavailable", None, "20.0")
     assert text == "Kitchen temperature (Kitchen) changed to unavailable, was 20.0 °C."
@@ -214,8 +275,20 @@ def test_home_assistant_stays_out_of_conversation_search_and_recall(client, db):
 
     sid = uuid4()
     client.put(f"/v1/sessions/{sid}", json={"started_at": iso(0)})
-    client.post("/v1/messages", json={"messages": [
-        {"id": str(uuid4()), "session_id": str(sid), "role": "user", "content": "the front door opened was closed", "created_at": iso(0)}]})
+    client.post(
+        "/v1/messages",
+        json={
+            "messages": [
+                {
+                    "id": str(uuid4()),
+                    "session_id": str(sid),
+                    "role": "user",
+                    "content": "the front door opened was closed",
+                    "created_at": iso(0),
+                }
+            ]
+        },
+    )
     assert [r["source"] for r in search()] == ["conversation"]
     assert sorted(r["source"] for r in search(source="all")) == ["conversation", "home_assistant"]
 
@@ -238,18 +311,48 @@ def test_status_entities_and_history_routes(client, db):
     assert client.get("/health").json()["home"] == {"configured": False, "connected": 0, "homes": 0}
 
     entities = client.get("/v1/home/entities").json()["entities"]
-    assert [e["entity_id"] for e in entities] == ["binary_sensor.front_door", "binary_sensor.smoke", "sensor.kitchen_temp"]
-    assert set(entities[0]) == {"home_id", "home_name", "entity_id", "name", "area", "domain", "device_class", "class", "unit", "last_state", "last_value"}
-    assert [e["entity_id"] for e in client.get("/v1/home/entities", params={"q": "kitchen"}).json()["entities"]] == ["sensor.kitchen_temp"]
-    assert [e["entity_id"] for e in client.get("/v1/home/entities", params={"q": "hallway"}).json()["entities"]] == ["binary_sensor.front_door", "binary_sensor.smoke"]
+    assert [e["entity_id"] for e in entities] == [
+        "binary_sensor.front_door",
+        "binary_sensor.smoke",
+        "sensor.kitchen_temp",
+    ]
+    assert set(entities[0]) == {
+        "home_id",
+        "home_name",
+        "entity_id",
+        "name",
+        "area",
+        "domain",
+        "device_class",
+        "class",
+        "unit",
+        "last_state",
+        "last_value",
+    }
+    assert [e["entity_id"] for e in client.get("/v1/home/entities", params={"q": "kitchen"}).json()["entities"]] == [
+        "sensor.kitchen_temp"
+    ]
+    assert [e["entity_id"] for e in client.get("/v1/home/entities", params={"q": "hallway"}).json()["entities"]] == [
+        "binary_sensor.front_door",
+        "binary_sensor.smoke",
+    ]
 
     now = datetime.now(timezone.utc)
     with db.pool.connection() as conn:
-        door = lambda state, ago: entity_state("binary_sensor.front_door", state, 0) | {"last_changed": (now - ago).isoformat(), "last_updated": (now - ago).isoformat()}  # noqa: E731
+
+        def door(state, ago):
+            return entity_state("binary_sensor.front_door", state, 0) | {
+                "last_changed": (now - ago).isoformat(),
+                "last_updated": (now - ago).isoformat(),
+            }
+
         home.handle_event(conn, "home", event("binary_sensor.front_door", door("on", timedelta(hours=3))))
         home.handle_event(conn, "home", event("binary_sensor.front_door", door("off", timedelta(hours=2))))
         for ago, value in ((90, 21.0), (80, 22.0), (30, 23.5)):
-            state = entity_state("sensor.kitchen_temp", str(value), 0) | {"last_updated": (now - timedelta(minutes=ago)).isoformat(), "last_changed": (now - timedelta(minutes=ago)).isoformat()}
+            state = entity_state("sensor.kitchen_temp", str(value), 0) | {
+                "last_updated": (now - timedelta(minutes=ago)).isoformat(),
+                "last_changed": (now - timedelta(minutes=ago)).isoformat(),
+            }
             home.handle_event(conn, "home", event("sensor.kitchen_temp", state))
 
     history = client.get("/v1/home/history", params={"entity": "binary_sensor.front_door"}).json()
@@ -266,15 +369,35 @@ def test_status_entities_and_history_routes(client, db):
     assert set(history["readings"][0]) == {"hour", "n", "min", "mean", "max", "last"}
 
     # Over two days there is no raw list, only rollups.
-    long = client.get("/v1/home/history", params={"q": "kitchen temperature", "from": (now - timedelta(days=5)).isoformat()}).json()
+    long = client.get(
+        "/v1/home/history", params={"q": "kitchen temperature", "from": (now - timedelta(days=5)).isoformat()}
+    ).json()
     assert long["raw"] == [] and long["readings"]
 
     # Several candidates: just the matches. A name that fits one exactly is chosen.
     with db.pool.connection() as conn:
-        home.upsert_entity(conn, "home", entity_state("sensor.hall_temp", "19", 0, friendly_name="Hall temperature", device_class="temperature", unit_of_measurement="°C"), area="Hallway")
+        home.upsert_entity(
+            conn,
+            "home",
+            entity_state(
+                "sensor.hall_temp",
+                "19",
+                0,
+                friendly_name="Hall temperature",
+                device_class="temperature",
+                unit_of_measurement="°C",
+            ),
+            area="Hallway",
+        )
     many = client.get("/v1/home/history", params={"q": "temperature"}).json()
-    assert "entity" not in many and {m["entity_id"] for m in many["matches"]} == {"sensor.kitchen_temp", "sensor.hall_temp"}
-    assert client.get("/v1/home/history", params={"q": "Kitchen temperature"}).json()["entity"]["entity_id"] == "sensor.kitchen_temp"
+    assert "entity" not in many and {m["entity_id"] for m in many["matches"]} == {
+        "sensor.kitchen_temp",
+        "sensor.hall_temp",
+    }
+    assert (
+        client.get("/v1/home/history", params={"q": "Kitchen temperature"}).json()["entity"]["entity_id"]
+        == "sensor.kitchen_temp"
+    )
     assert client.get("/v1/home/history", params={"q": "nothing like it"}).json() == {"matches": []}
 
     assert client.get("/v1/home/history").status_code == 400
@@ -285,7 +408,10 @@ def test_status_entities_and_history_routes(client, db):
 def test_prune_removes_old_raw_readings_only(client, db):
     with db.pool.connection() as conn:
         conn.execute("UPDATE ha_events SET at = now() - interval '10 days'")
-        conn.execute("INSERT INTO ha_events (id, home_id, entity_id, kind, at, state) VALUES (%s, 'home', 'x', 'change', now() - interval '10 days', 'on')", (uuid4(),))
+        conn.execute(
+            "INSERT INTO ha_events (id, home_id, entity_id, kind, at, state) VALUES (%s, 'home', 'x', 'change', now() - interval '10 days', 'on')",
+            (uuid4(),),
+        )
         assert home.prune(conn, 7) == 1
         assert conn.execute("SELECT kind FROM ha_events").fetchall() == [("change",)]
         assert conn.execute("SELECT count(*) FROM ha_readings").fetchone()[0] == 1
@@ -333,25 +459,80 @@ class FakeHomeAssistant:
             result = {
                 "config/label_registry/list": [{"label_id": "aiembodied", "name": "AIEmbodied"}],
                 "config/entity_registry/list": [
-                    {"entity_id": "binary_sensor.front_door", "labels": ["aiembodied"], "device_id": "d1", "area_id": None, "name": None, "original_name": "Front door"},
+                    {
+                        "entity_id": "binary_sensor.front_door",
+                        "labels": ["aiembodied"],
+                        "device_id": "d1",
+                        "area_id": None,
+                        "name": None,
+                        "original_name": "Front door",
+                    },
                     {"entity_id": "light.study", "labels": [], "device_id": None, "area_id": "study"},
                     {"entity_id": "sensor.battery", "labels": ["aiembodied"], "entity_category": "diagnostic"},
                     {"entity_id": "switch.off", "labels": ["aiembodied"], "disabled_by": "user"},
                 ],
                 "config/device_registry/list": [{"id": "d1", "area_id": "hall"}],
-                "config/area_registry/list": [{"area_id": "hall", "name": "Hallway"}, {"area_id": "study", "name": "Study"}],
+                "config/area_registry/list": [
+                    {"area_id": "hall", "name": "Hallway"},
+                    {"area_id": "study", "name": "Study"},
+                ],
                 "get_states": [
-                    {"entity_id": "binary_sensor.front_door", "state": "off", "attributes": {"friendly_name": "Front door", "device_class": "door"}, "last_changed": iso(0), "last_updated": iso(0)},
-                    {"entity_id": "light.study", "state": "on", "attributes": {}, "last_changed": iso(0), "last_updated": iso(0)},
-                    {"entity_id": "sensor.battery", "state": "50", "attributes": {"unit_of_measurement": "%"}, "last_changed": iso(0), "last_updated": iso(0)},
-                    {"entity_id": "sensor.patio_temp", "state": "9.5", "attributes": {"friendly_name": "Patio temperature", "unit_of_measurement": "°C", "device_class": "temperature"}, "last_changed": iso(0), "last_updated": iso(0)},
+                    {
+                        "entity_id": "binary_sensor.front_door",
+                        "state": "off",
+                        "attributes": {"friendly_name": "Front door", "device_class": "door"},
+                        "last_changed": iso(0),
+                        "last_updated": iso(0),
+                    },
+                    {
+                        "entity_id": "light.study",
+                        "state": "on",
+                        "attributes": {},
+                        "last_changed": iso(0),
+                        "last_updated": iso(0),
+                    },
+                    {
+                        "entity_id": "sensor.battery",
+                        "state": "50",
+                        "attributes": {"unit_of_measurement": "%"},
+                        "last_changed": iso(0),
+                        "last_updated": iso(0),
+                    },
+                    {
+                        "entity_id": "sensor.patio_temp",
+                        "state": "9.5",
+                        "attributes": {
+                            "friendly_name": "Patio temperature",
+                            "unit_of_measurement": "°C",
+                            "device_class": "temperature",
+                        },
+                        "last_changed": iso(0),
+                        "last_updated": iso(0),
+                    },
                 ],
             }.get(kind, None)
             await ws.send(json.dumps({"id": msg["id"], "type": "result", "success": True, "result": result}))
             if kind == "get_states" and self.seen.count("get_states") == 1:
                 await asyncio.sleep(0.3)
-                new = {"entity_id": "binary_sensor.front_door", "state": "on", "attributes": {"friendly_name": "Front door", "device_class": "door"}, "last_changed": iso(60), "last_updated": iso(60)}
-                await ws.send(json.dumps({"id": 2, "type": "event", "event": {"event_type": "state_changed", "data": {"entity_id": "binary_sensor.front_door", "new_state": new, "old_state": None}}}))
+                new = {
+                    "entity_id": "binary_sensor.front_door",
+                    "state": "on",
+                    "attributes": {"friendly_name": "Front door", "device_class": "door"},
+                    "last_changed": iso(60),
+                    "last_updated": iso(60),
+                }
+                await ws.send(
+                    json.dumps(
+                        {
+                            "id": 2,
+                            "type": "event",
+                            "event": {
+                                "event_type": "state_changed",
+                                "data": {"entity_id": "binary_sensor.front_door", "new_state": new, "old_state": None},
+                            },
+                        }
+                    )
+                )
 
 
 def wait_for(check, timeout=15):
@@ -374,9 +555,17 @@ def test_listener_against_a_scripted_home_assistant(database_url, schema):
     engine.start(in_background=True)
     try:
         # "connected" turns on before the first full refresh fills the watched set, so wait for both.
-        wait_for(lambda: engine.home_status()["homes"][0]["connected"] and engine.home_status()["homes"][0]["watched"] == 3)
+        wait_for(
+            lambda: engine.home_status()["homes"][0]["connected"] and engine.home_status()["homes"][0]["watched"] == 3
+        )
         status = engine.home_status()["homes"][0]
-        assert status["id"] == "home" and status["source"] == "env" and status["configured"] and status["watched"] == 3 and status["url"] == config.url
+        assert (
+            status["id"] == "home"
+            and status["source"] == "env"
+            and status["configured"]
+            and status["watched"] == 3
+            and status["url"] == config.url
+        )
         assert "secret" not in json.dumps(status)
 
         def stored():
@@ -385,13 +574,17 @@ def test_listener_against_a_scripted_home_assistant(database_url, schema):
 
         assert wait_for(stored) == [("on", "off")]
         with engine.pool.connection() as conn:
-            entities = conn.execute("SELECT entity_id, name, area, class FROM ha_entities ORDER BY entity_id").fetchall()
+            entities = conn.execute(
+                "SELECT entity_id, name, area, class FROM ha_entities ORDER BY entity_id"
+            ).fetchall()
             text = conn.execute("SELECT text FROM recall_index WHERE source = 'home_assistant'").fetchone()[0]
             url = conn.execute("SELECT url FROM homes").fetchone()[0]
         # The battery is "diagnostic" in HA, but it carries the label, so it is kept.
-        assert entities == [("binary_sensor.front_door", "Front door", "Hallway", "state"),
-                            ("sensor.battery", "sensor.battery", None, "numeric"),
-                            ("sensor.patio_temp", "Patio temperature", None, "numeric")]
+        assert entities == [
+            ("binary_sensor.front_door", "Front door", "Hallway", "state"),
+            ("sensor.battery", "sensor.battery", None, "numeric"),
+            ("sensor.patio_temp", "Patio temperature", None, "numeric"),
+        ]
         assert text == "Front door (Hallway) opened, was closed."
         assert url == config.url
         assert engine.home_status()["homes"][0]["events_today"] == 1
@@ -403,7 +596,9 @@ def test_listener_reports_a_refused_token(database_url, schema):
     from memory_engine.app import Engine
 
     fake = FakeHomeAssistant(accept=False)
-    engine = Engine(database_url, schema, home_config=home.HomeConfig(url=f"http://127.0.0.1:{fake.port}", token="nope"))
+    engine = Engine(
+        database_url, schema, home_config=home.HomeConfig(url=f"http://127.0.0.1:{fake.port}", token="nope")
+    )
     engine.start(in_background=True)
     try:
         status = wait_for(lambda: engine.home_status()["homes"][0]["error"] and engine.home_status()["homes"][0])
@@ -436,23 +631,46 @@ def test_named_entity_overrides_diagnostic_category():
 
 def test_homes_from_env():
     env = {
-        "HA_URL": "http://one:8123", "HA_TOKEN": "t1", "HA_HOME_ID": "main", "HA_HOME_NAME": "Melbourne",
-        "HA_LABEL": "remember", "HA_ENTITIES": "light.*, sensor.a", "HA_RAW_DAYS": "3",
-        "HA_SG_URL": "http://sg:8123", "HA_SG_TOKEN": "t2",
-        "HA_PENANG_URL": "http://penang:8123", "HA_PENANG_TOKEN": "t3", "HA_PENANG_NAME": "Penang house",
-        "HA_PENANG_LABEL": "mine", "HA_PENANG_ENTITIES": "lock.door",
+        "HA_URL": "http://one:8123",
+        "HA_TOKEN": "t1",
+        "HA_HOME_ID": "main",
+        "HA_HOME_NAME": "Melbourne",
+        "HA_LABEL": "remember",
+        "HA_ENTITIES": "light.*, sensor.a",
+        "HA_RAW_DAYS": "3",
+        "HA_SG_URL": "http://sg:8123",
+        "HA_SG_TOKEN": "t2",
+        "HA_PENANG_URL": "http://penang:8123",
+        "HA_PENANG_TOKEN": "t3",
+        "HA_PENANG_NAME": "Penang house",
+        "HA_PENANG_LABEL": "mine",
+        "HA_PENANG_ENTITIES": "lock.door",
         "HA_LONELY_URL": "http://x:8123",  # no token: not a home
         "HA_NOURL_TOKEN": "t",  # no url: not a home
-        "HA_HOME_URL": "http://reserved", "HA_HOME_TOKEN": "t",  # reserved word
+        "HA_HOME_URL": "http://reserved",
+        "HA_HOME_TOKEN": "t",  # reserved word
         "PATH": "/bin",
     }
     homes = {h.home_id: h for h in home.homes_from_env(env)}
     assert set(homes) == {"main", "sg", "penang"}
     main, sg, penang = homes["main"], homes["sg"], homes["penang"]
     assert (main.url, main.token, main.name, main.label, main.entities, main.raw_days, main.source) == (
-        "http://one:8123", "t1", "Melbourne", "remember", ["light.*", "sensor.a"], 3.0, "env")
+        "http://one:8123",
+        "t1",
+        "Melbourne",
+        "remember",
+        ["light.*", "sensor.a"],
+        3.0,
+        "env",
+    )
     assert (sg.url, sg.token, sg.name, sg.label, sg.entities, sg.raw_days) == (
-        "http://sg:8123", "t2", "SG", "remember", [], 3.0)
+        "http://sg:8123",
+        "t2",
+        "SG",
+        "remember",
+        [],
+        3.0,
+    )
     assert (penang.name, penang.label, penang.entities) == ("Penang house", "mine", ["lock.door"])
     assert "t1" not in repr(main)
 
@@ -462,45 +680,75 @@ def test_homes_from_env():
     # The default home is listed with what is missing, so the status can say so.
     missing = home.homes_from_env({"HA_URL": "http://one:8123"})
     assert missing[0].off_reason == "HA_TOKEN is not set"
-    assert home.homes_from_env({"HA_SG_URL": "http://sg", "HA_SG_TOKEN": "t", "HA_RAW_DAYS": "bogus"})[0].raw_days == 7.0
+    assert (
+        home.homes_from_env({"HA_SG_URL": "http://sg", "HA_SG_TOKEN": "t", "HA_RAW_DAYS": "bogus"})[0].raw_days == 7.0
+    )
 
 
 def test_describe_change_names_the_home():
-    assert describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", home_name="SG") == "Front door (Hallway, SG) opened, was closed."
-    assert describe_change("Front door", None, "binary_sensor", "door", "off", "on", home_name="SG") == "Front door (SG) opened, was closed."
-    assert describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", home_name="Home") == "Front door (Hallway) opened, was closed."
+    assert (
+        describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", home_name="SG")
+        == "Front door (Hallway, SG) opened, was closed."
+    )
+    assert (
+        describe_change("Front door", None, "binary_sensor", "door", "off", "on", home_name="SG")
+        == "Front door (SG) opened, was closed."
+    )
+    assert (
+        describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", home_name="Home")
+        == "Front door (Hallway) opened, was closed."
+    )
 
 
 def test_indexed_text_and_entities_carry_the_home_name(client, db):
     with db.pool.connection() as conn:
         sg = home.HomeConfig(url="http://sg:8123", token="t", home_id="sg", name="SG")
         home.upsert_home(conn, sg, connected=True)
-        home.upsert_entity(conn, "sg", entity_state("binary_sensor.front_door", "off", 0, friendly_name="Front door", device_class="door"), area="Hallway")
-        home.upsert_entity(conn, "sg", entity_state("binary_sensor.gate", "off", 0, friendly_name="Gate", device_class="door"))
+        home.upsert_entity(
+            conn,
+            "sg",
+            entity_state("binary_sensor.front_door", "off", 0, friendly_name="Front door", device_class="door"),
+            area="Hallway",
+        )
+        home.upsert_entity(
+            conn, "sg", entity_state("binary_sensor.gate", "off", 0, friendly_name="Gate", device_class="door")
+        )
         for entity_id in ("binary_sensor.front_door", "binary_sensor.gate"):
             home.record_state(conn, "sg", entity_id, entity_state(entity_id, "off", 0))
-        home.handle_event(conn, "sg", event("binary_sensor.front_door", entity_state("binary_sensor.front_door", "on", 60)))
+        home.handle_event(
+            conn, "sg", event("binary_sensor.front_door", entity_state("binary_sensor.front_door", "on", 60))
+        )
         home.handle_event(conn, "sg", event("binary_sensor.gate", entity_state("binary_sensor.gate", "on", 60)))
-        home.handle_event(conn, "home", event("binary_sensor.front_door", entity_state("binary_sensor.front_door", "on", 60)))
+        home.handle_event(
+            conn, "home", event("binary_sensor.front_door", entity_state("binary_sensor.front_door", "on", 60))
+        )
         texts = {r[0] for r in conn.execute("SELECT text FROM recall_index WHERE source = 'home_assistant'").fetchall()}
-    assert texts == {"Front door (Hallway, SG) opened, was closed.", "Gate (SG) opened, was closed.", "Front door (Hallway) opened, was closed."}
+    assert texts == {
+        "Front door (Hallway, SG) opened, was closed.",
+        "Gate (SG) opened, was closed.",
+        "Front door (Hallway) opened, was closed.",
+    }
 
     entities = client.get("/v1/home/entities").json()["entities"]
     names = {(e["home_id"], e["entity_id"]): e["home_name"] for e in entities}
     assert names[("sg", "binary_sensor.gate")] == "SG" and names[("home", "binary_sensor.front_door")] == "Home"
     assert {e["home_id"] for e in client.get("/v1/home/entities", params={"home": "sg"}).json()["entities"]} == {"sg"}
-    assert {e["home_id"] for e in client.get("/v1/home/entities", params={"q": "SG hallway"}).json()["entities"]} == {"sg"}
+    assert {e["home_id"] for e in client.get("/v1/home/entities", params={"q": "SG hallway"}).json()["entities"]} == {
+        "sg"
+    }
     # The same entity id in two homes needs the home to single one out.
     both = client.get("/v1/home/history", params={"entity": "binary_sensor.front_door"}).json()
     assert {m["home_id"] for m in both["matches"]} == {"home", "sg"}
-    one = client.get("/v1/home/history", params={"entity": "binary_sensor.front_door", "home": "sg", "from": iso(-3600), "to": iso(3600)}).json()
+    one = client.get(
+        "/v1/home/history",
+        params={"entity": "binary_sensor.front_door", "home": "sg", "from": iso(-3600), "to": iso(3600)},
+    ).json()
     assert one["entity"]["home_name"] == "SG"
     assert one["changes"][0]["text"] == "Front door (Hallway, SG) opened, was closed."
 
 
 def make_app(database_url, schema, **kwargs):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -513,7 +761,15 @@ def put_servers(client, *servers):
 
 
 def server(fake, id, name, token="secret", **extra):
-    return {"id": id, "name": name, "url": f"http://127.0.0.1:{fake.port}", "token": token, "label": None, "entities": [], **extra}
+    return {
+        "id": id,
+        "name": name,
+        "url": f"http://127.0.0.1:{fake.port}",
+        "token": token,
+        "label": None,
+        "entities": [],
+        **extra,
+    }
 
 
 def by_id(response):
@@ -533,8 +789,23 @@ def test_app_servers_add_replace_and_remove_listeners(database_url, schema):
         assert response.status_code == 200
         assert "penang-secret" not in response.text and "sg-secret" not in response.text
         homes = by_id(response)
-        assert set(homes) == {"sg", "srv-1"} and homes["srv-1"]["source"] == "app" and homes["srv-1"]["name"] == "Penang"
-        assert set(homes["srv-1"]) == {"id", "name", "source", "configured", "connected", "url", "label", "watched", "events_today", "last_event_at", "error", "note"}
+        assert (
+            set(homes) == {"sg", "srv-1"} and homes["srv-1"]["source"] == "app" and homes["srv-1"]["name"] == "Penang"
+        )
+        assert set(homes["srv-1"]) == {
+            "id",
+            "name",
+            "source",
+            "configured",
+            "connected",
+            "url",
+            "label",
+            "watched",
+            "events_today",
+            "last_event_at",
+            "error",
+            "note",
+        }
         # "connected" flips before the entity list is loaded, so wait for the watch list too.
         wait_for(lambda: (h := by_id(client.get("/v1/home/status"))["srv-1"])["connected"] and h["watched"] == 2)
         status = client.get("/v1/home/status")
@@ -579,12 +850,19 @@ def test_two_homes_are_remembered_under_their_own_names(database_url, schema):
     engine, http = make_app(database_url, schema)
     with http as client:
         put_servers(client, server(fake_a, "a", "Penang"), server(fake_b, "b", "Home"))
-        wait_for(lambda: all(h["connected"] for h in by_id(client.get("/v1/home/status")).values()) and len(by_id(client.get("/v1/home/status"))) == 2)
+        wait_for(
+            lambda: (
+                all(h["connected"] for h in by_id(client.get("/v1/home/status")).values())
+                and len(by_id(client.get("/v1/home/status"))) == 2
+            )
+        )
         texts = wait_for(lambda: len(rows(engine)) == 2 and sorted(rows(engine)))
         assert texts == ["Front door (Hallway) opened, was closed.", "Front door (Hallway, Penang) opened, was closed."]
         entities = client.get("/v1/home/entities").json()["entities"]
         assert {(e["home_id"], e["home_name"]) for e in entities} == {("a", "Penang"), ("b", "Home")}
-        assert len({e["home_id"] for e in client.get("/v1/home/entities", params={"home": "a"}).json()["entities"]}) == 1
+        assert (
+            len({e["home_id"] for e in client.get("/v1/home/entities", params={"home": "a"}).json()["entities"]}) == 1
+        )
 
 
 def rows(engine):
@@ -628,14 +906,16 @@ def test_put_home_servers_validates_and_never_echoes_a_token(database_url, schem
 
 def test_put_home_servers_needs_the_api_token(database_url, schema):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
 
     engine = Engine(database_url, schema)
     with TestClient(create_app(engine, api_token="k")) as client:
         wait_for(lambda: engine.ready)
         assert client.put("/v1/home/servers", json={"servers": []}).status_code == 401
-        assert client.put("/v1/home/servers", json={"servers": []}, headers={"Authorization": "Bearer k"}).status_code == 200
+        assert (
+            client.put("/v1/home/servers", json={"servers": []}, headers={"Authorization": "Bearer k"}).status_code
+            == 200
+        )
 
 
 def test_engine_stop_stops_every_listener(database_url, schema):
@@ -673,16 +953,20 @@ def fake_bus():
 
 
 def test_change_publishes_home_change(client, db, fake_bus):
-    handle(db, door := entity_state("binary_sensor.front_door", "on", 60, friendly_name="Front door", device_class="door"))
+    handle(db, entity_state("binary_sensor.front_door", "on", 60, friendly_name="Front door", device_class="door"))
     assert fake_bus.types() == ["home.change"]
     event_ = fake_bus.events[0]
     assert event_["producer"] == {"kind": "sensor", "id": "ha:home"}
     assert event_["to"] == ["avatar:echo"] and event_["audience"] == "private" and event_["priority"] == "low"
-    assert event_["expires"] == (datetime.fromisoformat(event_["at"].replace("Z", "+00:00")) + home.CHANGE_FRESH).isoformat().replace("+00:00", "Z")
+    assert event_["expires"] == (
+        datetime.fromisoformat(event_["at"].replace("Z", "+00:00")) + home.CHANGE_FRESH
+    ).isoformat().replace("+00:00", "Z")
     payload = event_["payload"]
     assert payload["entity_id"] == "binary_sensor.front_door" and payload["old"] == "off" and payload["new"] == "on"
     assert payload["home_id"] == "home" and payload["area"] == "Hallway" and payload["domain"] == "binary_sensor"
-    assert payload["text"] == home.describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", None, None)
+    assert payload["text"] == home.describe_change(
+        "Front door", "Hallway", "binary_sensor", "door", "off", "on", None, None
+    )
 
 
 def test_smoke_on_also_publishes_home_alert(client, db, fake_bus):

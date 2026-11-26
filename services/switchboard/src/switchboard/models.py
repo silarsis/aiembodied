@@ -8,7 +8,7 @@ import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -44,7 +44,7 @@ def parse_time(value: str) -> str:
 class Producer(BaseModel):
     kind: Literal["avatar", "person", "tool", "service", "sensor", "device", "remote"]
     id: str = Field(min_length=1, max_length=200)
-    node: Optional[str] = None
+    node: str | None = None
 
     @property
     def address(self) -> str:
@@ -53,36 +53,36 @@ class Producer(BaseModel):
 
 class Txn(BaseModel):
     id: str = Field(min_length=1, max_length=200)
-    parent: Optional[str] = None
-    root: Optional[str] = None
-    cause: Optional[str] = None
-    state: Optional[TxnState] = None
-    title: Optional[str] = None
-    deadline: Optional[str] = None
+    parent: str | None = None
+    root: str | None = None
+    cause: str | None = None
+    state: TxnState | None = None
+    title: str | None = None
+    deadline: str | None = None
 
     @field_validator("deadline")
     @classmethod
-    def _deadline(cls, v: Optional[str]) -> Optional[str]:
+    def _deadline(cls, v: str | None) -> str | None:
         return parse_time(v) if v else None
 
 
 class Event(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     type: str
     v: int = 1
-    at: Optional[str] = None
+    at: str | None = None
     producer: Producer
     to: list[str] = Field(default_factory=list)
-    scene: Optional[str] = None
-    txn: Optional[Txn] = None
+    scene: str | None = None
+    txn: Txn | None = None
     audience: Literal["private", "household", "shareable"] = "household"
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
-    expires: Optional[str] = None
+    expires: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod
-    def _id(cls, v: Optional[str]) -> Optional[str]:
+    def _id(cls, v: str | None) -> str | None:
         if v is not None and not ULID_RE.match(v):
             raise ValueError("id must be a 26 character ULID")
         return v.upper() if v else None
@@ -96,7 +96,7 @@ class Event(BaseModel):
 
     @field_validator("at", "expires")
     @classmethod
-    def _time(cls, v: Optional[str]) -> Optional[str]:
+    def _time(cls, v: str | None) -> str | None:
         return parse_time(v) if v else None
 
     @field_validator("to")
@@ -123,8 +123,10 @@ class Config:
     node: str = field(default_factory=socket.gethostname)
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         env = os.environ
-        return cls(db_path=Path(env.get("SWITCHBOARD_DB") or default_db_path()),
-                   retention_days=int(env.get("SWITCHBOARD_RETENTION_DAYS") or 30),
-                   node=env.get("SWITCHBOARD_NODE") or socket.gethostname())
+        return cls(
+            db_path=Path(env.get("SWITCHBOARD_DB") or default_db_path()),
+            retention_days=int(env.get("SWITCHBOARD_RETENTION_DAYS") or 30),
+            node=env.get("SWITCHBOARD_NODE") or socket.gethostname(),
+        )

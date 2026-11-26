@@ -8,7 +8,7 @@ rows these stay out of auto-recall, summaries and fact extraction, and are not m
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import psycopg
@@ -104,7 +104,14 @@ def upsert_task(conn: psycopg.Connection, task: dict[str, Any]) -> dict[str, Any
             embed_model = CASE WHEN recall_index.text = excluded.text THEN recall_index.embed_model END,
             updated_at = now()
         """,
-        {"kind": INDEX_KIND, "source": SOURCE, "id": index_id, "agent": task.get("agent"), "at": finished, "text": text},
+        {
+            "kind": INDEX_KIND,
+            "source": SOURCE,
+            "id": index_id,
+            "agent": task.get("agent"),
+            "at": finished,
+            "text": text,
+        },
     )
     return {"task_id": task["task_id"], "indexed": True, "text": text}
 

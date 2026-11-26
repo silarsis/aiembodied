@@ -24,7 +24,8 @@ def main(argv=None) -> None:
 
     if cfg.host not in ("127.0.0.1", "localhost", "::1"):
         logging.getLogger("coder").warning(
-            "Listening on %s: anyone who can reach this port can run code on this machine.", cfg.host)
+            "Listening on %s: anyone who can reach this port can run code on this machine.", cfg.host
+        )
     uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level=a.log_level.lower())
 
 

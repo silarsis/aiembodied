@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Iterator, Optional, Sequence
+from collections.abc import Iterator, Sequence
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -14,11 +14,20 @@ from .base import Backend, Chunk, Motion, StreamHistory
 
 # Joint offsets (metres, rest pose, relative to Hips) for the joints the tests look at; others sit at the hips.
 _REST = {
-    "Hips": (0, 0, 0), "Spine1": (0, 0.05, 0), "Spine2": (0, 0.12, 0), "Chest": (0, 0.2, 0),
-    "Neck1": (0, 0.46, 0), "Head": (0, 0.6, 0.03),
-    "LeftLeg": (0.1, -0.08, 0), "LeftShin": (0.1, -0.52, 0), "LeftFoot": (0.1, -0.94, 0),
-    "LeftToeBase": (0.1, -0.989, 0.12), "RightLeg": (-0.1, -0.08, 0), "RightShin": (-0.1, -0.52, 0),
-    "RightFoot": (-0.1, -0.94, 0), "RightToeBase": (-0.1, -0.989, 0.12),
+    "Hips": (0, 0, 0),
+    "Spine1": (0, 0.05, 0),
+    "Spine2": (0, 0.12, 0),
+    "Chest": (0, 0.2, 0),
+    "Neck1": (0, 0.46, 0),
+    "Head": (0, 0.6, 0.03),
+    "LeftLeg": (0.1, -0.08, 0),
+    "LeftShin": (0.1, -0.52, 0),
+    "LeftFoot": (0.1, -0.94, 0),
+    "LeftToeBase": (0.1, -0.989, 0.12),
+    "RightLeg": (-0.1, -0.08, 0),
+    "RightShin": (-0.1, -0.52, 0),
+    "RightFoot": (-0.1, -0.94, 0),
+    "RightToeBase": (-0.1, -0.989, 0.12),
 }
 HIPS_HEIGHT = 0.99
 
@@ -106,10 +115,29 @@ class FakeBackend(Backend):
         offs = np.einsum("tij,tkj->tki", R, m.posed_joints - old[:, None, :])
         return Motion(np.einsum("tij,tkjl->tkil", R, m.global_rot_mats), root[:, None, :] + offs, root)
 
-    def stream(self, text, frames: int, steps: int, *, plan=None, phase_texts: Optional[Sequence] = None,
-               history: Optional[StreamHistory] = None, constraint_weight: float = 2.0) -> Iterator[Chunk]:
-        self.calls.append({"text": text, "frames": frames, "plan": plan, "phase_texts": list(phase_texts or []),
-                           "history": history, "constraint_weight": constraint_weight, "visible": {}, "texts": []})
+    def stream(
+        self,
+        text,
+        frames: int,
+        steps: int,
+        *,
+        plan=None,
+        phase_texts: Sequence | None = None,
+        history: StreamHistory | None = None,
+        constraint_weight: float = 2.0,
+    ) -> Iterator[Chunk]:
+        self.calls.append(
+            {
+                "text": text,
+                "frames": frames,
+                "plan": plan,
+                "phase_texts": list(phase_texts or []),
+                "history": history,
+                "constraint_weight": constraint_weight,
+                "visible": {},
+                "texts": [],
+            }
+        )
         call = self.calls[-1]
         tracked = plan is not None or history is not None
         state = dict(history.payload) if history is not None else {"x": 0.0, "z": 0.0, "y": HIPS_HEIGHT, "yaw": 0.0}
@@ -126,15 +154,22 @@ class FakeBackend(Backend):
             if tracked:
                 tg = plan.visible(start) if plan is not None else None
                 call["visible"][start] = tg
-                m = self._track(m, state, tg if tg is not None else Targets(), start,
-                                fresh=history is None and start == 0)
+                m = self._track(
+                    m, state, tg if tg is not None else Targets(), start, fresh=history is None and start == 0
+                )
                 per_frame = state.pop("_per_frame", None)
                 if keep < n:
                     if keep == 0 or per_frame is None:
                         state.update({k: before[k] for k in ("x", "y", "z", "yaw")})
                     else:
                         x, y, z, yaw = per_frame
-                        state.update(x=float(x[keep - 1]), y=float(y[keep - 1]), z=float(z[keep - 1]), yaw=float(yaw[keep - 1]))
+                        state.update(
+                            x=float(x[keep - 1]), y=float(y[keep - 1]), z=float(z[keep - 1]), yaw=float(yaw[keep - 1])
+                        )
             call["texts"].append(next((t for f, t in reversed(phases) if f <= start), text))
-            yield Chunk(m, start, generate_ms=1.0,
-                        history=StreamHistory(base + start + keep, dict(state), emitted_ahead=n - keep))
+            yield Chunk(
+                m,
+                start,
+                generate_ms=1.0,
+                history=StreamHistory(base + start + keep, dict(state), emitted_ahead=n - keep),
+            )

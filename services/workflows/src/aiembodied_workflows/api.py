@@ -103,8 +103,13 @@ def create_app(settings: Settings, service: Service | None = None) -> FastAPI:
         t0 = time.monotonic()
         response = await call_next(request)
         if request.method != "GET" and request.url.path != "/health":
-            log.info("%s %s -> %s (%.0f ms)", request.method, request.url.path, response.status_code,
-                     (time.monotonic() - t0) * 1000)
+            log.info(
+                "%s %s -> %s (%.0f ms)",
+                request.method,
+                request.url.path,
+                response.status_code,
+                (time.monotonic() - t0) * 1000,
+            )
         return response
 
     @app.exception_handler(ServiceError)
@@ -122,8 +127,14 @@ def create_app(settings: Settings, service: Service | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"ok": True, "version": __version__, "temporal": svc.temporal_ok, "namespace": settings.namespace,
-                "agentLife": settings.agent_life, "agents": list(svc.agents)}
+        return {
+            "ok": True,
+            "version": __version__,
+            "temporal": svc.temporal_ok,
+            "namespace": settings.namespace,
+            "agentLife": settings.agent_life,
+            "agents": list(svc.agents),
+        }
 
     @app.put("/v1/agents", dependencies=[Depends(guard)])
     async def put_agents(body: AgentsIn):
@@ -187,8 +198,15 @@ def create_app(settings: Settings, service: Service | None = None) -> FastAPI:
     async def intention(body: IntentionIn):
         if body.kind not in ("goal", "intention", "promise"):
             raise ServiceError(422, {"errors": ["kind: must be goal, intention or promise"]})
-        row = {"avatar_id": body.avatarId, "kind": body.kind, "text": body.text, "why": body.why,
-               "status": "open", "due_at": body.dueAt, "parent_id": body.parentId}
+        row = {
+            "avatar_id": body.avatarId,
+            "kind": body.kind,
+            "text": body.text,
+            "why": body.why,
+            "status": "open",
+            "due_at": body.dueAt,
+            "parent_id": body.parentId,
+        }
         return await svc.memory.create_intention({k: v for k, v in row.items() if v is not None})
 
     @app.get("/v1/plans", dependencies=[Depends(guard)])

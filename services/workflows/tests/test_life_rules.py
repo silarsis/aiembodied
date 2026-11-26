@@ -1,28 +1,38 @@
 import pytest
-
 from aiembodied_workflows import life_rules as r
 
-CALM = {"voicePhase": "idle", "conversationActive": False, "doNotDisturb": False, "asleep": False,
-        "secondsSinceKevinSpoke": 600, "secondsSinceAvatarSpoke": 900}
+CALM = {
+    "voicePhase": "idle",
+    "conversationActive": False,
+    "doNotDisturb": False,
+    "asleep": False,
+    "secondsSinceKevinSpoke": 600,
+    "secondsSinceAvatarSpoke": 900,
+}
 
 
 def allowed(ctx=None, hour=14, quiet="22-7", since=None, sleep=False):
-    return r.hard_rules({**CALM, **(ctx or {})}, hour=hour, quiet_hours=quiet, since_last_say=since, is_sleep_decision=sleep)
+    return r.hard_rules(
+        {**CALM, **(ctx or {})}, hour=hour, quiet_hours=quiet, since_last_say=since, is_sleep_decision=sleep
+    )
 
 
 def test_hard_rules_allow_a_quiet_afternoon():
     assert allowed() == (True, "ok")
 
 
-@pytest.mark.parametrize("ctx,why", [
-    ({"asleep": True}, "asleep"),
-    ({"doNotDisturb": True}, "do not disturb"),
-    ({"conversationActive": True}, "in a conversation"),
-    ({"voicePhase": "thinking"}, "in a conversation"),
-    ({"voicePhase": "responding"}, "in a conversation"),
-    ({"secondsSinceKevinSpoke": 30}, "someone spoke a moment ago"),
-    ({"secondsSinceAvatarSpoke": 119}, "someone spoke a moment ago"),
-])
+@pytest.mark.parametrize(
+    "ctx,why",
+    [
+        ({"asleep": True}, "asleep"),
+        ({"doNotDisturb": True}, "do not disturb"),
+        ({"conversationActive": True}, "in a conversation"),
+        ({"voicePhase": "thinking"}, "in a conversation"),
+        ({"voicePhase": "responding"}, "in a conversation"),
+        ({"secondsSinceKevinSpoke": 30}, "someone spoke a moment ago"),
+        ({"secondsSinceAvatarSpoke": 119}, "someone spoke a moment ago"),
+    ],
+)
 def test_hard_rules_block(ctx, why):
     ok, reason = allowed(ctx)
     assert not ok and reason == why
@@ -87,35 +97,62 @@ def test_reflect_time():
     assert not r.is_reflect_time("2026-11-25", 23, "", None)
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("SAY: Morning, Kevin!", ("SAY", "Morning, Kevin!")),
-    ('SAY: "The bins go out tonight."', ("SAY", "The bins go out tonight.")),
-    ("say: hello", ("SAY", "hello")),
-    ("READ: station-3", ("READ", "station-3")),
-    ("SLEEP", ("SLEEP", "")),
-    ("sleep.", ("SLEEP", "")),
-    ("NOTHING", ("NOTHING", "")),
-    ("I set a reminder.\nSAY: Done!", ("SAY", "Done!")),
-    ("SAY: first\nSome trailing chatter", ("NOTHING", "")),  # only the last line counts
-    ("**SLEEP**", ("SLEEP", "")),
-    ("SAY:", ("NOTHING", "")),
-    ("I think I will say hello", ("NOTHING", "")),
-    ("", ("NOTHING", "")),
-    (None, ("NOTHING", "")),
-])
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("SAY: Morning, Kevin!", ("SAY", "Morning, Kevin!")),
+        ('SAY: "The bins go out tonight."', ("SAY", "The bins go out tonight.")),
+        ("say: hello", ("SAY", "hello")),
+        ("READ: station-3", ("READ", "station-3")),
+        ("SLEEP", ("SLEEP", "")),
+        ("sleep.", ("SLEEP", "")),
+        ("NOTHING", ("NOTHING", "")),
+        ("I set a reminder.\nSAY: Done!", ("SAY", "Done!")),
+        ("SAY: first\nSome trailing chatter", ("NOTHING", "")),  # only the last line counts
+        ("**SLEEP**", ("SLEEP", "")),
+        ("SAY:", ("NOTHING", "")),
+        ("I think I will say hello", ("NOTHING", "")),
+        ("", ("NOTHING", "")),
+        (None, ("NOTHING", "")),
+    ],
+)
 def test_parse_reply(text, expected):
     assert r.parse_reply(text) == expected
 
 
 def test_decision_prompt_contents():
-    ctx = {"localTime": "2026-11-26T09:30:00+08:00", "place": "lounge", "secondsSinceFaceSeen": 20,
-           "secondsSinceKevinSpoke": 1800}
-    p = r.decision_prompt("Echo", ctx, hours_awake=3.5, intentions=["[goal] learn to cook"], flows=["weather: bins"],
-                          quiet_saves=["washing done"], offers=[{"stationId": "s1", "label": "Poetry shelf"}],
-                          arrival_minutes=45)
-    for needle in ("Echo", "2026-11-26T09:30", "lounge", "Kevin is in view", "3.5 hours", "learn to cook",
-                   "weather: bins", '"washing done"', "Poetry shelf (id s1)", "45 minutes", "SAY:", "READ:", "SLEEP",
-                   "NOTHING"):
+    ctx = {
+        "localTime": "2026-11-26T09:30:00+08:00",
+        "place": "lounge",
+        "secondsSinceFaceSeen": 20,
+        "secondsSinceKevinSpoke": 1800,
+    }
+    p = r.decision_prompt(
+        "Echo",
+        ctx,
+        hours_awake=3.5,
+        intentions=["[goal] learn to cook"],
+        flows=["weather: bins"],
+        quiet_saves=["washing done"],
+        offers=[{"stationId": "s1", "label": "Poetry shelf"}],
+        arrival_minutes=45,
+    )
+    for needle in (
+        "Echo",
+        "2026-11-26T09:30",
+        "lounge",
+        "Kevin is in view",
+        "3.5 hours",
+        "learn to cook",
+        "weather: bins",
+        '"washing done"',
+        "Poetry shelf (id s1)",
+        "45 minutes",
+        "SAY:",
+        "READ:",
+        "SLEEP",
+        "NOTHING",
+    ):
         assert needle in p, needle
 
 

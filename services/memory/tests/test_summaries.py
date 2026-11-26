@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from test_recall import T0, at, message, post
-
 from memory_engine.summaries import period_bounds
+from test_recall import T0, at, message, post
 
 
 def run(client, now):
@@ -50,7 +49,10 @@ def test_a_quiet_conversation_is_summarised_titled_and_its_facts_saved(summary_c
     facts = summary_client.get("/v1/facts").json()["facts"]
     assert facts[0]["author"] == "extractor" and facts[0]["session_id"] == str(session)
     found = summary_client.get("/v1/search", params={"q": "corolla", "kind": "session"}).json()["results"]
-    assert found[0]["text"] == "Selling the Corolla: The user decided to sell their old Corolla next month.\nTopics: car, money"
+    assert (
+        found[0]["text"]
+        == "Selling the Corolla: The user decided to sell their old Corolla next month.\nTopics: car, money"
+    )
     # Nothing new: nothing to do.
     assert run(summary_client, T0 + timedelta(minutes=20)) == []
 
@@ -71,10 +73,20 @@ def test_closed_days_weeks_and_months_roll_up(summary_client, llm):
     for day in range(3):
         session = uuid4()
         when = monday + timedelta(days=day)
-        summary_client.post("/v1/messages", json={"messages": [
-            {"id": str(uuid4()), "session_id": str(session), "role": "user", "content": f"day {day} chat",
-             "created_at": when.isoformat()},
-        ]})
+        summary_client.post(
+            "/v1/messages",
+            json={
+                "messages": [
+                    {
+                        "id": str(uuid4()),
+                        "session_id": str(session),
+                        "role": "user",
+                        "content": f"day {day} chat",
+                        "created_at": when.isoformat(),
+                    },
+                ]
+            },
+        )
     done = run(summary_client, datetime(2026, 11, 3, tzinfo=timezone.utc))
     kinds = [d["kind"] for d in done]
     assert kinds.count("session") == 3 and kinds.count("day") == 3
@@ -144,7 +156,12 @@ def test_a_failing_model_backs_off_and_the_brief_uses_summaries(summary_client, 
 
     later = uuid4()
     post(summary_client, message(later, "user", "about the shed", 60))
-    llm.reply = lambda prompt: {"title": "Shed", "summary": "The user talked about the shed.", "topics": [], "facts": []}
+    llm.reply = lambda prompt: {
+        "title": "Shed",
+        "summary": "The user talked about the shed.",
+        "topics": [],
+        "facts": [],
+    }
     done = run(summary_client, T0 + timedelta(minutes=12))
     assert [d.get("title") for d in done] == ["Shed"]  # the garden one is still waiting
     assert summary_client.get("/v1/brief").json()["last_session"]["summary"] == "The user talked about the shed."
@@ -155,14 +172,24 @@ def test_a_summary_of_a_transcript_that_changed_meanwhile_is_dropped(summary_cli
 
     session = uuid4()
     secret = message(session, "user", "my locker code is 4471", 0)
-    post(summary_client, secret, message(session, "user", "anyway, the weather", 1), message(session, "assistant", "Sunny.", 2))
+    post(
+        summary_client,
+        secret,
+        message(session, "user", "anyway, the weather", 1),
+        message(session, "assistant", "Sunny.", 2),
+    )
 
     def reply(prompt):
         if "4471" in prompt:
             # The user forgets that message while the model is still writing.
             with psycopg.connect(database_url) as conn:
                 conn.execute(f"DELETE FROM {schema}.messages WHERE id = %s", (secret["id"],))
-            return {"title": "Locker", "summary": "The locker code is 4471.", "topics": [], "facts": [{"text": "Locker code 4471"}]}
+            return {
+                "title": "Locker",
+                "summary": "The locker code is 4471.",
+                "topics": [],
+                "facts": [{"text": "Locker code 4471"}],
+            }
         return {"title": "Weather", "summary": "They talked about the weather.", "topics": [], "facts": []}
 
     llm.reply = reply
@@ -193,6 +220,7 @@ def test_naming_a_session_marks_it_changed_for_the_mirror(summary_client, llm, d
         before = conn.execute(f"SELECT updated_at FROM {schema}.sessions WHERE id = %s", (session,)).fetchone()[0]
     run(summary_client, T0 + timedelta(minutes=11))
     with psycopg.connect(database_url) as conn:
-        title, after = conn.execute(f"SELECT title, updated_at FROM {schema}.sessions WHERE id = %s", (session,)).fetchone()
+        title, after = conn.execute(
+            f"SELECT title, updated_at FROM {schema}.sessions WHERE id = %s", (session,)
+        ).fetchone()
     assert title == "A chat" and after > before
-

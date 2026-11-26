@@ -3,13 +3,15 @@ import json
 from aiembodied_workflows.bridge import Bridge, Signal, WatchEntry, WatchIndex, event_to_signals
 
 INDEX = WatchIndex()
-INDEX.replace([
-    WatchEntry("watch:1", "echo", {"kind": "entity", "entityId": "binary_sensor.door", "state": "on"}),
-    WatchEntry("flowwatch:echo:f", "echo", {"kind": "entity", "entityId": "binary_sensor.door", "state": "off"}),
-    WatchEntry("watch:2", "echo", {"kind": "entity", "entityId": "sensor.other", "below": 5}),
-    WatchEntry("watch:3", "echo", {"kind": "coding_task", "taskId": "20261108-1a2b"}),
-    WatchEntry("watch:4", "echo", {"kind": "search", "query": "x"}),
-])
+INDEX.replace(
+    [
+        WatchEntry("watch:1", "echo", {"kind": "entity", "entityId": "binary_sensor.door", "state": "on"}),
+        WatchEntry("flowwatch:echo:f", "echo", {"kind": "entity", "entityId": "binary_sensor.door", "state": "off"}),
+        WatchEntry("watch:2", "echo", {"kind": "entity", "entityId": "sensor.other", "below": 5}),
+        WatchEntry("watch:3", "echo", {"kind": "coding_task", "taskId": "20261108-1a2b"}),
+        WatchEntry("watch:4", "echo", {"kind": "search", "query": "x"}),
+    ]
+)
 
 
 def test_speech_heard_wakes_the_addressed_avatar():
@@ -25,7 +27,14 @@ def test_utterance_from_an_avatar():
 
 
 def test_home_change_goes_to_matching_watches_only():
-    payload = {"entity_id": "binary_sensor.door", "new": "on", "old": "off", "text": "Front door opened", "home_id": "h", "x": 1}
+    payload = {
+        "entity_id": "binary_sensor.door",
+        "new": "on",
+        "old": "off",
+        "text": "Front door opened",
+        "home_id": "h",
+        "x": 1,
+    }
     for typ in ("home.change", "home.alert"):
         sigs = event_to_signals({"type": typ, "payload": payload}, INDEX)
         assert {s.workflow_id for s in sigs} == {"watch:1", "flowwatch:echo:f"}
@@ -35,7 +44,11 @@ def test_home_change_goes_to_matching_watches_only():
 
 
 def test_task_status_goes_to_the_coding_watch():
-    ev = {"type": "task.status", "txn": {"id": "task:20261108-1a2b", "state": "done"}, "payload": {"summary": "PR opened"}}
+    ev = {
+        "type": "task.status",
+        "txn": {"id": "task:20261108-1a2b", "state": "done"},
+        "payload": {"summary": "PR opened"},
+    }
     sigs = event_to_signals(ev, INDEX)
     assert [s.workflow_id for s in sigs] == ["watch:3"]
     assert sigs[0].payload["state"] == "done" and sigs[0].payload["taskId"] == "20261108-1a2b"
@@ -64,7 +77,13 @@ async def test_bridge_hello_and_handle_resume_id():
     assert b.url == "ws://127.0.0.1:8196/v1/stream"
     hello = b.hello()
     assert hello["actor"] == "service:workflows" and hello["since"] is None and hello["subscribe"]["observe"] is True
-    assert hello["subscribe"]["types"] == ["speech.heard", "home.change", "home.alert", "task.status", "avatar.utterance"]
+    assert hello["subscribe"]["types"] == [
+        "speech.heard",
+        "home.change",
+        "home.alert",
+        "task.status",
+        "avatar.utterance",
+    ]
     assert hello["subscribe"]["to"] == ["service:workflows"]
     await b.handle({"id": "01ABC", "type": "speech.heard", "to": ["avatar:echo"]})
     assert sent == [Signal("life:echo", "interaction")] and b.hello()["since"] == "01ABC"
@@ -111,8 +130,17 @@ async def test_bridge_run_reads_events_and_reconnects():
         async def __aexit__(self, *a):
             return False
 
-    sockets = [WS([{"op": "welcome"}, {"op": "event", "event": {"id": "A", "type": "speech.heard", "to": ["avatar:echo"]}}]),
-               WS([{"op": "event", "event": {"id": "B", "type": "avatar.utterance", "producer": {"kind": "avatar", "id": "echo"}}}])]
+    sockets = [
+        WS([{"op": "welcome"}, {"op": "event", "event": {"id": "A", "type": "speech.heard", "to": ["avatar:echo"]}}]),
+        WS(
+            [
+                {
+                    "op": "event",
+                    "event": {"id": "B", "type": "avatar.utterance", "producer": {"kind": "avatar", "id": "echo"}},
+                }
+            ]
+        ),
+    ]
     calls = []
 
     def connect(url):

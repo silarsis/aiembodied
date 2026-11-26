@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 import anyio
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -35,7 +36,7 @@ async def housekeeping(hub: Hub) -> None:
             log.exception("housekeeping failed")
 
 
-def create_app(cfg: Optional[Config] = None) -> FastAPI:
+def create_app(cfg: Config | None = None) -> FastAPI:
     cfg = cfg or Config.from_env()
     hub = Hub(cfg)
 
@@ -54,8 +55,14 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        return {"ok": True, "version": __version__, "node": cfg.node, "events": hub.store.count_events(),
-                "open_txns": hub.store.count_open_txns(), "clients": len(hub.clients)}
+        return {
+            "ok": True,
+            "version": __version__,
+            "node": cfg.node,
+            "events": hub.store.count_events(),
+            "open_txns": hub.store.count_open_txns(),
+            "clients": len(hub.clients),
+        }
 
     @app.post("/v1/events")
     async def publish(body: dict[str, Any] = Body(...)) -> dict[str, list[str]]:
@@ -66,15 +73,23 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
             raise HTTPException(e.status, e.message) from None
 
     @app.get("/v1/events")
-    async def events(since: Optional[str] = None, type: Optional[str] = None, producer: Optional[str] = None,
-                     txn: Optional[str] = None, root: Optional[str] = None, scene: Optional[str] = None,
-                     to: Optional[str] = None, limit: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    async def events(
+        since: str | None = None,
+        type: str | None = None,
+        producer: str | None = None,
+        txn: str | None = None,
+        root: str | None = None,
+        scene: str | None = None,
+        to: str | None = None,
+        limit: int = Query(200, ge=1, le=1000),
+    ) -> dict[str, Any]:
         found = hub.store.events(since, type, producer, txn, root, scene, to, limit)
         return {"events": found, "next": found[-1]["id"] if found else None}
 
     @app.get("/v1/txns")
-    async def txns(state: Optional[str] = None, root: Optional[str] = None,
-                   limit: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    async def txns(
+        state: str | None = None, root: str | None = None, limit: int = Query(200, ge=1, le=1000)
+    ) -> dict[str, Any]:
         return {"txns": hub.store.txns(state, root, limit=limit)}
 
     @app.get("/v1/txns/{txn_id}")
@@ -82,8 +97,11 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         row = hub.store.get_txn(txn_id)
         if row is None:
             raise HTTPException(404, f"no txn {txn_id}")
-        return {"txn": row, "children": hub.store.txns(parent=txn_id, limit=1000),
-                "events": hub.store.events(txn=txn_id, limit=1000)}
+        return {
+            "txn": row,
+            "children": hub.store.txns(parent=txn_id, limit=1000),
+            "events": hub.store.events(txn=txn_id, limit=1000),
+        }
 
     @app.websocket("/v1/stream")
     async def stream(ws: WebSocket) -> None:

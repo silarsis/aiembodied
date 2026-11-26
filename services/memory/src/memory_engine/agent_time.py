@@ -6,7 +6,7 @@ and none of it is mirrored."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -28,7 +28,7 @@ FLOW_COLUMNS = (
 STATE_COLUMNS = "avatar_id, asleep, awake_since, last_sleep_at, last_wake_at, updated_at"
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
@@ -86,7 +86,7 @@ def create_intention(conn: psycopg.Connection, intention_id: UUID, values: dict[
 INTENTION_PATCHABLE = ("status", "outcome", "workflow_id", "text", "why", "due_at", "params", "template")
 
 
-def update_intention(conn: psycopg.Connection, intention_id: UUID, changes: dict[str, Any]) -> Optional[dict[str, Any]]:
+def update_intention(conn: psycopg.Connection, intention_id: UUID, changes: dict[str, Any]) -> dict[str, Any] | None:
     """Change the named columns (a value of None clears a nullable one). None if there is no such row."""
     sets = ["updated_at = now()"]
     args: dict[str, Any] = {"id": intention_id}
@@ -105,9 +105,9 @@ def update_intention(conn: psycopg.Connection, intention_id: UUID, changes: dict
 def list_intentions(
     conn: psycopg.Connection,
     *,
-    avatar_id: Optional[str] = None,
-    statuses: Optional[tuple[str, ...]] = ACTIVE,
-    kind: Optional[str] = None,
+    avatar_id: str | None = None,
+    statuses: tuple[str, ...] | None = ACTIVE,
+    kind: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """Newest first. `statuses` None means every status."""
@@ -144,7 +144,9 @@ def _flow(r: tuple) -> dict[str, Any]:
     }
 
 
-def list_flows(conn: psycopg.Connection, *, avatar_id: Optional[str] = None, include_disabled: bool = False) -> list[dict[str, Any]]:
+def list_flows(
+    conn: psycopg.Connection, *, avatar_id: str | None = None, include_disabled: bool = False
+) -> list[dict[str, Any]]:
     """Flows that are not deleted, by avatar then name; switched-off ones only when asked for."""
     rows = conn.execute(
         f"""
@@ -159,7 +161,7 @@ def list_flows(conn: psycopg.Connection, *, avatar_id: Optional[str] = None, inc
     return [_flow(r) for r in rows]
 
 
-def get_flow(conn: psycopg.Connection, avatar_id: str, name: str) -> Optional[dict[str, Any]]:
+def get_flow(conn: psycopg.Connection, avatar_id: str, name: str) -> dict[str, Any] | None:
     """None when there is no such flow or it was deleted."""
     row = conn.execute(
         f"SELECT {FLOW_COLUMNS} FROM agent_flows WHERE avatar_id = %s AND name = %s AND deleted_at IS NULL",  # noqa: S608
@@ -213,7 +215,7 @@ def put_flow(
     return flow
 
 
-def update_flow(conn: psycopg.Connection, avatar_id: str, name: str, changes: dict[str, Any]) -> Optional[dict[str, Any]]:
+def update_flow(conn: psycopg.Connection, avatar_id: str, name: str, changes: dict[str, Any]) -> dict[str, Any] | None:
     """Change `enabled`, `last_run_at` or `last_outcome`; the definition's version stays as it is."""
     sets = ["updated_at = now()"]
     args: dict[str, Any] = {"avatar": avatar_id, "name": name}
@@ -253,7 +255,7 @@ def _state(r: tuple) -> dict[str, Any]:
     }
 
 
-def get_state(conn: psycopg.Connection, avatar_id: str) -> Optional[dict[str, Any]]:
+def get_state(conn: psycopg.Connection, avatar_id: str) -> dict[str, Any] | None:
     row = conn.execute(f"SELECT {STATE_COLUMNS} FROM agent_state WHERE avatar_id = %s", (avatar_id,)).fetchone()  # noqa: S608
     return _state(row) if row else None
 
@@ -281,7 +283,7 @@ def put_state(conn: psycopg.Connection, avatar_id: str, changes: dict[str, Any])
 # The brief
 
 
-def brief_parts(conn: psycopg.Connection, avatar_id: Optional[str]) -> dict[str, Any]:
+def brief_parts(conn: psycopg.Connection, avatar_id: str | None) -> dict[str, Any]:
     """Active intentions (goals first, then by due date, at most 12), enabled flows (at most 12)
     and the sleep state, for one avatar, or for all of them when `avatar_id` is None."""
     rows = conn.execute(
@@ -313,6 +315,9 @@ def brief_parts(conn: psycopg.Connection, avatar_id: Optional[str]) -> dict[str,
         """,
         {"avatar": avatar_id, "limit": BRIEF_FLOWS},
     ).fetchall()
-    flows = [{"name": r[0], "description": _clip(r[1], BRIEF_TEXT_CHARS), "trigger": r[2], "avatar_id": r[3]} for r in flow_rows]
+    flows = [
+        {"name": r[0], "description": _clip(r[1], BRIEF_TEXT_CHARS), "trigger": r[2], "avatar_id": r[3]}
+        for r in flow_rows
+    ]
     state = get_state(conn, avatar_id) if avatar_id else None
     return {"intentions": intentions, "flows": flows, "agent_state": state}

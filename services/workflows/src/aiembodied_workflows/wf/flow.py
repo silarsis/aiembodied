@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Sequence
+from datetime import datetime, timedelta
+from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RawValue, RetryPolicy
@@ -19,7 +20,7 @@ from ..flowdef import validate_definition
 from ..interpreter import FlowError, run_steps
 from ..settings import TASK_QUEUE
 from ..timeutil import get_tz, next_local_time, parse_iso
-from .common import (Controllable, best_effort, journal, now, patch_intention, try_act, ts, wait_changed, wlog)
+from .common import Controllable, best_effort, journal, now, try_act, ts, wait_changed, wlog
 
 MAX_DEPTH = 5
 RUNAWAY_SECONDS = 55
@@ -51,7 +52,7 @@ def seconds_between(a_iso: str | None, b: datetime) -> float | None:
 class WorkflowRunner:
     """The interpreter's Runner, built from activities."""
 
-    def __init__(self, wf: "AgentFlow", inp: FlowInput):
+    def __init__(self, wf: AgentFlow, inp: FlowInput):
         self.wf, self.inp, self.avatar = wf, inp, inp.avatar_id
         self.tz = get_tz(inp.config.get("timezone"))
 
@@ -69,8 +70,12 @@ class WorkflowRunner:
 
     async def search(self, query: str) -> str:
         try:
-            res = await workflow.execute_activity("web_search", query, start_to_close_timeout=timedelta(seconds=30),
-                                                  retry_policy=RetryPolicy(maximum_attempts=2))
+            res = await workflow.execute_activity(
+                "web_search",
+                query,
+                start_to_close_timeout=timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=2),
+            )
         except Exception as exc:  # noqa: BLE001
             return f"(search failed: {exc})"
         return format_results(res)
@@ -117,12 +122,18 @@ class WorkflowRunner:
             raise FlowError(f"run_flow {name}: nested more than {MAX_DEPTH} flows deep")
         child = FlowInput(self.avatar, name, inputs, "child", self.inp.depth + 1, self.inp.config)
         return await workflow.execute_child_workflow(
-            "AgentFlow", child, id=flow_workflow_id(self.avatar, name, str(workflow.uuid4())),
-            task_queue=TASK_QUEUE, result_type=str, search_attributes=search_attrs(self.avatar, "flow", "agent", name))
+            "AgentFlow",
+            child,
+            id=flow_workflow_id(self.avatar, name, str(workflow.uuid4())),
+            task_queue=TASK_QUEUE,
+            result_type=str,
+            search_attributes=search_attrs(self.avatar, "flow", "agent", name),
+        )
 
     async def set_intention(self, text: str, kind: str) -> None:
-        await best_effort("mem_create_intention", {"avatar_id": self.avatar, "kind": kind, "text": text,
-                                                    "status": "open"})
+        await best_effort(
+            "mem_create_intention", {"avatar_id": self.avatar, "kind": kind, "text": text, "status": "open"}
+        )
 
     async def step_done(self, label: str, kind: str, result: str) -> None:
         wlog(f"step {label} {kind} -> {result}")
@@ -191,8 +202,11 @@ class AgentFlow(Controllable):
         wlog(f"started {label}")
         await journal("started", f"flow {label} started", inp.avatar_id)
         row = await workflow.execute_activity(
-            "mem_get_flow", {"avatarId": inp.avatar_id, "name": inp.name},
-            start_to_close_timeout=timedelta(seconds=30), result_type=dict)
+            "mem_get_flow",
+            {"avatarId": inp.avatar_id, "name": inp.name},
+            start_to_close_timeout=timedelta(seconds=30),
+            result_type=dict,
+        )
         if not row:
             return await self._fail(inp, f"flow {inp.name} not found")
         if row.get("enabled") is False and inp.source not in ("manual", "child"):
@@ -204,11 +218,19 @@ class AgentFlow(Controllable):
         gap = seconds_between(row.get("last_run_at"), now())
         if inp.source == "schedule" and gap is not None and 0 <= gap < RUNAWAY_SECONDS:
             await workflow.execute_activity(
-                "flow_runaway", {"avatarId": inp.avatar_id, "name": inp.name, "source": inp.source, "gap": gap},
-                start_to_close_timeout=timedelta(seconds=30))
+                "flow_runaway",
+                {"avatarId": inp.avatar_id, "name": inp.name, "source": inp.source, "gap": gap},
+                start_to_close_timeout=timedelta(seconds=30),
+            )
             return await self._fail(inp, f"started again after {gap:.0f} s, schedule paused", log_level="warning")
-        await best_effort("mem_patch_flow", {"avatarId": inp.avatar_id, "name": inp.name,
-                                             "fields": {"last_run_at": now().isoformat().replace("+00:00", "Z")}})
+        await best_effort(
+            "mem_patch_flow",
+            {
+                "avatarId": inp.avatar_id,
+                "name": inp.name,
+                "fields": {"last_run_at": now().isoformat().replace("+00:00", "Z")},
+            },
+        )
         variables = {**(definition.get("inputs") or {}), **(inp.inputs or {})}
         runner = WorkflowRunner(self, inp)
         try:
@@ -217,12 +239,14 @@ class AgentFlow(Controllable):
             return await self._fail(inp, str(exc))
         except asyncio.CancelledError:
             wlog(f"{label} cancelled", "warning")
-            await best_effort("mem_patch_flow", {"avatarId": inp.avatar_id, "name": inp.name,
-                                                 "fields": {"last_outcome": "cancelled"}})
+            await best_effort(
+                "mem_patch_flow", {"avatarId": inp.avatar_id, "name": inp.name, "fields": {"last_outcome": "cancelled"}}
+            )
             raise
         outcome = f"ok after {result.executed} steps" + (f": {result.last[:120]}" if result.last else "")
-        await best_effort("mem_patch_flow", {"avatarId": inp.avatar_id, "name": inp.name,
-                                             "fields": {"last_outcome": outcome}})
+        await best_effort(
+            "mem_patch_flow", {"avatarId": inp.avatar_id, "name": inp.name, "fields": {"last_outcome": outcome}}
+        )
         wlog(f"completed {label}: {outcome}")
         await journal("completed", f"flow {label} completed: {outcome}", inp.avatar_id)
         return result.last or "ok"
@@ -230,6 +254,8 @@ class AgentFlow(Controllable):
     async def _fail(self, inp: FlowInput, message: str, log_level: str = "error") -> str:
         wlog(f"failed {inp.name}: {message}", log_level)
         await journal("failed", f"flow {inp.name} failed: {message}", inp.avatar_id)
-        await best_effort("mem_patch_flow", {"avatarId": inp.avatar_id, "name": inp.name,
-                                             "fields": {"last_outcome": f"failed: {message}"[:300]}})
+        await best_effort(
+            "mem_patch_flow",
+            {"avatarId": inp.avatar_id, "name": inp.name, "fields": {"last_outcome": f"failed: {message}"[:300]}},
+        )
         raise ApplicationError(message, type="FlowFailed", non_retryable=True)

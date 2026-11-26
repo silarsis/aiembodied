@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Optional
 
 
 def default_data_dir(env: Mapping[str, str]) -> Path:
@@ -48,7 +48,7 @@ class Config:
     github_api: str = "https://api.github.com"
 
     @classmethod
-    def from_env(cls, env: Optional[Mapping[str, str]] = None) -> "Config":
+    def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
         env = os.environ if env is None else env
         c = cls()
         c.host = env.get("CODER_HOST", c.host)

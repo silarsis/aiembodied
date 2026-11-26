@@ -22,8 +22,11 @@ PATTERNS = ["*.json", "*.safetensors", "*.md"]
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--base", default="meta-llama/Meta-Llama-3-8B-Instruct",
-                    help="HF repo id or local folder of Llama-3-8B-Instruct (official repo is gated)")
+    ap.add_argument(
+        "--base",
+        default="meta-llama/Meta-Llama-3-8B-Instruct",
+        help="HF repo id or local folder of Llama-3-8B-Instruct (official repo is gated)",
+    )
     a = ap.parse_args()
 
     import torch

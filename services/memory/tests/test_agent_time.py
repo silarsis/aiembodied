@@ -32,7 +32,9 @@ def test_an_intention_is_created_listed_and_changed(client):
     # null clears a field that may be empty.
     assert client.patch(f"/v1/intentions/{row['id']}", json={"due_at": None}).json()["due_at"] is None
 
-    assert [i["id"] for i in client.get("/v1/intentions", params={"avatar_id": "echo"}).json()["intentions"]] == [row["id"]]
+    assert [i["id"] for i in client.get("/v1/intentions", params={"avatar_id": "echo"}).json()["intentions"]] == [
+        row["id"]
+    ]
     assert client.get("/v1/intentions", params={"avatar_id": "other"}).json()["intentions"] == []
 
     done = client.patch(f"/v1/intentions/{row['id']}", json={"status": "done", "outcome": "He said 500"}).json()
@@ -69,7 +71,9 @@ def test_a_flow_is_saved_with_versions_and_deleted_softly(client, database_url, 
         "/v1/flows/echo/morning",
         json={"description": "Greet", "definition": {"steps": [{"say": "Hi"}]}, "trigger": trigger},
     ).json()
-    assert second["version"] == 2 and second["trigger"] == trigger and second["definition"] == {"steps": [{"say": "Hi"}]}
+    assert (
+        second["version"] == 2 and second["trigger"] == trigger and second["definition"] == {"steps": [{"say": "Hi"}]}
+    )
     with db(database_url, schema) as conn:
         saved = conn.execute("SELECT version FROM agent_flow_versions ORDER BY version").fetchall()
     assert saved == [(1,), (2,)]

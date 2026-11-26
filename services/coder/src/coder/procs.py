@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 
 def is_secret_name(name: str) -> bool:
@@ -13,7 +13,7 @@ def is_secret_name(name: str) -> bool:
     return n in ("GITHUB_TOKEN", "GH_TOKEN") or n.startswith("HA_") or n.endswith(("_API_KEY", "_TOKEN", "_SECRET"))
 
 
-def clean_env(base: Optional[Mapping[str, str]] = None, extra: Optional[Mapping[str, str]] = None) -> dict[str, str]:
+def clean_env(base: Mapping[str, str] | None = None, extra: Mapping[str, str] | None = None) -> dict[str, str]:
     """The environment for pi and checks: no tokens, keys or Home Assistant settings; plus `extra`."""
     env = {k: v for k, v in (os.environ if base is None else base).items() if not is_secret_name(k)}
     env.update(extra or {})

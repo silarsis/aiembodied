@@ -39,8 +39,15 @@ class _Inbound(ActivityInboundInterceptor):
             kind = type(exc).__name__
             cause = getattr(exc, "type", None)
             level = log.info if cause in ("AppOffline",) else log.warning
-            level("failed %s -> %s%s: %s (%.0f ms)", what, kind, f"/{cause}" if cause else "", exc, ms,
-                  extra={"wfid": who})
+            level(
+                "failed %s -> %s%s: %s (%.0f ms)",
+                what,
+                kind,
+                f"/{cause}" if cause else "",
+                exc,
+                ms,
+                extra={"wfid": who},
+            )
             raise
         log.info("done  %s -> ok (%.0f ms)", what, (time.monotonic() - t0) * 1000, extra={"wfid": who})
         return out

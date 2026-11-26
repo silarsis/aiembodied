@@ -31,8 +31,11 @@ def test_positive_variants_include_the_paused_form():
 
 def test_status_and_config(tmp_path, monkeypatch):
     monkeypatch.setattr(t, "ROOT", tmp_path)
-    job = t.Job(argparse.Namespace(phrase="Hey  Echo", job_dir=str(tmp_path / "job"),
-                                   output_dir=str(tmp_path / "out"), quick=True))
+    job = t.Job(
+        argparse.Namespace(
+            phrase="Hey  Echo", job_dir=str(tmp_path / "job"), output_dir=str(tmp_path / "out"), quick=True
+        )
+    )
     job.model_root = tmp_path / "models"
     job.config_path = job.model_root / f"{job.slug}.yml"
     job.job_dir.mkdir()

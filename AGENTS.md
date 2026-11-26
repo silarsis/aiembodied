@@ -35,7 +35,7 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 15. **Never weaken, skip or delete a test to get green.** Fix the code, or say plainly why the test is wrong.
 
 ### Formatting
-16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns) and `eslint.config.js`. Python follows the surrounding file's style.
+16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns) and `eslint.config.js`. Python follows `ruff.toml` (`ruff check` and `ruff format`).
 
 ### Keeping the rules alive
 17. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
@@ -68,6 +68,7 @@ Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm test` — execute automated unit/integration tests.
 - `pnpm test:coverage` — run tests with coverage measurement and reporting.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
+- `ruff check services` and `ruff format --check services` — for Python changes (config in `ruff.toml`; CI runs both).
 
 ### OpenAI Responses API usage
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).

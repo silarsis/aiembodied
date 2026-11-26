@@ -18,9 +18,11 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import Any, Callable, ContextManager, Optional
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -74,11 +76,11 @@ PERIOD_SCHEMA: dict[str, Any] = {
 SYSTEM = (
     "You keep the long-term memory of a personal assistant that talks with one user. You write "
     "short, factual records that the assistant will read later to remember what happened. "
-    "Write about the user in the third person as \"the user\". Answer with JSON only."
+    'Write about the user in the third person as "the user". Answer with JSON only.'
 )
 
 
-def resolve_timezone(name: Optional[str]) -> tzinfo:
+def resolve_timezone(name: str | None) -> tzinfo:
     """MEMORY_TIMEZONE (an IANA name such as Australia/Melbourne), else this machine's offset."""
     if name:
         from zoneinfo import ZoneInfo
@@ -131,13 +133,17 @@ def due_sessions(conn: psycopg.Connection, now: datetime, quiet: timedelta, limi
     return [r[0] for r in rows]
 
 
-def due_periods(conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int = 20) -> list[tuple[str, datetime, datetime]]:
+def due_periods(
+    conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int = 20
+) -> list[tuple[str, datetime, datetime]]:
     """Closed days with conversation summaries, then weeks and months with day summaries, whose
     own summary is missing or saw less than is there now. Oldest first within each level."""
     children = conn.execute("SELECT kind, seq, period_start FROM summaries WHERE kind IN ('session', 'day')").fetchall()
     existing = {
         (r[0], r[1]): r[2]
-        for r in conn.execute("SELECT kind, period_start, covered_seq FROM summaries WHERE kind <> 'session'").fetchall()
+        for r in conn.execute(
+            "SELECT kind, period_start, covered_seq FROM summaries WHERE kind <> 'session'"
+        ).fetchall()
     }
     wanted: dict[tuple[str, datetime, datetime], int] = {}
     for kind, seq, start in children:
@@ -146,11 +152,7 @@ def due_periods(conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int 
             bounds = period_bounds(parent, start, tz)
             key = (parent, *bounds)
             wanted[key] = max(wanted.get(key, 0), seq)
-    due = [
-        key
-        for key, covered in wanted.items()
-        if key[2] <= now and existing.get((key[0], key[1]), -1) < covered
-    ]
+    due = [key for key, covered in wanted.items() if key[2] <= now and existing.get((key[0], key[1]), -1) < covered]
     order = {"day": 0, "week": 1, "month": 2}
     due.sort(key=lambda key: (order[key[0]], key[1]))
     return due[:limit]
@@ -162,17 +164,17 @@ def due_periods(conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int 
 @dataclass
 class SessionJob:
     session_id: UUID
-    agent: Optional[str]
+    agent: str | None
     started_at: datetime
     last_at: datetime
     covered_seq: int
     transcript: str
     facts: list[tuple[str, str]] = field(default_factory=list)  # (id, text)
     # Which messages the transcript was built from; a summary of anything else is stale.
-    revision: Optional[str] = None
+    revision: str | None = None
 
 
-def _session_revision(conn: psycopg.Connection, session_id: UUID) -> Optional[str]:
+def _session_revision(conn: psycopg.Connection, session_id: UUID) -> str | None:
     return conn.execute(
         """
         SELECT md5(string_agg(id::text || ':' || seq::text, ',' ORDER BY seq)) FROM messages
@@ -182,7 +184,7 @@ def _session_revision(conn: psycopg.Connection, session_id: UUID) -> Optional[st
     ).fetchone()[0]
 
 
-def load_session_job(conn: psycopg.Connection, session_id: UUID) -> Optional[SessionJob]:
+def load_session_job(conn: psycopg.Connection, session_id: UUID) -> SessionJob | None:
     session = conn.execute("SELECT agent FROM sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         return None
@@ -236,12 +238,12 @@ def session_prompt(job: SessionJob, tz: tzinfo) -> str:
         "- title: 3 to 8 words naming what the conversation was about.\n"
         "- summary: 2 to 6 sentences in the past tense: what was discussed, decided or planned, "
         "with any names, dates and numbers that matter.\n"
-        "- topics: 1 to 5 short lowercase topic tags, such as \"garden\" or \"car\".\n"
+        '- topics: 1 to 5 short lowercase topic tags, such as "garden" or "car".\n'
         "- facts: durable facts about the user or their world that the assistant should know in "
         "future conversations: preferences, decisions, plans with their dates, people, places, "
         "possessions. One short sentence each, third person. Not small talk, not facts about the "
         "assistant, and not facts already known. If one updates or contradicts a known fact, set "
-        "\"replaces\" to that fact's id in square brackets, without the brackets. An empty list is "
+        '"replaces" to that fact\'s id in square brackets, without the brackets. An empty list is '
         "fine and usual."
     )
 
@@ -280,11 +282,23 @@ def apply_session(conn: psycopg.Connection, job: SessionJob, result: dict[str, A
         """,
         (job.session_id, job.started_at, job.last_at, title or None, summary, topics, job.covered_seq, model),
     ).fetchone()[0]
-    _index(conn, summary_id, "session", job.session_id, job.agent, job.started_at, job.last_at, title, summary, topics,
-           SESSION_IMPORTANCE)
+    _index(
+        conn,
+        summary_id,
+        "session",
+        job.session_id,
+        job.agent,
+        job.started_at,
+        job.last_at,
+        title,
+        summary,
+        topics,
+        SESSION_IMPORTANCE,
+    )
     if title:
         conn.execute(
-            "UPDATE sessions SET title = %s, updated_at = now() WHERE id = %s AND title IS NULL", (title, job.session_id)
+            "UPDATE sessions SET title = %s, updated_at = now() WHERE id = %s AND title IS NULL",
+            (title, job.session_id),
         )
 
     known_ids = {fid for fid, _ in job.facts}
@@ -326,13 +340,13 @@ class PeriodJob:
     start: datetime
     end: datetime
     covered_seq: int
-    children: list[tuple[datetime, Optional[str], str]]  # (start, title, text)
+    children: list[tuple[datetime, str | None, str]]  # (start, title, text)
 
 
 CHILD_KIND = {"day": "session", "week": "day", "month": "day"}
 
 
-def load_period_job(conn: psycopg.Connection, kind: str, start: datetime, end: datetime) -> Optional[PeriodJob]:
+def load_period_job(conn: psycopg.Connection, kind: str, start: datetime, end: datetime) -> PeriodJob | None:
     rows = conn.execute(
         """
         SELECT period_start, title, text, seq FROM summaries
@@ -361,7 +375,8 @@ def period_prompt(job: PeriodJob, tz: tzinfo) -> str:
         parts = "days"
         fmt = "%A %d %B"
     children = "\n".join(
-        f"- {start.astimezone(tz).strftime(fmt)}: {title + ': ' if title else ''}{text}" for start, title, text in job.children
+        f"- {start.astimezone(tz).strftime(fmt)}: {title + ': ' if title else ''}{text}"
+        for start, title, text in job.children
     )
     length = "2 to 4 sentences" if job.kind == "day" else "3 to 6 sentences"
     return (
@@ -437,9 +452,9 @@ def invalidate_for_session(conn: psycopg.Connection, session_id: UUID) -> None:
 def list_summaries(
     conn: psycopg.Connection,
     *,
-    kind: Optional[str] = None,
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
+    kind: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
@@ -494,15 +509,15 @@ class Summariser:
         self.session_quiet = session_quiet
         self.idle_seconds = idle_seconds
         self.clock = clock
-        self.error: Optional[str] = None
+        self.error: str | None = None
         self.done = 0
-        self._busy_since: Optional[float] = None
+        self._busy_since: float | None = None
         self._last_activity = clock() - idle_seconds
         self._retry_at: dict[Any, tuple[float, float]] = {}
         self._lock = threading.Lock()
 
     # Activity, from the client: a turn starting (busy) or ending, and every write.
-    def activity(self, busy: Optional[bool] = None) -> None:
+    def activity(self, busy: bool | None = None) -> None:
         now = self.clock()
         self._last_activity = now
         if busy is True:
@@ -518,9 +533,9 @@ class Summariser:
 
     def run_once(
         self,
-        connect: Callable[[], ContextManager[psycopg.Connection]],
-        now: Optional[datetime] = None,
-    ) -> Optional[dict[str, Any]]:
+        connect: Callable[[], AbstractContextManager[psycopg.Connection]],
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
         """Do the next due job, if any. Returns what was done, or None when nothing is due."""
         with self._lock:
             now = now or datetime.now(timezone.utc)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,17 +20,21 @@ class DefaultModel(BaseModel):
 
 
 class SettingsBody(BaseModel):
-    local_llm_url: Optional[str] = Field(default=None, min_length=1)
-    local_model: Optional[str] = Field(default=None, min_length=1)
-    local_context: Optional[int] = Field(default=None, gt=0)
-    default_model: Optional[DefaultModel] = None
-    pr_poll_seconds: Optional[float] = Field(default=None, ge=0)
+    local_llm_url: str | None = Field(default=None, min_length=1)
+    local_model: str | None = Field(default=None, min_length=1)
+    local_context: int | None = Field(default=None, gt=0)
+    default_model: DefaultModel | None = None
+    pr_poll_seconds: float | None = Field(default=None, ge=0)
 
 
 def snapshot(cfg: Config) -> dict:
-    return {"local_llm_url": cfg.local_llm_url, "local_model": cfg.local_model, "local_context": cfg.local_context,
-            "default_model": cfg.default_model,
-            "pr_poll_seconds": cfg.pr_poll_seconds}
+    return {
+        "local_llm_url": cfg.local_llm_url,
+        "local_model": cfg.local_model,
+        "local_context": cfg.local_context,
+        "default_model": cfg.default_model,
+        "pr_poll_seconds": cfg.pr_poll_seconds,
+    }
 
 
 def apply(cfg: Config, body: SettingsBody) -> dict:
@@ -45,11 +49,20 @@ def apply(cfg: Config, body: SettingsBody) -> dict:
         cfg.default_provider, cfg.default_model_id = body.default_model.provider, body.default_model.id
     if body.pr_poll_seconds is not None:
         cfg.pr_poll_seconds = body.pr_poll_seconds
-    cfg.settings_path.write_text(json.dumps({
-        "local_llm_url": cfg.local_llm_url, "local_model": cfg.local_model,
-        "local_context": cfg.local_context, "default_provider": cfg.default_provider, "default_model_id": cfg.default_model_id,
-        "pr_poll_seconds": cfg.pr_poll_seconds,
-    }, indent=2), encoding="utf-8")
+    cfg.settings_path.write_text(
+        json.dumps(
+            {
+                "local_llm_url": cfg.local_llm_url,
+                "local_model": cfg.local_model,
+                "local_context": cfg.local_context,
+                "default_provider": cfg.default_provider,
+                "default_model_id": cfg.default_model_id,
+                "pr_poll_seconds": cfg.pr_poll_seconds,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     write_agent_dir(cfg)
     return snapshot(cfg)
 
@@ -65,9 +78,15 @@ def load(cfg: Config) -> None:
     for key in ("local_llm_url", "local_model", "default_provider", "default_model_id"):
         if isinstance(data.get(key), str):
             setattr(cfg, key, data[key])
-    if isinstance(data.get("local_context"), int) and not isinstance(data["local_context"], bool) \
-            and data["local_context"] > 0:
+    if (
+        isinstance(data.get("local_context"), int)
+        and not isinstance(data["local_context"], bool)
+        and data["local_context"] > 0
+    ):
         cfg.local_context = data["local_context"]
-    if isinstance(data.get("pr_poll_seconds"), (int, float)) and not isinstance(data["pr_poll_seconds"], bool) \
-            and data["pr_poll_seconds"] >= 0:
+    if (
+        isinstance(data.get("pr_poll_seconds"), (int, float))
+        and not isinstance(data["pr_poll_seconds"], bool)
+        and data["pr_poll_seconds"] >= 0
+    ):
         cfg.pr_poll_seconds = float(data["pr_poll_seconds"])

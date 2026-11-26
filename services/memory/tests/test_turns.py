@@ -38,19 +38,23 @@ def test_order_comes_from_time_not_arrival():
 
 
 def test_greeting_before_any_user_message_is_its_own_turn_and_system_is_skipped():
-    turns = assemble_turns([
-        msg("system", "Wake word detected", 0),
-        msg("assistant", "Hello!", 1),
-        msg("user", "hi", 2),
-    ])
+    turns = assemble_turns(
+        [
+            msg("system", "Wake word detected", 0),
+            msg("assistant", "Hello!", 1),
+            msg("user", "hi", 2),
+        ]
+    )
     assert [t.text() for t in turns] == ["Assistant: Hello!", "User: hi"]
 
 
 def test_long_tool_results_are_cut_and_privacy_carries():
-    turns = assemble_turns([
-        msg("user", "search", 0, private=True),
-        msg("tool", "x" * 5000, 1, tool={"name": "web_search", "ok": False}),
-    ])
+    turns = assemble_turns(
+        [
+            msg("user", "search", 0, private=True),
+            msg("tool", "x" * 5000, 1, tool={"name": "web_search", "ok": False}),
+        ]
+    )
     text = turns[0].text()
     assert "[web_search failed]" in text
     assert len(text) < 800

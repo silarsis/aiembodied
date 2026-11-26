@@ -4,11 +4,24 @@ import math
 
 import numpy as np
 import pytest
-
 from motion_service.constraints import (
-    ConstraintPlan, PathParams, SnapTarget, TargetParams, build_plan, end_pose, from_model_units,
-    hand_bundle, heading_of, path_length, scale_for, schedule_path, smooth_path, snap_root, snap_weights,
-    to_model_units, window_frames,
+    ConstraintPlan,
+    PathParams,
+    SnapTarget,
+    TargetParams,
+    build_plan,
+    end_pose,
+    from_model_units,
+    hand_bundle,
+    heading_of,
+    path_length,
+    scale_for,
+    schedule_path,
+    smooth_path,
+    snap_root,
+    snap_weights,
+    to_model_units,
+    window_frames,
 )
 from motion_service.retarget import SOMA77, SOMA_REST_HIPS_HEIGHT
 
@@ -16,6 +29,7 @@ FPS = 30.0
 
 
 # --- paths -------------------------------------------------------------------------------------
+
 
 def _turn_angles(p):
     d = np.diff(p, axis=0)
@@ -86,6 +100,7 @@ def test_schedule_path_single_point_just_holds():
 
 # --- units -------------------------------------------------------------------------------------
 
+
 def test_unit_scaling_round_trips():
     assert scale_for(None) == 1.0
     rest = {"hips": [0, 0.8, 0]}
@@ -108,11 +123,18 @@ def test_plan_converts_request_metres_to_model_units():
 
 # --- plan, reveal ------------------------------------------------------------------------------
 
+
 def test_reveal_filters_targets_by_chunk_start():
     plan = build_plan(
         PathParams([(0, 0), (0, 2)], start_s=0.0),
-        [TargetParams(t=5.5, until=5.6, root=(0, 2.15), height=0.5, heading=3.0, reveal_s=4.0),
-         TargetParams(t=2.0, heading=1.0)], FPS, 1.0, 240)
+        [
+            TargetParams(t=5.5, until=5.6, root=(0, 2.15), height=0.5, heading=3.0, reveal_s=4.0),
+            TargetParams(t=2.0, heading=1.0),
+        ],
+        FPS,
+        1.0,
+        240,
+    )
     for start in (0, 60):  # chunk starts 0 s, 2 s: the sit target (reveal 4 s) is hidden
         tg = plan.visible(start)
         assert 165 not in tg.root2d and 165 not in tg.root_y
@@ -132,8 +154,17 @@ def test_targets_override_path_on_the_same_frame_and_frames_are_clipped():
 
 
 def test_hand_target_expands_to_the_ee_bundle():
-    plan = build_plan(None, [TargetParams(t=2.0, until=2.1, hand="right", position=(-0.18, 0.75, 0.5),
-                                          root=(0, 0), height=0.9, heading=0.0)], FPS, 1.0, 120)
+    plan = build_plan(
+        None,
+        [
+            TargetParams(
+                t=2.0, until=2.1, hand="right", position=(-0.18, 0.75, 0.5), root=(0, 0), height=0.9, heading=0.0
+            )
+        ],
+        FPS,
+        1.0,
+        120,
+    )
     tg = plan.visible(0)
     assert sorted(f for f in tg.root2d) == [60, 61, 62, 63]
     assert tg.joints[(60, "RightHand")] == pytest.approx((-0.18, 0.75, 0.5))
@@ -163,6 +194,7 @@ def test_plan_empty_and_window_frames():
 
 
 # --- snapping ----------------------------------------------------------------------------------
+
 
 def _walk_root(frames, drift=0.04):
     """Walks 1 m/s along +Z and stops at z = 2 (plus a 4 cm error), swaying a little."""
@@ -200,7 +232,9 @@ def test_snap_off_and_carry():
     out, delta = snap_root(root, plan, FPS, 0)
     assert np.array_equal(out, root) and not delta.any()
     out, _ = snap_root(root, None, FPS, 0.3, 0, carry=(0.05, -0.03))
-    assert out[0, 0] - root[0, 0] == pytest.approx(0.05, abs=0.01) and out[0, 2] - root[0, 2] == pytest.approx(-0.03, abs=0.01)
+    assert out[0, 0] - root[0, 0] == pytest.approx(0.05, abs=0.01) and out[0, 2] - root[0, 2] == pytest.approx(
+        -0.03, abs=0.01
+    )
     assert np.all(np.diff(out[:10, 0] - root[:10, 0]) < 0)  # fades monotonically
     assert np.allclose(out[10:], root[10:])  # gone after snap_s
 
@@ -221,6 +255,7 @@ def test_snap_weights_shape():
 
 
 # --- headings and end pose ---------------------------------------------------------------------
+
 
 def _joints_facing(theta):
     idx = {n: i for i, n in enumerate(SOMA77)}
