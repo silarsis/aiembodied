@@ -21,7 +21,7 @@ working while nobody is talking to the avatar, and it picks up again after the a
 
 | Tool | What it does |
 |------|--------------|
-| `remind_me` | Say something to Kevin at a time (`at` or `inSeconds`); `alarm` makes it urgent |
+| `remind_me` | Say something to Kevin at a time (`at` or `inSeconds`), spoken as soon as it is due |
 | `wake_me_later` | Get a note back later and think again |
 | `watch_for` | Watch a Home Assistant entity, a web search, a URL or a coding task, then say, think or run a flow |
 | `write_flow`, `run_flow`, `my_flows` | Write and run routines (see below) |

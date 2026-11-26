@@ -23,7 +23,7 @@ Always 200 while the process runs; `temporal` is false while it cannot reach the
 ## Reminders, wake-ups, watches
 
 - `POST /v1/reminders` `{"avatarId", "at": ISO | "inSeconds": n, "text", "alarm": false}` -> `{"workflowId": "remind:<uuid>",
-  "intentionId", "dueAt"}`. At the time it says "Reminder: <text>" (urgent for an alarm); more than 10 minutes late it adds
+  "intentionId", "dueAt"}`. At the time it says "Reminder: <text>" (always urgent, so it is spoken at once; `alarm` is kept but no longer changes anything); more than 10 minutes late it adds
   "(this was due at HH:MM)". If the app is closed it waits for it, up to 7 days.
 - `POST /v1/wakeups` `{"avatarId", "at"|"inSeconds", "note"}` -> the same shape (`wake:<uuid>`). At the time the avatar
   thinks about the note with its safe tools, and says something if it answers `SAY: ...`.

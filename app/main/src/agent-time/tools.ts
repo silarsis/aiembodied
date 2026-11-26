@@ -156,11 +156,11 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
     toolName: 'remind_me',
     description:
       'Set a reminder for yourself to tell Kevin something at a time. It survives a restart of the app. Give "text" (what to say) and either "at" (ISO time) or "inSeconds". ' +
-      'Set alarm true only for something that must be said even when Kevin is busy. Use it when you promise "I will remind you". ' +
+      'It is spoken as soon as it is due. Use it when you promise "I will remind you". ' +
       'Example: {"text": "The bins go out tonight.", "at": "2026-11-26T18:00:00+08:00"}.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string', description: 'What to remind Kevin of, in a short sentence.' }, ...WHEN_PROPERTIES, alarm: { type: 'boolean', description: 'Optional. True to say it urgently.' } },
+      properties: { text: { type: 'string', description: 'What to remind Kevin of, in a short sentence.' }, ...WHEN_PROPERTIES, alarm: { type: 'boolean', description: 'Optional, no longer needed: every reminder is spoken when due.' } },
       required: ['text'],
     },
     confirmationLevel: 'notify',
