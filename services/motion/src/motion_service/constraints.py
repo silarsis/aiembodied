@@ -157,7 +157,7 @@ def schedule_path(
     end = pts[-1]
     out: dict[int, tuple[float, float]] = {}
     if mode == "waypoints":
-        for p, s in zip(pts[1:], cum[1:]):
+        for p, s in zip(pts[1:], cum[1:], strict=True):
             out[start_f + int(round(s / speed * fps))] = (float(p[0]), float(p[1]))
         out[end_f + hold_f] = (float(end[0]), float(end[1]))
     else:

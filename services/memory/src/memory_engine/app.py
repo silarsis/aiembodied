@@ -17,7 +17,8 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import psycopg
-from fastapi import Depends, FastAPI, Header, Path, Query, Request
+from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi import Path as PathParam
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -166,8 +167,8 @@ class CodingTaskBody(BaseModel):
 
 IntentionKind = Literal["goal", "intention", "promise", "watch", "reminder", "wakeup"]
 IntentionStatus = Literal["open", "waiting", "done", "dropped"]
-AvatarId = Path(min_length=1, max_length=200)
-FlowName = Path(pattern=r"^[a-z0-9_-]{1,64}$")
+AvatarId = PathParam(min_length=1, max_length=200)
+FlowName = PathParam(pattern=r"^[a-z0-9_-]{1,64}$")
 
 
 class IntentionBody(BaseModel):

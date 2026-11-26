@@ -460,7 +460,7 @@ class TaskManager:
             wt,
             clean_env(extra=extra),
             on_event=lambda ev: self._on_event(tid, run, ev),
-            on_log=lambda s, l: self._on_log(tid, s, l),
+            on_log=lambda s, line: self._on_log(tid, s, line),
             on_exit=lambda code: self.store.add_event(tid, "exit", {"code": code}),
         )
         try:
@@ -1007,7 +1007,7 @@ class TaskManager:
             gitops.git("push", "-u", remote, task["branch"], cwd=wt, timeout=300)
         except GitError as e:
             self._update(tid, status="review", error=f"push failed: {e}", phase_detail="push failed")
-            raise CoderError(502, f"push failed: {e}")
+            raise CoderError(502, f"push failed: {e}") from e
         pr_url, detail = None, f"Branch {task['branch']} pushed."
         owner_repo = gitops.parse_owner_repo(gitops.remote_url(repo, remote))
         if not owner_repo:
@@ -1110,7 +1110,7 @@ class TaskManager:
         try:
             return self._check_pr(task)
         except github.PrError as e:
-            raise CoderError(502, str(e))
+            raise CoderError(502, str(e)) from e
 
     def _check_pr(self, task: dict) -> dict:
         parsed = github.parse_pr_url(task["pr_url"])

@@ -70,7 +70,7 @@ def create_pr_gh(cwd, head: str, base: str, title: str, body: str, draft: bool =
         raise PrError(f"gh failed: {e}") from e
     if r.returncode != 0:
         raise PrError(f"gh pr create failed: {(r.stderr or r.stdout).strip()[:500]}")
-    urls = [l for l in r.stdout.split() if l.startswith("http")]
+    urls = [tok for tok in r.stdout.split() if tok.startswith("http")]
     if not urls:
         raise PrError("gh pr create printed no URL")
     return urls[-1]

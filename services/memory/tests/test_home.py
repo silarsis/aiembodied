@@ -339,10 +339,13 @@ def test_status_entities_and_history_routes(client, db):
 
     now = datetime.now(timezone.utc)
     with db.pool.connection() as conn:
-        door = lambda state, ago: (
-            entity_state("binary_sensor.front_door", state, 0)
-            | {"last_changed": (now - ago).isoformat(), "last_updated": (now - ago).isoformat()}
-        )  # noqa: E731
+
+        def door(state, ago):
+            return entity_state("binary_sensor.front_door", state, 0) | {
+                "last_changed": (now - ago).isoformat(),
+                "last_updated": (now - ago).isoformat(),
+            }
+
         home.handle_event(conn, "home", event("binary_sensor.front_door", door("on", timedelta(hours=3))))
         home.handle_event(conn, "home", event("binary_sensor.front_door", door("off", timedelta(hours=2))))
         for ago, value in ((90, 21.0), (80, 22.0), (30, 23.5)):
@@ -950,9 +953,7 @@ def fake_bus():
 
 
 def test_change_publishes_home_change(client, db, fake_bus):
-    handle(
-        db, door := entity_state("binary_sensor.front_door", "on", 60, friendly_name="Front door", device_class="door")
-    )
+    handle(db, entity_state("binary_sensor.front_door", "on", 60, friendly_name="Front door", device_class="door"))
     assert fake_bus.types() == ["home.change"]
     event_ = fake_bus.events[0]
     assert event_["producer"] == {"kind": "sensor", "id": "ha:home"}

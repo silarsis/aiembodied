@@ -810,21 +810,19 @@ def score_all(fetch, ctx, label):
 
 def step_preflight(ctx):
     a = ctx["args"]
-    if sys.version_info < (3, 10):
-        raise StepFailed("Python 3.10 or newer is needed, this is %s" % platform.python_version(), 2)
     print("python %s on %s" % (platform.python_version(), platform.platform()))
     hint = "install with:\n  " + install_help()
     try:
         import torch
     except Exception as e:
         print(hint)
-        raise StepFailed("torch cannot be imported (%s)" % e, 2)
+        raise StepFailed("torch cannot be imported (%s)" % e, 2) from e
     try:
         import laya
         import laya.train  # noqa: F401
     except Exception as e:
         print(hint)
-        raise StepFailed("laya cannot be imported (%s)" % e, 2)
+        raise StepFailed("laya cannot be imported (%s)" % e, 2) from e
     lv = getattr(laya, "__version__", "unknown")
     print("torch %s (cuda build %s), laya %s" % (torch.__version__, torch.version.cuda, lv))
     ctx["versions"] = {"python": platform.python_version(), "torch": torch.__version__, "laya": lv}
@@ -927,7 +925,7 @@ def step_baseline(ctx):
     except Exception as e:
         raise StepFailed(
             "cannot get the base model %r: %s (Hugging Face needs network access once, ~1.7 GB)" % (a.base, e)
-        )
+        ) from e
     print("base model folder: %s" % ctx["base_dir"])
     agent = laya.load(ctx["base_dir"], device=ctx["device"])
     if ctx.get("plain_layernorm"):
@@ -935,7 +933,7 @@ def step_baseline(ctx):
     try:
         baseline = score_all(agent_fetch(agent), ctx, "base ")
     except NonFiniteError as e:
-        raise StepFailed("the base model gave non-finite output: %s" % e)
+        raise StepFailed("the base model gave non-finite output: %s" % e) from e
     finally:
         del agent
     write_json(os.path.join(ctx["work"], "baseline.json"), baseline)
@@ -987,7 +985,7 @@ def step_train(ctx):
         except Exception as e:
             raise StepFailed(
                 "cannot get the base model %r: %s (Hugging Face needs network access once, ~1.7 GB)" % (a.base, e)
-            )
+            ) from e
     if a.math_attention:
         set_math_attention()
     epochs = 1 if a.trial else a.epochs
@@ -1023,7 +1021,7 @@ def step_train(ctx):
         bad = isinstance(e, BadGradientsError)
         _explain_nonfinite(ctx, str(e), bad)
         _fail_checkpoint(ctx, ckpt)
-        raise StepFailed(("training failed: %s" if bad else "training went non-finite (%s)") % e, 3)
+        raise StepFailed(("training failed: %s" if bad else "training went non-finite (%s)") % e, 3) from e
     except StepFailed:
         _fail_checkpoint(ctx, ckpt)
         raise
@@ -1031,7 +1029,7 @@ def step_train(ctx):
         _fail_checkpoint(ctx, ckpt)
         if type(e).__name__ == "OutOfMemoryError" or "out of memory" in str(e).lower():
             print("The GPU ran out of memory. Try --micro-batch 4, then 2, then --precision fp16.")
-        raise StepFailed("training stopped with %s: %s" % (type(e).__name__, e))
+        raise StepFailed("training stopped with %s: %s" % (type(e).__name__, e)) from e
     latest = os.path.join(ckpt, "checkpoint_latest")
     shutil.rmtree(latest, ignore_errors=True)  # a duplicate of the final weights
     ctx["epoch_seconds"] = list(state["epoch_seconds"])
@@ -1099,7 +1097,7 @@ def step_score(ctx):
     except NonFiniteError as e:
         _explain_nonfinite(ctx, "scoring the new checkpoint gave %s" % e)
         _fail_checkpoint(ctx, ckpt)
-        raise StepFailed("the new checkpoint gives non-finite answers (%s)" % e, 3)
+        raise StepFailed("the new checkpoint gives non-finite answers (%s)" % e, 3) from e
     results["latency"] = {
         "device": ctx["device"],
         "device_median": dev_lat,

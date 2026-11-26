@@ -234,11 +234,14 @@ class ScoreTests(unittest.TestCase):
             "text": "hi",
             "truth": {"speaker": ["echo"], "intent": ["answer"], "target": ["none"]},
         }
-        flat = lambda p: {
-            "addressed": {"probabilities": {"unclear": 1.0}},
-            "wants": {"choice": "answer"},
-            "other": {"probabilities": {"none": 1.0}},
-        }
+
+        def flat(_payload):
+            return {
+                "addressed": {"probabilities": {"unclear": 1.0}},
+                "wants": {"choice": "answer"},
+                "other": {"probabilities": {"none": 1.0}},
+            }
+
         self.assertEqual(score.run([row], flat)["all_three"], 1.0)
 
         def boom(p):

@@ -84,7 +84,7 @@ def embed_pending(conn: psycopg.Connection, embedder: Embedder, limit: int = EMB
         return 0
     wholes = [(row_id, text) for row_id, text, has_whole in rows if not has_whole]
     vectors = embedder.embed([text for _, text in wholes]) if wholes else []
-    for (row_id, text), vector in zip(wholes, vectors):
+    for (row_id, text), vector in zip(wholes, vectors, strict=True):
         # Only if the text is unchanged since it was read: a rewrite clears the vector again.
         conn.execute(
             "UPDATE recall_index SET embedding = %s::vector, embed_model = %s, updated_at = now()"
@@ -100,7 +100,7 @@ def embed_pending(conn: psycopg.Connection, embedder: Embedder, limit: int = EMB
         if not current or not current[0]:
             continue  # rewritten meanwhile: its next pass makes them
         conn.execute("DELETE FROM recall_passages WHERE index_id = %s", (row_id,))
-        for part, (window, vector) in enumerate(zip(parts, part_vectors)):
+        for part, (window, vector) in enumerate(zip(parts, part_vectors, strict=True)):
             conn.execute(
                 "INSERT INTO recall_passages (index_id, part, text, embedding, embed_model)"
                 " VALUES (%s, %s, %s, %s::vector, %s)",

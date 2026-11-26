@@ -133,7 +133,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         try:
             return registry.replace(items)
         except WorkspaceError as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
 
     @app.get("/v1/workspaces")
     def get_workspaces() -> list[Workspace]:

@@ -86,7 +86,7 @@ class PiProbe:
             self.cfg.data_dir,
             clean_env(extra={"PI_CODING_AGENT_DIR": str(self.cfg.agent_dir)}),
             on_event,
-            lambda s, l: None,
+            lambda s, line: None,
         )
         try:
             pi.start()

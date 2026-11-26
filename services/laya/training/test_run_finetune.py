@@ -101,7 +101,7 @@ class PlainLayerNormTests(unittest.TestCase):
                 p.grad = None
             out.backward(g)
             self.assertTrue(torch.allclose(x1.grad.float(), x2.grad.float(), atol=tol * 5, rtol=tol * 5))
-            for a, p in zip(gw, ln.parameters()):
+            for a, p in zip(gw, ln.parameters(), strict=True):
                 self.assertTrue(torch.allclose(a.float(), p.grad.float(), atol=tol * 5, rtol=tol * 5))
 
     def test_apply_counts(self):
@@ -283,7 +283,6 @@ class ScoreDatasetTests(unittest.TestCase):
             by_text = {r["meta"]["text"]: r["expected"] for r in rows}
 
             def oracle(payload):
-                text = payload["state"].splitlines()[-1] if isinstance(payload["state"], str) else ""
                 exp = next((e for t, e in by_text.items() if t in payload["state"]), None)
                 return {"answers": {q: {"choice": exp[q], "probabilities": {exp[q]: 0.9}} for q in rf.QIDS}}
 

@@ -141,7 +141,8 @@ class AgentLife:
             seen = self.rev
             try:
                 await workflow.wait_condition(
-                    lambda: self.rev != seen or self.paused, timeout=timedelta(seconds=max(next_tick - ts(), 0.05))
+                    lambda seen=seen: self.rev != seen or self.paused,
+                    timeout=timedelta(seconds=max(next_tick - ts(), 0.05)),
                 )
             except asyncio.TimeoutError:
                 pass

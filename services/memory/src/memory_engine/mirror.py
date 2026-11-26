@@ -185,7 +185,8 @@ def _upsert_sql(table: str, columns: list[str], seq_col: str = "seq") -> str:
 
 def _row(columns: list[str], row: tuple) -> list[Any]:
     return [
-        Jsonb(value) if column in JSON_COLUMNS and value is not None else value for column, value in zip(columns, row)
+        Jsonb(value) if column in JSON_COLUMNS and value is not None else value
+        for column, value in zip(columns, row, strict=True)
     ]
 
 

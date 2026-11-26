@@ -112,7 +112,7 @@ def test_stream_allows_30s_but_not_more(client):
 def test_stream_error_mid_way_is_reported_in_band():
     with TestClient(create_app(FakeBackend(fail_after_chunks=1), load_in_background=False)) as c:
         lines = _lines(c.post("/v1/motion/stream", json={"prompt": "x", "duration": 4}))
-    assert [l["type"] for l in lines] == ["chunk", "error"]
+    assert [line["type"] for line in lines] == ["chunk", "error"]
     assert "fake backend failure" in lines[1]["message"]
 
 

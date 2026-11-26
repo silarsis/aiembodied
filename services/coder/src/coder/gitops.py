@@ -129,7 +129,7 @@ def deleted_files(worktree: Path, base: str) -> set[str]:
     out = git(
         "-c", "core.quotepath=false", "diff", "--name-status", "--no-renames", f"{base}..HEAD", cwd=worktree
     ).stdout
-    return {l.split("\t", 1)[1] for l in out.splitlines() if l.startswith("D\t")}
+    return {line.split("\t", 1)[1] for line in out.splitlines() if line.startswith("D\t")}
 
 
 def matches_protected(path: str, patterns: list[str]) -> bool:

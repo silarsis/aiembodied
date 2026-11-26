@@ -19,9 +19,10 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import Any, ContextManager
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -532,7 +533,7 @@ class Summariser:
 
     def run_once(
         self,
-        connect: Callable[[], ContextManager[psycopg.Connection]],
+        connect: Callable[[], AbstractContextManager[psycopg.Connection]],
         now: datetime | None = None,
     ) -> dict[str, Any] | None:
         """Do the next due job, if any. Returns what was done, or None when nothing is due."""

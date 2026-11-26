@@ -365,7 +365,10 @@ def f_converse_voc(c):
         return None
     A = c.pick(c.scene)
     Bn = c.pick(c.others(A))
-    x = lambda k: c.polite(converse_inner(c, "{B}"), 0.4)
+
+    def x(_kinds):
+        return c.polite(converse_inner(c, "{B}"), 0.4)
+
     t = voc_wrap(c, A, x)
     return c.fmt(t, B=Bn), A.lower(), "converse", Bn.lower()
 
