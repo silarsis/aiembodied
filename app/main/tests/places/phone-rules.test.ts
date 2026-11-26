@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cameraPresenceOn } from '../../src/places/camera-setting.js';
-import { doorbellOn } from '../../src/places/doorbell-setting.js';
-import { DEFAULT_DESKTOP_ROOM, DEFAULT_PHONE_ROOM } from '../../src/places/default-room.js';
+import { cameraPresenceOn } from '../../src/shared/places/camera-setting.js';
+import { doorbellOn } from '../../src/shared/places/doorbell-setting.js';
+import { DEFAULT_DESKTOP_ROOM, DEFAULT_PHONE_ROOM } from '../../src/shared/places/default-room.js';
 import { LOCATIONS_KEY, OFFLINE_GRACE_MS, PHONE_OFFLINE_GRACE_MS, PLACES_KEY, PlaceManager } from '../../src/places/place-manager.js';
-import type { PlaceKind } from '../../src/places/place-kind.js';
+import type { PlaceKind } from '../../src/shared/places/place-kind.js';
 import { NextDoorReturn, RETURN_CHANCE } from '../../src/places/next-door-return.js';
 import { URGENT_QUIET_MS, urgentTarget } from '../../src/places/urgent-walk.js';
-import { wanderRefusal } from '../../src/places/wander.js';
-import { cameraSettingHere } from '../../src/satellite/snapshot-facts.js';
+import { wanderRefusal } from '../../src/shared/places/wander.js';
+import { cameraSettingHere } from '../../src/shared/satellite/snapshot-facts.js';
 import { PHONE_AWAY_HOME_MS, LOCKED_HOME_MS, PlaceDevices } from '../../src/room-hub/place-devices.js';
 import { PlacePresence } from '../../src/presence/place-presence.js';
 

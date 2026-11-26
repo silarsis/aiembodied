@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PLACES_KEY, PlaceManager } from '../../src/places/place-manager.js';
-import { doorbellOn } from '../../src/places/doorbell-setting.js';
+import { doorbellOn } from '../../src/shared/places/doorbell-setting.js';
 
 const PROFILES = [
   { id: 'echo', name: 'Echo', vrmModelId: null },

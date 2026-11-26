@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PlacePresence, describePlaceLine } from '../src/presence/place-presence.js';
 import { PresenceTracker } from '../src/presence/presence.js';
 import { createArrivalGreeting } from '../src/presence/arrival-greeting.js';
-import { cameraPresenceOn } from '../src/places/camera-setting.js';
+import { cameraPresenceOn } from '../src/shared/places/camera-setting.js';
 
 describe('PlacePresence', () => {
   it('keeps what each place said, apart from the others', () => {

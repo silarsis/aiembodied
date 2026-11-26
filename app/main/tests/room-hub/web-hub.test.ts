@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { RoomDeviceRegistry } from '../../src/room-hub/room-devices.js';
 import { startHarness, waitFor, type Harness } from '../satellite/hub-harness.js';
-import { encodeMessage, decodeMessage, type Op } from '../../src/room-hub/frames.js';
+import { encodeMessage, decodeMessage, type Op } from '../../src/shared/room-hub/frames.js';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {

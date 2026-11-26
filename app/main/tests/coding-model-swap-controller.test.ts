@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AicontrollerBridge } from '../src/aicontroller/bridge.js';
 import { CoderModelSwap } from '../src/coding/model-swap.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { FAKE_BACKEND_URLS, FakeAicontroller } from './helpers/fake-aicontroller.js';
 
 describe('CoderModelSwap with the model controller', () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CAPTURE_STOP_TIMEOUT_MS, DeviceGate, INITIAL_FACTS, avatarsHere, evaluateGate, guardMediaPermissions, mediaKind, type DeviceFacts } from '../../src/satellite/device-gate.js';
+import { CAPTURE_STOP_TIMEOUT_MS, DeviceGate, INITIAL_FACTS, avatarsHere, evaluateGate, guardMediaPermissions, mediaKind, type DeviceFacts } from '../../src/shared/satellite/device-gate.js';
 
 const ALL_TRUE = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };
 const KEYS = Object.keys(ALL_TRUE) as Array<keyof DeviceFacts>;

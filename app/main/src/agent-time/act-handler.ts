@@ -15,7 +15,7 @@ import type { ChatClient } from '../local-voice/voice-engines.js';
 import type { PendingApproval, ApprovalOutcome } from '../tools/approvals.js';
 import type { RegisteredTool, ToolContext, ToolExecutionResult } from '../tools/tool-registry.js';
 import type { PresenceSnapshot } from '../presence/presence.js';
-import type { Restlessness } from '../rooms/idle-settings.js';
+import type { Restlessness } from '../shared/rooms/idle-settings.js';
 import { createQuestionTool } from './ask.js';
 import type { AgentSleep } from './sleep.js';
 import type { QuietSaves } from './quiet-saves.js';

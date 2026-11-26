@@ -1,14 +1,14 @@
 /**
  * Avatars at the offscreen "next door" place have no renderer, so they have no idle life of their own. Once a minute
  * bija rolls a small die (by the restlessness setting) and, when it comes up, brings one of them back to a place where
- * someone used the PC lately. The limits are those of wandering (places/wander.ts): not moved in the last 10 minutes,
+ * someone used the PC lately. The limits are those of wandering (shared/places/wander.ts): not moved in the last 10 minutes,
  * the place is open, someone was active there (or another avatar is), and Kevin did not just talk with it.
  *
  * The clock and the dice come in from outside so the tests are deterministic.
  */
-import type { Restlessness } from '../rooms/idle-settings.js';
+import type { Restlessness } from '../shared/rooms/idle-settings.js';
 import type { PlaceManager } from './place-manager.js';
-import { wanderRefusal } from './wander.js';
+import { wanderRefusal } from '../shared/places/wander.js';
 
 export const NEXT_DOOR_TICK_MS = 60_000;
 /** The chance, each tick, that an avatar next door comes back (when it may). */
@@ -82,7 +82,7 @@ export class NextDoorReturn {
 
   /**
    * Try to bring one avatar back now, with no dice (the caller rolled them). The same rules apply: it must be next
-   * door, and a place must be open, active and not just talked in (places/wander.ts).
+   * door, and a place must be open, active and not just talked in (shared/places/wander.ts).
    */
   tryAvatar(avatarId: string): { moved: boolean; placeId?: string; reason?: string } {
     const { places } = this.options;

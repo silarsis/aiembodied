@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Place, PlacesSnapshot } from '../../../main/src/places/place-manager.js';
-import { cameraPresenceOn } from '../../../main/src/places/camera-setting.js';
-import { doorbellOn } from '../../../main/src/places/doorbell-setting.js';
+import { cameraPresenceOn } from '../../../main/src/shared/places/camera-setting.js';
+import { doorbellOn } from '../../../main/src/shared/places/doorbell-setting.js';
 import { deviceSummary } from './room-devices-status.js';
 import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
 

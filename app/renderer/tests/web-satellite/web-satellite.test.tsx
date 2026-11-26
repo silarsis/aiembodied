@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createBridge } from '../../../main/src/bridge/create-bridge.js';
-import { channelKind } from '../../../main/src/satellite/channels.js';
+import { createBridge } from '../../../main/src/shared/bridge/create-bridge.js';
+import { channelKind } from '../../../main/src/shared/satellite/channels.js';
 import { ConnectScreen } from '../../src/satellite/connect-screen.js';
 import { SatelliteStatusPanel } from '../../src/satellite/satellite-status-panel.js';
 import { WebGate } from '../../src/web-satellite/web-gate.js';

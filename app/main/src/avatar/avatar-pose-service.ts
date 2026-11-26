@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { mkdir, readFile as fsReadFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { BASE_POSES, LEGACY_DEFAULT_POSE_SHA } from './base-poses.js';
+import { BASE_POSES, LEGACY_DEFAULT_POSE_SHA } from '../shared/avatar/base-poses.js';
 import type { MemoryStore, VrmPoseRecord } from '../memory/memory-store.js';
 import type {
     AvatarPoseSummary,

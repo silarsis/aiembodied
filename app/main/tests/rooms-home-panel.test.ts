@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateRoomFile } from '../src/rooms/validate.js';
+import { validateRoomFile } from '../src/shared/rooms/validate.js';
 import { buildWalkability, findUnreachable } from '../src/rooms/room-walkability.js';
 
 /** Both built-in rooms have a wall-mounted home panel the avatar can walk up to. */

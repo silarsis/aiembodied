@@ -1,5 +1,5 @@
 /** The Coding page's bridge from the renderer, shared by preload and renderer. Types only. */
-import type { CodingConfig } from './types.js';
+import type { CodingConfig } from '../shared/coding/types.js';
 import type { CodingStatus, CodingView } from './coding-service.js';
 import type { RunnerAnswer, RunnerEvent, RunnerTask, RunnerTaskRequest } from './runner-client.js';
 

@@ -1,4 +1,4 @@
-import type { DeviceGateState } from '../../../main/src/satellite/device-gate.js';
+import type { DeviceGateState } from '../../../main/src/shared/satellite/device-gate.js';
 
 /**
  * What a native shell (the Android app, next PR) may set before the page loads, as `window.__AIEMBODIED_SHELL__`.

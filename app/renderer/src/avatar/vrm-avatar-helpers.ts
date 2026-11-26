@@ -7,7 +7,7 @@ import {
   type VRMPose,
 } from '@pixiv/three-vrm';
 import { VRMAnimationLoaderPlugin, type VRMAnimation } from '@pixiv/three-vrm-animation';
-import baseNeutralPose from '../../../main/src/avatar/base-poses/relaxed-neutral.pose.json';
+import baseNeutralPose from '../../../main/src/shared/avatar/base-poses/relaxed-neutral.pose.json';
 import { getPreloadApi } from '../preload-api.js';
 import type {
   VRMPoseData,

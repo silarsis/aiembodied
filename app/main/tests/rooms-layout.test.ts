@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { validateLayout, normaliseCategory, LayoutError } from '../src/rooms/room-layout.js';
 import { buildLayoutPrompt } from '../src/rooms/room-layout-prompt.js';
 import { extractJson, generateRoomLayout } from '../src/rooms/room-layout-llm.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { resolveColor } from '../src/rooms/room-palette.js';
 import type { ChatClient } from '../src/local-voice/voice-engines.js';
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCATIONS_KEY, PlaceManager } from '../../src/places/place-manager.js';
 import { NEXT_DOOR_TICK_MS, NextDoorReturn, RETURN_CHANCE } from '../../src/places/next-door-return.js';
-import { CONVERSATION_MS, WANDER_COOLDOWN_MS } from '../../src/places/wander.js';
+import { CONVERSATION_MS, WANDER_COOLDOWN_MS } from '../../src/shared/places/wander.js';
 
 const PROFILES = [
   { id: 'echo', name: 'Echo', vrmModelId: null },

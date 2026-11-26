@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
-import { validateRoomFile } from '../../../main/src/rooms/validate.js';
+import { validateRoomFile } from '../../../main/src/shared/rooms/validate.js';
 import type { AvatarState, PlanWorld } from '../../src/rooms/scene-actions.js';
 import { chooseSurface, planRelease, planSit, planTake, resolveBodyPlan } from '../../src/rooms/station-body.js';
 import { builtInRoom } from './fixtures.js';

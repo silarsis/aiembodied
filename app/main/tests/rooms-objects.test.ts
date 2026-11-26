@@ -4,11 +4,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackgroundService } from '../src/backgrounds/background-service.js';
 import type { GeometryModel } from '../src/avatar/generation/character-model-service.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { refitObject } from '../src/rooms/room-refit.js';
 import { objectMakingAvailable, pickSingleImageGeometry } from '../src/rooms/room-generation-setup.js';
-import { DEFAULT_OBJECT_SETTINGS, parseObjectSettings, sanitizeObjectSettings } from '../src/rooms/object-settings.js';
+import { DEFAULT_OBJECT_SETTINGS, parseObjectSettings, sanitizeObjectSettings } from '../src/shared/rooms/object-settings.js';
 import type { ResolvedModel } from '../src/rooms/room-placer.js';
 import type { RoomFile, RoomObject } from '../src/rooms/types.js';
 

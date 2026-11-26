@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AicontrollerBridge, echoRouteOverride, parseControllerMode } from '../src/aicontroller/bridge.js';
-import { builtInServers, defaultRoutes, resolveModelRouting, routeTargetsWithOverride } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting, routeTargetsWithOverride } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { FAKE_BACKEND_URLS, FakeAicontroller } from './helpers/fake-aicontroller.js';
 
 const logger = { info: vi.fn(), warn: vi.fn() };

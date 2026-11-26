@@ -7,7 +7,7 @@
  * for a move marked as wandering, and the next-door tick asks it before it brings an avatar back. Pure: no
  * Electron, no timers; the clock is in the snapshot.
  */
-import type { PlacesSnapshot } from './place-manager.js';
+import type { PlacesSnapshot } from '../../places/place-manager.js';
 import { isPhonePlace } from './place-kind.js';
 
 /** An avatar that moved (for any reason) less than this long ago does not wander. */

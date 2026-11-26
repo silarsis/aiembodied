@@ -7,7 +7,7 @@ import { PlaceManager } from '../../src/places/place-manager.js';
 import { RoomDeviceRegistry } from '../../src/room-hub/room-devices.js';
 import { FIREWALL_NOTE, RoomHub, fileMarker, isLoopback, isTailscaleAddress, slugPlaceId, tailscaleAddresses } from '../../src/room-hub/room-hub.js';
 import { isAllowedChannel } from '../../src/room-hub/allowlist.js';
-import { decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../../src/room-hub/frames.js';
+import { decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../../src/shared/room-hub/frames.js';
 import type { TailscaleIdentity, TailscaleLookup } from '../../src/room-hub/tailscale.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';

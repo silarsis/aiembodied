@@ -3,7 +3,7 @@ import { FurnitureService } from './furniture/furniture-service.js';
 import type { ComfyGraph } from './avatar/generation/comfyui-client.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
-import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
+import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './shared/rooms/idle-habits.js';
 import { Menu, Notification, app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, nativeImage, powerMonitor, protocol, session, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
@@ -21,7 +21,7 @@ import { FloorController } from './floor/index.js';
 import { HOME_PLACE_ID, PlaceManager, placesNote, scopedPlaces } from './places/place-manager.js';
 import { PlacePresence, describePlaceLine } from './presence/place-presence.js';
 import { createArrivalGreeting } from './presence/arrival-greeting.js';
-import { cameraPresenceOn } from './places/camera-setting.js';
+import { cameraPresenceOn } from './shared/places/camera-setting.js';
 import { createPlaceDelivery, type EventSink } from './places/place-delivery.js';
 import { createAppWindow } from './window/app-window.js';
 import { Satellite } from './satellite/satellite.js';
@@ -37,10 +37,10 @@ import { createTailscaleLookup } from './room-hub/tailscale.js';
 import { rememberIpcHandler } from './room-hub/ipc-registry.js';
 import { callToPlace, chooseSummon, summon } from './places/summon.js';
 import { createDoorbell, wakeShouldListen } from './places/doorbell.js';
-import { CONVERSATION_MS, wanderRefusal } from './places/wander.js';
+import { CONVERSATION_MS, wanderRefusal } from './shared/places/wander.js';
 import { NextDoorReturn } from './places/next-door-return.js';
 import { walkToKevin } from './places/urgent-walk.js';
-import { ActivityMonitor } from './presence/activity-monitor.js';
+import { ActivityMonitor } from './shared/presence/activity-monitor.js';
 import { SatelliteWakeRunner, type SharedWakeWord } from './satellite/wake-runner.js';
 import { readSharedWakeWord } from './wake-word/shared-model.js';
 import { PlaceDevices } from './room-hub/place-devices.js';
@@ -131,7 +131,7 @@ import {
   type MemoryEngineRuntime,
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
-import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
+import { describeProviders, type ProviderSettingsPatch } from './shared/config/provider-settings.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult, SpeakingVoiceOptions } from './local-voice/types.js';
 import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
@@ -173,7 +173,7 @@ import {
   type ServerType,
   type SpeakingEngineId,
   type UseId,
-} from './config/model-routing.js';
+} from './shared/config/model-routing.js';
 import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
@@ -411,7 +411,7 @@ const placePresence = new PlacePresence();
 let placeDevices: PlaceDevices | null = null;
 /** Once a minute, maybe brings an avatar back from next door to where someone is (places/next-door-return.ts). */
 let nextDoorReturn: NextDoorReturn | null = null;
-/** Polls how long ago anyone used this PC; the answer is what wandering between places goes by (presence/activity-monitor.ts). */
+/** Polls how long ago anyone used this PC; the answer is what wandering between places goes by (shared/presence/activity-monitor.ts). */
 let activityMonitor: ActivityMonitor | null = null;
 
 /** What the Places page and the Status panel show: each desktop room with what its PC says about its devices. */
@@ -2385,7 +2385,7 @@ function registerIpcHandlers(
     const result = places.startMove(avatarId, place.id, reason === 'called' ? 'called' : reason === 'wandered' ? 'wandered' : 'chose to');
     return result.ok ? { ok: true } : { ok: false, reason: result.reason };
   });
-  // The idle director asks before it lets an avatar walk to another place on its own (places/wander.ts has the rules).
+  // The idle director asks before it lets an avatar walk to another place on its own (shared/places/wander.ts has the rules).
   handleIpc('places:can-wander', (_event, avatarId: unknown, placeRef: unknown, speaking: unknown) => {
     if (typeof avatarId !== 'string' || !avatarId || typeof placeRef !== 'string' || !placeRef.trim()) return { ok: false, reason: 'invalid request' };
     const refusal = wanderRefusal(requirePlaces().snapshot(), avatarId, placeRef, { speaking: speaking === true, talkedAgoMs: talkedAgoMs(avatarId) });

@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/rooms/idle-settings.js';
+import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
 import { FIRST_ACTION_DELAY_MS, type IdleExecutor } from '../../src/rooms/idle-director.js';
 import { INITIAL_STATE } from '../../src/rooms/scene-actions.js';
 import { useIdleDirector, type UseIdleDirectorOptions } from '../../src/rooms/use-idle-director.js';

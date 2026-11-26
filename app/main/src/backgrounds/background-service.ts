@@ -6,8 +6,8 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { ComfyUIClient } from '../avatar/generation/comfyui-client.js';
 import { backgroundGraph, buildBackgroundPrompt } from '../avatar/generation/graphs.js';
 import { BACKGROUND_GROUND_Y, DEFAULT_BACKGROUNDS } from './defaults.js';
-import { IDLE_SETTINGS_KEY, parseIdleSettings, sanitizeIdleSettings, type IdleSettings } from '../rooms/idle-settings.js';
-import { OBJECT_SETTINGS_KEY, parseObjectSettings, sanitizeObjectSettings, type ObjectSettings } from '../rooms/object-settings.js';
+import { IDLE_SETTINGS_KEY, parseIdleSettings, sanitizeIdleSettings, type IdleSettings } from '../shared/rooms/idle-settings.js';
+import { OBJECT_SETTINGS_KEY, parseObjectSettings, sanitizeObjectSettings, type ObjectSettings } from '../shared/rooms/object-settings.js';
 import type { BackgroundSummary } from './types.js';
 
 const LIBRARY_KEY = 'stage.backgrounds';

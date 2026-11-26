@@ -3,7 +3,7 @@
  * decision step) that sees the recent lines and the avatars that could answer, and returns how
  * much each wants to. Any failure rejects, which the floor manager reads as no bids (silence).
  */
-import type { ModelRouting } from '../config/model-routing.js';
+import type { ModelRouting } from '../shared/config/model-routing.js';
 import type { ChatClient, ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { FailoverChatClient } from '../local-voice/voice-engines.js';
 import { idleClients } from '../rooms/idle-thoughts.js';

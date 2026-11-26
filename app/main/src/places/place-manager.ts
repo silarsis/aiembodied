@@ -15,9 +15,9 @@
  */
 import { EventEmitter } from 'node:events';
 import type { AvatarProfile } from '../avatars/avatar-registry.js';
-import { DEFAULT_DESKTOP_ROOM, defaultRoomFor } from './default-room.js';
-import { cleanPlaceKind, type PlaceKind } from './place-kind.js';
-import { normalisePlaceName } from './wander.js';
+import { DEFAULT_DESKTOP_ROOM, defaultRoomFor } from '../shared/places/default-room.js';
+import { cleanPlaceKind, type PlaceKind } from '../shared/places/place-kind.js';
+import { normalisePlaceName } from '../shared/places/wander.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 

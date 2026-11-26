@@ -4,7 +4,7 @@
  * route as idle thoughts (the `idle` model use, with its backups), gets no tools, and any failure
  * (timeout, bad answer, no server) gives null so the caller can fall back to the old behaviour.
  */
-import type { ModelRouting } from '../config/model-routing.js';
+import type { ModelRouting } from '../shared/config/model-routing.js';
 import type { ChatClient, ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { FailoverChatClient } from '../local-voice/voice-engines.js';
 import { idleClients } from '../rooms/idle-thoughts.js';

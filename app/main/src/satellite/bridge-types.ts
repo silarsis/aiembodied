@@ -1,6 +1,6 @@
 /** The renderer's bridge to a satellite PC's own state: pairing with bija and the link. Types only. */
 import type { PairInput, SatelliteStatus, TurnTiming } from './satellite.js';
-import type { DeviceGateState } from './device-gate.js';
+import type { DeviceGateState } from '../shared/satellite/device-gate.js';
 
 export type { PairInput, SatelliteStatus, TurnTiming, DeviceGateState };
 

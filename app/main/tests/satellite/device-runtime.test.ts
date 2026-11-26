@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DeviceRuntime, DEFAULT_CLOSE_SHORTCUT, type MenuItemLike } from '../../src/satellite/device-runtime.js';
-import { CAPTURE_STOP_TIMEOUT_MS, type DeviceGateState } from '../../src/satellite/device-gate.js';
+import { CAPTURE_STOP_TIMEOUT_MS, type DeviceGateState } from '../../src/shared/satellite/device-gate.js';
 import type { SatelliteSettings } from '../../src/satellite/settings.js';
-import type { Op } from '../../src/room-hub/frames.js';
+import type { Op } from '../../src/shared/room-hub/frames.js';
 
 const snapshot = (locations: Record<string, string>, transit: Array<{ avatarId: string; from: string; to: string }> = [], study: { doorbell?: boolean } = {}) => ({
   places: [{ id: 'study', name: 'the study', node: 'device-1', camera: false, ...study }],

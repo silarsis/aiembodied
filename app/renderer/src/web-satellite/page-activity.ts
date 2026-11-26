@@ -1,4 +1,4 @@
-import { ACTIVITY_POLL_MS } from '../../../main/src/presence/activity-monitor.js';
+import { ACTIVITY_POLL_MS } from '../../../main/src/shared/presence/activity-monitor.js';
 
 export interface PageActivityOptions {
   /** Is the page visible, and the shell (if any) in the foreground? A hidden page is not being used. */

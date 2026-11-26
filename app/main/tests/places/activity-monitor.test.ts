@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ACTIVE_BELOW_IDLE_SECONDS, ACTIVITY_POLL_MS, ActivityMonitor } from '../../src/presence/activity-monitor.js';
+import { ACTIVE_BELOW_IDLE_SECONDS, ACTIVITY_POLL_MS, ActivityMonitor } from '../../src/shared/presence/activity-monitor.js';
 import { PlacePresence } from '../../src/presence/place-presence.js';
 
 function setup(idle: () => number) {

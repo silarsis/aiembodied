@@ -5,7 +5,7 @@
  *
  * Pure: no Electron, no timers. Times are the PC's own clock readings passed in by the caller.
  */
-import type { Op } from '../room-hub/frames.js';
+import type { Op } from '../shared/room-hub/frames.js';
 
 export interface PlacePresenceSnapshot {
   listening?: boolean;

@@ -111,7 +111,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const searchProviders = (env.WEB_SEARCH_PROVIDER?.trim() || 'searxng').split(',').map((name) => name.trim().toLowerCase());
 
   // Models and servers (saved.models) says which server each use runs on; a use it doesn't
-  // mention keeps the default the provider settings give. Mirrors app/main/src/config/model-routing.ts.
+  // mention keeps the default the provider settings give. Mirrors app/main/src/shared/config/model-routing.ts.
   const routes = saved.models?.routes ?? {};
   const defaults = {
     llm: [llmLocal ? 'local-llm' : 'openai'],

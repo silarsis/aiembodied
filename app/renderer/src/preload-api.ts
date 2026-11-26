@@ -21,10 +21,10 @@ import type { ModelDownload } from '../../main/src/avatar/generation/model-downl
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
 import type { FurnitureBridge } from '../../main/src/furniture/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
-import type { ModelRoute, ServerType, UseId } from '../../main/src/config/model-routing.js';
+import type { ModelRoute, ServerType, UseId } from '../../main/src/shared/config/model-routing.js';
 import type { ServerProbe } from '../../main/src/config/model-server-probe.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
-import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
+import type { ProviderSettingsPatch } from '../../main/src/shared/config/provider-settings.js';
 import type {
   ConversationAppendMessagePayload,
   ConversationHistory,

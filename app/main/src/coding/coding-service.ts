@@ -5,8 +5,8 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { ModelRouting, ModelServer, RouteOverride } from '../config/model-routing.js';
-import { BUILT_IN_SERVER_IDS } from '../config/model-routing.js';
+import type { ModelRouting, ModelServer, RouteOverride } from '../shared/config/model-routing.js';
+import { BUILT_IN_SERVER_IDS } from '../shared/config/model-routing.js';
 import { readCommitHeadroom } from '../diagnostics/commit-memory.js';
 import type { GpuMemoryReader } from '../diagnostics/gpu-memory.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';

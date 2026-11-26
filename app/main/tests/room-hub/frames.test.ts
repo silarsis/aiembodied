@@ -9,7 +9,7 @@ import {
   encodeBinaryFrame,
   encodeMessage,
   encodeText,
-} from '../../src/room-hub/frames.js';
+} from '../../src/shared/room-hub/frames.js';
 
 describe('room link frames', () => {
   it('round-trips a text op', () => {

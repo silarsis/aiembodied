@@ -1,4 +1,4 @@
-import type { LinkSocket, SocketFactory } from '../../../main/src/satellite/link-core.js';
+import type { LinkSocket, SocketFactory } from '../../../main/src/shared/satellite/link-core.js';
 
 /** The slice of the browser's WebSocket the link uses (so a test can hand in Node's). */
 export type WebSocketCtor = new (url: string) => WebSocket;

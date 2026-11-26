@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import type { CodingConfig } from '../src/coding/config.js';
 import { RunnerError } from '../src/coding/runner-client.js';
 import { buildCodingSyncPayload, CodingSync } from '../src/coding/sync.js';

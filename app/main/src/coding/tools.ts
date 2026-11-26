@@ -6,7 +6,7 @@
  */
 import type { RegisteredTool } from '../tools/tool-registry.js';
 import type { CodingRunnerClient, RunnerQuestion, RunnerTask } from './runner-client.js';
-import type { CodingWorkspace } from './types.js';
+import type { CodingWorkspace } from '../shared/coding/types.js';
 
 export const CODING_SERVER_ID = 'coding';
 

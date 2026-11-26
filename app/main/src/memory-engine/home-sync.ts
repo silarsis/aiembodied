@@ -7,7 +7,7 @@
  * has and sends the list again when one is missing. Tokens only travel in the request body and
  * are never logged.
  */
-import type { ModelRouting } from '../config/model-routing.js';
+import type { ModelRouting } from '../shared/config/model-routing.js';
 import { MemoryEngineError, type MemoryEngineClient, type MemoryEngineHomeServer } from './client.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };

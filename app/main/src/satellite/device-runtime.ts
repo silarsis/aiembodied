@@ -4,12 +4,12 @@
  * Windows notification, the page, and the link to bija. Everything Electron-specific is passed in, so the tests
  * run it with fakes.
  */
-import type { Op } from '../room-hub/frames.js';
-import { DeviceGate, avatarsHere, guardMediaPermissions, type DeviceGateState, type PermissionSession } from './device-gate.js';
+import type { Op } from '../shared/room-hub/frames.js';
+import { DeviceGate, avatarsHere, guardMediaPermissions, type DeviceGateState, type PermissionSession } from '../shared/satellite/device-gate.js';
 import type { FullscreenWatcher } from './fullscreen-watch.js';
 import { stateIcon, trayRoomName, trayTooltip, type IconBitmap } from './tray-state.js';
 import type { SatelliteSettings } from './settings.js';
-import { cameraSettingHere, doorbellSettingHere } from './snapshot-facts.js';
+import { cameraSettingHere, doorbellSettingHere } from '../shared/satellite/snapshot-facts.js';
 
 export const DEFAULT_CLOSE_SHORTCUT = 'Ctrl+Alt+Shift+R';
 

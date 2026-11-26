@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { createBridge, type PreloadApi } from './bridge/create-bridge.js';
+import { createBridge, type PreloadApi } from './shared/bridge/create-bridge.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -50,7 +50,7 @@ const logPreloadError = (message: string, meta?: Record<string, unknown>) => {
   forwardPreloadDiagnostics('error', message, meta);
 };
 /**
- * The bridge is built in bridge/create-bridge.ts on a transport, so the web satellite can build the same API on the
+ * The bridge is built in shared/bridge/create-bridge.ts on a transport, so the web satellite can build the same API on the
  * room link. Here the transport is Electron's ipcRenderer: a listener gets the event's arguments without the event.
  */
 const api = createBridge(

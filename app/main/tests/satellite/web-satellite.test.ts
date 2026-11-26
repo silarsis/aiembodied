@@ -3,9 +3,9 @@ import { WebSatellite } from '../../../renderer/src/web-satellite/web-satellite.
 import { WebStore } from '../../../renderer/src/web-satellite/web-store.js';
 import { browserSocketFactory } from '../../../renderer/src/web-satellite/browser-socket.js';
 import type { ShellHook } from '../../../renderer/src/web-satellite/shell-hook.js';
-import type { DeviceGateState } from '../../src/satellite/device-gate.js';
+import type { DeviceGateState } from '../../src/shared/satellite/device-gate.js';
 import type { SatelliteStatus } from '../../src/satellite/satellite.js';
-import type { Op } from '../../src/room-hub/frames.js';
+import type { Op } from '../../src/shared/room-hub/frames.js';
 import { startHarness, waitFor, type Harness } from './hub-harness.js';
 
 /** A localStorage that lives in a Map. */

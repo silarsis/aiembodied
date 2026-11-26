@@ -27,7 +27,7 @@ import type { SwitchboardEventInput } from '../switchboard/types.js';
 import { mimeFor, resolveAssetPath } from '../rooms/asset-protocol.js';
 import { WEB_PREFIX, hostAllowed, originAllowed, serveStaticFile } from './web-serve.js';
 import { isAllowedChannel } from './allowlist.js';
-import { FrameError, MAX_FRAME_BYTES, decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from './frames.js';
+import { FrameError, MAX_FRAME_BYTES, decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../shared/room-hub/frames.js';
 import { getIpcHandler, type IpcHandler } from './ipc-registry.js';
 import { cleanKind, type DeviceKind, type RoomDeviceRegistry } from './room-devices.js';
 import type { TailscaleLookup } from './tailscale.js';

@@ -5,11 +5,11 @@
  * too. This file gives it the `ws` package as its socket.
  */
 import WebSocket, { type RawData } from 'ws';
-import { MAX_FRAME_BYTES } from '../room-hub/frames.js';
-import { RoomLinkCore, type LinkSocket, type RoomLinkOptions, type SocketFactory } from './link-core.js';
+import { MAX_FRAME_BYTES } from '../shared/room-hub/frames.js';
+import { RoomLinkCore, type LinkSocket, type RoomLinkOptions, type SocketFactory } from '../shared/satellite/link-core.js';
 
-export * from './link-shared.js';
-export type { RoomLinkOptions } from './link-core.js';
+export * from '../shared/satellite/link-shared.js';
+export type { RoomLinkOptions } from '../shared/satellite/link-core.js';
 
 function toFrame(data: RawData, isBinary: boolean): string | Uint8Array {
   const bytes = Array.isArray(data) ? Buffer.concat(data) : data instanceof ArrayBuffer ? new Uint8Array(data) : data;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/rooms/idle-settings.js';
+import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
 import type { IdlePickContext } from '../../../main/src/rooms/types.js';
 import { FIRST_ACTION_DELAY_MS, IdleDirector, TALK_SETTLE_MS, type IdleAvatar, type IdleExecutor } from '../../src/rooms/idle-director.js';
 import { INITIAL_STATE, type AvatarState, type PlanWorld } from '../../src/rooms/scene-actions.js';

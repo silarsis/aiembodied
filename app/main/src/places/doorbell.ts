@@ -10,7 +10,7 @@
  *
  * Pure: the places, the clock-free summon and the delivery come in from outside.
  */
-import { doorbellOn } from './doorbell-setting.js';
+import { doorbellOn } from '../shared/places/doorbell-setting.js';
 import type { PlaceManager } from './place-manager.js';
 import { chooseSummon, summon } from './summon.js';
 

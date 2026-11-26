@@ -4,7 +4,7 @@
  * with that use's backups, and gets no history, no memory and no tools. Any failure gives null and
  * the renderer picks at random instead, so the avatar never freezes.
  */
-import { routeTargets, type ModelRouting } from '../config/model-routing.js';
+import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
 import { DEFAULT_OPENAI_MODELS, FailoverChatClient, type ChatClient, type ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { LocalLlmClient } from '../local-voice/local-llm-client.js';
 import type { IdlePickContext, IdlePickResult } from './types.js';

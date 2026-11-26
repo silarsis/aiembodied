@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { sanitizeProviderPatch, type ProviderSettingsPatch } from './provider-settings.js';
-import { sanitizeStoredModels, type StoredModels } from './model-routing.js';
+import { sanitizeProviderPatch, type ProviderSettingsPatch } from '../shared/config/provider-settings.js';
+import { sanitizeStoredModels, type StoredModels } from '../shared/config/model-routing.js';
 import { sanitizeCodingConfig, type CodingConfig } from '../coding/config.js';
 
 export interface AudioDevicePreferences {

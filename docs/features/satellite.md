@@ -61,8 +61,8 @@ The window shows "Connect to bija": bija's address (default `ws://bija:8791`), t
 
 ## How it works
 
-- `satellite/satellite.ts` registers the IPC channels the renderer expects. `satellite/channels.ts` sorts each one: forwarded to bija, answered locally, unavailable, or an event from bija. A test checks that every preload channel is sorted.
-- `satellite/link-core.ts` is the client (`RoomLinkCore`): it reconnects with a 1 s to 30 s backoff, pings every 2 s and treats 6 s of silence as a lost link. Refusals (bad token, removed, replaced, protocol) stop the retries. It takes its socket from a factory: `room-link.ts` gives it the `ws` package, the web satellite gives it the browser's WebSocket. The one list of calls and events the page can use is `bridge/create-bridge.ts`; the preload builds it on `ipcRenderer`, the web satellite on the link.
+- `satellite/satellite.ts` registers the IPC channels the renderer expects. `shared/satellite/channels.ts` sorts each one: forwarded to bija, answered locally, unavailable, or an event from bija. A test checks that every preload channel is sorted.
+- `shared/satellite/link-core.ts` is the client (`RoomLinkCore`): it reconnects with a 1 s to 30 s backoff, pings every 2 s and treats 6 s of silence as a lost link. Refusals (bad token, removed, replaced, protocol) stop the retries. It takes its socket from a factory: `room-link.ts` gives it the `ws` package, the web satellite gives it the browser's WebSocket. The one list of calls and events the page can use is `shared/bridge/create-bridge.ts`; the preload builds it on `ipcRenderer`, the web satellite on the link.
 - Room files come through an asset protocol with an on-disk cache of up to 500 MB (oldest used leaves first). The cache is keyed by URL, so a room file that changes under the same URL is not refreshed until it leaves the cache. VRM bytes are cached by model id and file hash.
 - A few cheap channels (wake word list, approvals, metrics, talk shortcut) are answered locally with empty answers.
 - bija keeps one floor per place, so the avatars at a satellite talk there. See [places.md](places.md).
@@ -77,7 +77,7 @@ The mic is live only while all of these are true:
 4. The room is open (Kevin has not closed it).
 5. No other app is full screen on any monitor.
 
-The rule lives in the satellite's main process (`satellite/device-gate.ts`, wired in `device-runtime.ts`), not in the page, and it fails closed: a fact that is not known yet counts as "no". bija can ask devices off (`device.off`) but can never turn them on. The camera stays off until a later update.
+The rule lives in the satellite's main process (`shared/satellite/device-gate.ts`, wired in `device-runtime.ts`), not in the page, and it fails closed: a fact that is not known yet counts as "no". bija can ask devices off (`device.off`) but can never turn them on. The camera stays off until a later update.
 
 When the gate closes:
 
@@ -183,7 +183,7 @@ then open `https://<bija name>.<tailnet>.ts.net/app/`. `tailscale serve` forward
 
 ### What the page does differently
 
-- It boots the web satellite when there is no Electron preload bridge (`renderer/src/web-satellite/`). `window.aiembodied` is built by the same `createBridge` as the preload, so every call and event exists on both. The channels are sorted by the same `satellite/channels.ts`; the link, the pairing request, the config and the gate logic are shared code, not copies.
+- It boots the web satellite when there is no Electron preload bridge (`renderer/src/web-satellite/`). `window.aiembodied` is built by the same `createBridge` as the preload, so every call and event exists on both. The channels are sorted by the same `shared/satellite/channels.ts`; the link, the pairing request, the config and the gate logic are shared code, not copies.
 - The token is kept in the page's `localStorage` (so is the closed switch and the speaker choice; the camera choice was already there). Anyone who can run script on that page's origin can read it, so only open the hub's page on devices you trust. "Forget this pairing" clears it. Revoke the room on bija to cancel a token for good.
 - The gate uses the same pure rules (`evaluateGate`). The facts: occupied (from bija's snapshot), unlocked = the page is visible (`document.visibilityState`), link up, open (the "Close this room" button in the Status panel, kept in `localStorage`), no full-screen app (always true, a page cannot tell), not held off by bija, and the room's camera setting. When any fact fails, the page stops every capture track at once and confirms it; if it does not, the page reloads itself. Unknown counts as off.
 - A plain browser enforces this in the page only, so it is as strong as the page. The Android app adds native enforcement (see "Phone room").

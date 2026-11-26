@@ -1,12 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationSession } from '../../main/src/conversation/types.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
-import { builtInServers, defaultRoutes } from '../../main/src/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/shared/config/provider-settings.js';
+import { builtInServers, defaultRoutes } from '../../main/src/shared/config/model-routing.js';
 import type { PlacesSnapshot } from '../../main/src/places/place-manager.js';
 import { SatelliteContext } from '../src/satellite/satellite-context.js';
 import type { DeviceGateState, SatelliteBridge, SatelliteStatus } from '../../main/src/satellite/bridge-types.js';
-import { evaluateGate } from '../../main/src/satellite/device-gate.js';
+import { evaluateGate } from '../../main/src/shared/satellite/device-gate.js';
 import type { AvatarModelSummary } from '../src/avatar/types.js';
 
 interface FakeCallbacks {

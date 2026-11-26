@@ -29,7 +29,7 @@ export interface PlacesBridge {
   /**
    * The idle director asks before it lets an avatar walk to another place on its own: has it moved in the last 10
    * minutes, is the place open, was someone there lately, is it talking? Answered by bija with fresh data
-   * (`places/wander.ts`). `speaking` is what only the screen knows.
+   * (`shared/places/wander.ts`). `speaking` is what only the screen knows.
    */
   canWander?(avatarId: string, placeRef: string, speaking?: boolean): Promise<PlaceMoveResult>;
 }

@@ -6,9 +6,9 @@ import type {
   ConversationSession,
 } from '../../main/src/conversation/types.js';
 import type { ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
-import { builtInServers, defaultRoutes } from '../../main/src/config/model-routing.js';
-import { BASE_POSES } from '../../main/src/avatar/base-poses.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
+import { builtInServers, defaultRoutes } from '../../main/src/shared/config/model-routing.js';
+import { BASE_POSES } from '../../main/src/shared/avatar/base-poses.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/shared/config/provider-settings.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarProfile, AvatarsBridge } from '../../main/src/avatars/bridge-types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';

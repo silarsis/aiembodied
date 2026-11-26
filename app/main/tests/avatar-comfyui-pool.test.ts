@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { ComfyUIPool } from '../src/avatar/generation/comfyui-pool.js';
 import type { ComfyUIRuntime } from '../src/avatar/generation/comfyui-runtime.js';
 import { createRemoteComfyModelScanner, remoteModelKind } from '../src/avatar/generation/image-model-service.js';
-import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 
 const routing = (stored: StoredModels) =>
   resolveModelRouting(

@@ -19,7 +19,7 @@
  */
 import path from 'node:path';
 import { Controller, ControllerError, type DownloadOptions, type DownloadSource, type Lease } from './client.js';
-import { BUILT_IN_SERVER_IDS, routeTargets, type ModelRouting, type RouteOverride } from '../config/model-routing.js';
+import { BUILT_IN_SERVER_IDS, routeTargets, type ModelRouting, type RouteOverride } from '../shared/config/model-routing.js';
 
 /** A model file on one machine, as GET /v1/models?scope=all lists it. */
 export interface ControllerModelEntry {

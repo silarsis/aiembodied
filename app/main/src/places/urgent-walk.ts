@@ -5,7 +5,7 @@
  * Otherwise nothing changes. Pure: the places come in from outside.
  */
 import type { PlaceManager } from './place-manager.js';
-import { activeWithin, type WanderView } from './wander.js';
+import { activeWithin, type WanderView } from '../shared/places/wander.js';
 
 /** "Nobody is at this PC" for urgent news: no use of it for this long. */
 export const URGENT_QUIET_MS = 2 * 60_000;

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
-import { evaluateGate } from '../../../main/src/satellite/device-gate.js';
+import { evaluateGate } from '../../../main/src/shared/satellite/device-gate.js';
 import { SatelliteStatusPanel } from '../../src/satellite/satellite-status-panel.js';
 
 const FACTS = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };

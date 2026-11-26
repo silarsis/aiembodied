@@ -3,7 +3,7 @@
  * spot ("Come back to me") or just turn towards the camera where it is ("Turn to me where it is").
  * Decided when the action's turn comes, from where the avatar is by then.
  */
-import type { OnTalk } from '../../../main/src/rooms/idle-settings.js';
+import type { OnTalk } from '../../../main/src/shared/rooms/idle-settings.js';
 import { yawToward, wrapRadians } from './scene-frames.js';
 import type { AvatarState, PlanWorld, SceneAction } from './scene-actions.js';
 

@@ -9,7 +9,7 @@ import {
   BUILT_IN_SERVER_IDS,
   databaseUrlWithPassword,
   type ModelRouting,
-} from '../config/model-routing.js';
+} from '../shared/config/model-routing.js';
 import { MemoryEngineError, type MemoryEngineClient } from './client.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
