@@ -6,6 +6,8 @@ main process talks to it through `LocalMotionClient`
 (`app/main/src/avatar/motion/`).
 
 - Default address: `http://127.0.0.1:8190` (the app reads `MOTION_SERVICE_URL`).
+- CORS: pages served from `http://localhost:<port>` or `http://127.0.0.1:<port>` may call the service from the
+  browser (the sit lab's Vite page does). Other origins get no CORS headers.
 - One backend per process, chosen at startup (`--backend ardy|kimodo`), because
   the two models need different `transformers` versions and so live in
   separate venvs.
@@ -38,6 +40,10 @@ Request:
 - `prompt` (required): free text.
 - `duration`: seconds, 0.5 to 10, default 3.
 - `steps`: diffusion steps; backend default when omitted.
+- `seed`: optional non-negative integer. The backend calls `torch.manual_seed(seed)` before generating this
+  request, which replaces the process-wide `--seed` for it (the same request and seed give the same motion on
+  the same device). Without it the process-wide seed is used if one was given, else generation is unseeded.
+  Accepted by `/clip` and `/stream`.
 - `name`: slug for `meta.name`; defaults to a slug of the prompt (max 40 chars).
 - `avatar_rest` (optional): the avatar's rest skeleton, used to calibrate the arm swing to its
   build. An object mapping each of `hips`, `spine`, `chest`, `upperChest`, and `left`/`right` +

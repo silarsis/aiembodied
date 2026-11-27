@@ -87,6 +87,7 @@ class FakeBackend(Backend):
         self.load_delay = load_delay
         self.fail_after_chunks = fail_after_chunks
         self.calls: list[dict] = []  # what each stream() was given, for plumbing tests
+        self.seeds: list[int | None] = []  # the seed each generate() or stream() was asked for
 
     def load(self) -> None:
         time.sleep(self.load_delay)
@@ -95,7 +96,8 @@ class FakeBackend(Backend):
     def encode(self, prompt: str):
         return prompt
 
-    def generate(self, text, frames: int, steps: int) -> Motion:
+    def generate(self, text, frames: int, steps: int, seed: int | None = None) -> Motion:
+        self.seeds.append(self.effective_seed(seed))
         return synthetic_motion(frames, self.fps)
 
     def _track(self, m: Motion, state: dict, tg, start: int, fresh: bool = False) -> Motion:
@@ -125,7 +127,9 @@ class FakeBackend(Backend):
         phase_texts: Sequence | None = None,
         history: StreamHistory | None = None,
         constraint_weight: float = 2.0,
+        seed: int | None = None,
     ) -> Iterator[Chunk]:
+        self.seeds.append(self.effective_seed(seed))
         self.calls.append(
             {
                 "text": text,

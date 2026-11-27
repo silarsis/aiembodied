@@ -1,0 +1,62 @@
+{
+  "runId": "full",
+  "seatObjectId": "armchair",
+  "starts": {
+    "front": {
+      "bearingDeg": 0,
+      "distance": 2.0
+    },
+    "left": {
+      "bearingDeg": 90,
+      "distance": 2.0
+    },
+    "behind": {
+      "bearingDeg": 180,
+      "distance": 2.0
+    }
+  },
+  "startNames": ["front", "left", "behind"],
+  "seeds": [1, 2, 3, 4, 5],
+  "methods": [
+    {
+      "name": "baseline",
+      "method": "baseline"
+    },
+    {
+      "name": "rigidTranslate",
+      "method": "rigidTranslate"
+    },
+    {
+      "name": "translateYaw",
+      "method": "translateYaw"
+    },
+    {
+      "name": "closedLoop",
+      "method": "closedLoop"
+    },
+    {
+      "name": "wholeBodyTargets",
+      "method": "wholeBodyTargets"
+    },
+    {
+      "name": "hipsOnlyIK",
+      "method": "hipsOnlyIK"
+    },
+    {
+      "name": "poseOptimise",
+      "method": "poseOptimise"
+    },
+    {
+      "name": "bestOfN",
+      "method": "bestOfN"
+    },
+    {
+      "name": "landThenSettle",
+      "method": "landThenSettle"
+    },
+    {
+      "name": "combo",
+      "method": "combo"
+    }
+  ]
+}

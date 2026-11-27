@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -35,11 +36,16 @@ from .sessions import Session, SessionStore
 
 log = logging.getLogger("motion_service")
 
+# Pages served from this PC (the sit lab's Vite dev server) call the service straight from the browser.
+LOCAL_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
+
 
 class ClipRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
     duration: float = Field(default=3.0, ge=0.5, le=10.0)
     steps: int | None = Field(default=None, ge=1)
+    # Seeds the generator for this request, overriding the process-wide --seed.
+    seed: int | None = Field(default=None, ge=0, le=2**63 - 1)
     name: str | None = Field(default=None, max_length=80)
     # The avatar's rest skeleton (bone -> [x, y, z] metres, facing +Z), for per-avatar arm calibration.
     avatar_rest: dict[str, list[float]] | None = None
@@ -230,6 +236,12 @@ def create_app(
 
     app = FastAPI(title="aiembodied local motion service", lifespan=lifespan)
     app.state.motion = state
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=LOCAL_ORIGIN_REGEX,
+        allow_methods=["GET", "POST"],
+        allow_headers=["content-type"],
+    )
 
     @app.exception_handler(ApiError)
     async def _api_error(_req: Request, exc: ApiError):
@@ -279,7 +291,7 @@ def create_app(
             t0 = time.perf_counter()
             text = backend.encode(req.prompt)
             t1 = time.perf_counter()
-            motion = backend.generate(text, frames, steps)
+            motion = backend.generate(text, frames, steps, seed=req.seed)
             t2 = time.perf_counter()
             vrma = to_vrma(
                 motion.global_rot_mats,
@@ -354,6 +366,7 @@ def create_app(
                         phase_texts=phase_texts or None,
                         history=None if previous is None else previous.history,
                         constraint_weight=req.constraint_weight,
+                        seed=req.seed,
                     ):
                         m = chunk.motion
                         t_gen = time.perf_counter()

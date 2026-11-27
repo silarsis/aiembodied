@@ -136,6 +136,7 @@ class ArdyBackend(Backend):
         phase_texts: Sequence | None = None,
         history: StreamHistory | None = None,
         constraint_weight: float = 2.0,
+        seed: int | None = None,
     ) -> Iterator[Chunk]:
         """One 60-frame `autoregressive_step` per chunk, as in steer_test.py (verified on the real model).
 
@@ -145,8 +146,9 @@ class ArdyBackend(Backend):
         earlier stream in its global frame."""
         import torch
 
-        if self.options.seed is not None:
-            torch.manual_seed(self.options.seed)
+        wanted = self.effective_seed(seed)
+        if wanted is not None:
+            torch.manual_seed(wanted)
         device = self.model.device
         phases = sorted(phase_texts or [], key=lambda p: p[0])
         feats = None if history is None else history.payload  # normalized ARDY features [1, T, D], global frame
@@ -202,5 +204,5 @@ class ArdyBackend(Backend):
                 history=StreamHistory(base + start + keep, feats, emitted_ahead=n - keep),
             )
 
-    def generate(self, text, frames: int, steps: int) -> Motion:
-        return Motion.concat([c.motion for c in self.stream(text, frames, steps)])
+    def generate(self, text, frames: int, steps: int, seed: int | None = None) -> Motion:
+        return Motion.concat([c.motion for c in self.stream(text, frames, steps, seed=seed)])
