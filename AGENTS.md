@@ -62,6 +62,10 @@ Run these from the repository root:
 - `pnpm test` — typecheck, then unit/integration tests. Main's tests run in groups in separate processes (`app/main/scripts/test-split.mjs`); add a new test folder to a group there.
 - `pnpm test:coverage` — tests with coverage.
 - `pnpm build` — production builds, as needed.
+- `pnpm knip` — unused files, exports, types and dependencies (rules 1 and 9); only findings not in `knip-baseline.json` fail. `pnpm knip:update` rewrites the baseline; run it only to shrink it.
+- `pnpm cycles` — runtime import cycles in `app/main/src` and `app/renderer/src` (rule 2; type-only imports are allowed).
+- `pnpm size-ratchet` — recorded source files may not grow and no new file may pass 1500 lines (`file-size-ratchet.json`; `--update` lowers the numbers).
+- `basedpyright` (`pip install basedpyright==1.40.2` into a venv with nothing else, as in CI: installed service packages change the results) — Python types on each service's `src/` (rule 13), against `.basedpyright/baseline.json`; `basedpyright --writebaseline` after fixing errors.
 - `ruff check services` and `ruff format --check services` — for Python changes (CI runs both). Each service also has its own tests (see its README).
 
 Document any deviations or extra checks in the PR description.

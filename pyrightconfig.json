@@ -1,0 +1,23 @@
+{
+  "include": [
+    "services/coder/src",
+    "services/memory/src",
+    "services/motion/src",
+    "services/speech/src",
+    "services/switchboard/src",
+    "services/workflows/src"
+  ],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "baselineFile": ".basedpyright/baseline.json",
+  "executionEnvironments": [
+    { "root": "services/coder/src" },
+    { "root": "services/memory/src" },
+    { "root": "services/motion/src" },
+    { "root": "services/speech/src" },
+    { "root": "services/switchboard/src" },
+    { "root": "services/workflows/src" }
+  ]
+}
