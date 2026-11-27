@@ -6,6 +6,8 @@
  * Tool calling needs llama-server's --jinja flag, which scripts/start-local-llm.ps1 passes.
  */
 
+import { chatTemplateKwargs } from '../local-llm/chat-template-kwargs.js';
+
 export interface LlmToolCall {
   id: string;
   name: string;
@@ -130,7 +132,7 @@ export class LocalLlmClient {
               stream: true,
               temperature: this.temperature,
               max_tokens: this.maxTokens,
-              chat_template_kwargs: { enable_thinking: false },
+              chat_template_kwargs: chatTemplateKwargs(this.model),
               ...tools,
             },
       ),

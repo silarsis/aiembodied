@@ -8,6 +8,8 @@
  * max_output_tokens (as max_tokens), temperature and text.format json_schema. The reply comes back as `output_text`, like the SDK's.
  */
 
+import { chatTemplateKwargs } from '../local-llm/chat-template-kwargs.js';
+
 type InputPart = { type?: string; text?: string; image_url?: string };
 type InputMessage = { role?: string; content?: string | InputPart[] };
 
@@ -39,12 +41,12 @@ export function createChatCompletionsResponsesClient(options: {
     responses: {
       async create(raw: unknown) {
         const params = (raw ?? {}) as ResponsesParams;
+        const model = options.model || params.model || 'default';
         const body: Record<string, unknown> = {
-          model: options.model || params.model || 'default',
+          model,
           messages: toChatMessages(params),
           stream: false,
-          // llama-server's Qwen template: answer directly instead of thinking first.
-          chat_template_kwargs: { enable_thinking: false },
+          chat_template_kwargs: chatTemplateKwargs(model),
         };
         if (typeof params.max_output_tokens === 'number' && params.max_output_tokens > 0)
           body.max_tokens = Math.floor(params.max_output_tokens);
