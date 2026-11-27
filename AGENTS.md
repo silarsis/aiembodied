@@ -1,11 +1,12 @@
 # Agent Operating Guide
 
 ## Project Context
-An embodied assistant: 3D VRM characters (Echo and others) who live in rooms on Kevin's screens, talk by voice, remember, plan their own time and use tools. It runs local-first on Kevin's Windows PC "bija" (Ryzen, 128 GB unified memory), with local LLM, speech, motion and image models, and other PCs or phones as extra rooms. It started as the "Embodied ChatGPT Assistant MVP" (`prd.md`, `archspec.md`, `plan.md`); those files are background now, not the spec.
+An embodied assistant: 3D VRM characters (Echo and others) who live in rooms on Kevin's screens, talk by voice, remember, plan their own time and use tools. It runs local-first on Kevin's Windows PC "bija" (Ryzen, 128 GB unified memory), with local LLM, speech, motion and image models, and other PCs or phones as extra rooms. It started as the "Embodied ChatGPT Assistant MVP"; that spec is in `docs/history/mvp-*.md`, background only.
 
 Where to look:
+- How the system fits together, and where a new feature goes: [`docs/architecture.md`](docs/architecture.md). Read it before adding a feature, a service or an IPC channel.
 - How a feature works now: its doc in [`docs/features/`](docs/features/README.md), or the service's `README.md` under `services/`.
-- Why something is the way it is: [`docs/history.md`](docs/history.md), the dated decision log. Search it, don't read it whole.
+- Why something is the way it is: [`docs/history/decisions.md`](docs/history/decisions.md), the dated decision log. Search it, don't read it whole.
 - Record a new decision in the feature's doc (create one if needed), not in this file. This file holds rules and orientation only.
 
 ## Coding Rules (always apply)
@@ -44,7 +45,7 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 18. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
 
 ## Development Workflow
-1. Read the feature's doc in `docs/features/` (or the service README) and the code around the change.
+1. Read the feature's doc in `docs/features/` (or the service README) and the code around the change. For a new feature, decide where it goes with `docs/architecture.md`.
 2. Implement, with tests in the same package.
 3. Run the checks below before committing.
 4. Update the feature doc when behaviour or a decision changes.

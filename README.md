@@ -1,36 +1,13 @@
-# Embodied ChatGPT Assistant
+# aiembodied
 
-An Electron-based kiosk prototype that turns ChatGPT's Realtime API into a hands-free, always-on desktop companion. The project couples wake-word listening, low-latency voice exchange, and a lively on-screen avatar so the assistant feels present while remaining lightweight enough for mini-PC hardware.
+Embodied AI companions for the desktop. 3D VRM characters (Echo and others) live in rooms on your screens, talk by voice
+with a wake word or push-to-talk, remember past conversations, plan their own time, walk between PCs and phones, and use
+tools such as web search, MCP servers and Home Assistant. It runs local-first: the language, speech, motion, image and
+memory models run on your own machines (OpenAI is optional for any of them).
 
-## Project Overview
-
-This MVP is designed to:
-
-- **Listen and respond instantly.** A local wake-word service keeps the microphone dormant until the user speaks, then hands the stream to OpenAI's Realtime API for sub-second turnarounds.
-- **Show an expressive avatar.** A 2D canvas renderer animates mouth shapes, blinks, and idle motion based on viseme frames so the character looks alive without expensive 3D assets.
-- **Persist context locally.** Conversations, device preferences, and configuration live on device (SQLite/JSON) so history survives restarts and the app can run offline aside from model calls.
-- **Operate as an appliance.** Crash-guarding, kiosk mode, and packaging work make it suitable for an Intel N100-style box that boots directly into the assistant.
-
-The longer-term vision keeps the core voice loop intact while swapping in richer avatars (e.g., Unity) or extending observability, memory, and deployment automation. Refer to the detailed [PRD](prd.md), [architecture spec](archspec.md), and [implementation plan](plan.md) for the full context.
-
-## Architecture at a Glance
-
-| Layer | Responsibilities |
-| --- | --- |
-| **Electron main process** | Window lifecycle, crash guard, wake-word worker orchestration, secrets/config validation (`ConfigManager`), SQLite memory store. |
-| **Renderer process** | WebRTC session with the Realtime API, Web Audio capture/playback, viseme generation, 2D avatar rendering, transcript overlay. |
-| **Wake-word worker** | openWakeWord models on onnxruntime-node, fed from the microphone in 80 ms frames, with cooldown and threshold filtering. Fully local: no account or key. |
-| **Future integrations** | Optional metrics exporter, Unity avatar client consuming the same viseme stream, packaging for appliance deployment. |
-
-## Roadmap Snapshot
-
-The implementation plan progresses through the major subsystems required for the MVP and eventual appliance delivery.
-
-- ✅ Foundations: repository scaffolding, configuration/secrets, logging and crash guard, wake-word service, audio graph, realtime client, viseme driver.
-- 🚧 In Progress: 2D canvas avatar renderer, transcript overlay/UI shell.
-- ⏭️ Upcoming: persistent memory store, full conversation loop persistence, observability, packaging/auto-launch, appliance validation, and Unity integration prep.
-
-Current feature status lives in [`docs/features/`](docs/features/README.md); the dated decision log is [`docs/history.md`](docs/history.md).
+It is an Electron app (main process plus a React/three.js renderer) with a set of small Python services for the heavy
+work. See [docs/architecture.md](docs/architecture.md) for how it fits together and how to decide where a new feature
+goes, [docs/features/](docs/features/README.md) for each feature, and [AGENTS.md](AGENTS.md) for the coding rules.
 
 ## Getting Started
 
@@ -38,7 +15,7 @@ Current feature status lives in [`docs/features/`](docs/features/README.md); the
 
 - **Node.js 22.12+** (required by Electron 45 and better-sqlite3 13; CI uses Node 24).
 - **pnpm 10+** (the repo pins `pnpm@10.34.9`; enable via `corepack enable`).
-- OpenAI Realtime API access with a corresponding key.
+- Optional: an OpenAI API key, only if you route a job (or the Realtime conversation backend) to OpenAI.
 
 #### Automated environment bootstrap
 
@@ -76,7 +53,7 @@ A second desktop that only draws one room of bija's world (no models) installs w
 [docs/features/satellite.md](docs/features/satellite.md#set-up-a-second-desktop).
 
 No C++ toolchain (Visual Studio Build Tools, Xcode, Python for node-gyp) is needed:
-better-sqlite3, keytar and the Picovoice packages all ship prebuilt N-API binaries that
+better-sqlite3 and keytar ship prebuilt N-API binaries that
 load in both Node and Electron.
 
 ### Clone & Install
@@ -98,8 +75,8 @@ it (`pnpm dev:run` also does this for you).
 Create a `.env` file at the repository root (loaded automatically in development) or set the variables in your shell:
 
 ```ini
+# All optional. REALTIME_API_KEY is only needed for CONVERSATION_BACKEND=openai.
 REALTIME_API_KEY=sk-...
-# Optional overrides
 AUDIO_INPUT_DEVICE_ID=default
 AUDIO_OUTPUT_DEVICE_ID=default
 WAKE_WORD_MODEL=hey_echo
@@ -130,14 +107,9 @@ New character generation also needs the local face detector: run `pnpm avatar:fa
    pnpm --filter @aiembodied/renderer build
    ```
 2. **Build and launch the Electron main process** (loads the bundled renderer and starts the wake-word worker):
-   - One-shot cross-platform command:
-     ```bash
-     pnpm dev:run
-     ```
-   - Or, on macOS/Linux:
-     ```bash
-     ./scripts/run-dev.sh
-     ```
+   ```bash
+   pnpm dev:run
+   ```
 
    `pnpm dev:run` installs dependencies into an isolated store under `.dev-home/`, builds both
    bundles, downloads the Electron binary if needed and launches the app. It skips the install
@@ -268,36 +240,28 @@ pnpm dist             # emit installers into release/
 Artifacts land in `release/`. Packaged builds open full screen (Escape leaves it); `AIEMBODIED_KIOSK=1` makes them a locked
 kiosk, and `ENABLE_AUTO_LAUNCH=1` registers them to start at login.
 
-### Intel N100 Deployment Tips
-
-For the reference Intel N100 mini-PC (Ubuntu/Debian-based):
-
-1. Copy the generated `.deb` or `.AppImage` from `release/` onto the device.
-2. Install the `.deb` via `sudo dpkg -i <package>.deb` (or mark the AppImage as executable and launch once to verify).
-3. Provide the production `.env` or environment variables under `/etc/aiembodied.env` and load them via your preferred shell
-   profile or systemd service wrapper.
-4. On first run the assistant enables auto-launch; confirm it appears under **Startup Applications**. Remove it there if you need
-   to temporarily disable kiosk startup.
-5. For kiosk-style boot, create a systemd user service that runs the installed binary at login (the `.deb` places the executable
-   under `/opt/AI Embodied Assistant/ai-embodied-assistant`). Combine with display manager auto-login targeting the kiosk user.
-
 ## Quality Gates
 
-Run the shared project checks from the repo root:
+Run the shared project checks from the repo root (CI runs all of them; see AGENTS.md for what each one covers):
 
 ```bash
-pnpm lint        # ESLint across all workspaces
-pnpm typecheck   # TypeScript project references
-pnpm test        # Vitest unit/integration suites
-pnpm build       # Compile production-ready main and renderer output
+pnpm format:check   # Prettier
+pnpm lint           # ESLint across all workspaces, including the main/renderer import boundaries
+pnpm typecheck      # TypeScript
+pnpm knip           # unused files, exports and dependencies (against knip-baseline.json)
+pnpm cycles         # runtime import cycles
+pnpm size-ratchet   # big files may not grow
+pnpm test           # Vitest unit/integration suites
+pnpm build          # production main and renderer output
+ruff check services && ruff format --check services   # Python
 ```
 
 When preparing installers, run `pnpm dist` after the checks to exercise the electron-builder configuration locally.
 
 ## Further Reading
 
-- [Product Requirements Document](prd.md) – goals, non-goals, and acceptance criteria for the assistant.
-- [Architecture Specification](archspec.md) – detailed component responsibilities, data contracts, and latency budgets.
-- [Implementation Plan](plan.md) – phased rollout of features, validation steps, and testing expectations.
-
-Contributions should stay aligned with these documents to preserve the kiosk-focused, low-latency assistant vision.
+- [Architecture](docs/architecture.md): how the system is put together, and where new features go.
+- [Feature docs](docs/features/README.md): one per feature.
+- [AGENTS.md](AGENTS.md): coding rules and checks, for people and coding agents.
+- [Decision history](docs/history/decisions.md): the dated log of past decisions, and the original MVP
+  [PRD](docs/history/mvp-prd.md), [architecture spec](docs/history/mvp-archspec.md) and [plan](docs/history/mvp-plan.md).

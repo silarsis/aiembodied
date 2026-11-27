@@ -2,7 +2,7 @@
 
 A dated log of decisions and fixes, moved out of `AGENTS.md` on 2026-11-27 so agents don't load it on every session. Search it (`grep`) for the feature you are working on; don't read it whole.
 
-Entries record what was true when written. Where one conflicts with the coding rules in `AGENTS.md` (for example "keep helper functions exported for unit tests"), the rules win. Current behaviour of a feature is in its doc under `docs/features/`, and new decisions go there, not here.
+Entries record what was true when written. Where one conflicts with the coding rules in `AGENTS.md` (for example "keep helper functions exported for unit tests"), the rules win. The current design is in `docs/architecture.md`, and each feature's current behaviour is in its doc under `docs/features/`, and new decisions go there, not here.
 
 ## Original architecture notes (MVP era)
 
