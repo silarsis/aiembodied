@@ -4,7 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   CAPSULE_RADII,
   ContactBody,
-  MAX_BODY_SHIFT,
   MAX_PELVIS_LIFT,
   MISS_SECONDS,
 } from '../../src/rooms/contact-body.js';
@@ -71,6 +70,9 @@ function depthOf(physics: RoomPhysics, a: THREE.Vector3, b: THREE.Vector3, radiu
   const centre = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
   return physics.penetration(new RAPIER.Capsule(length / 2, radius), centre, rotation)?.depth ?? 0;
 }
+
+/** The contact body's sideways shift cap (metres), as documented in contact-body.ts. */
+const MAX_BODY_SHIFT = 0.15;
 
 describe('ContactBody on the reading-room sofa', () => {
   const room = builtInRoom('reading-room');

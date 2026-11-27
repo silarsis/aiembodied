@@ -68,7 +68,7 @@ export const CAPSULE_RADII = {
 /** The pelvis is never lifted more than this (metres, absolute). */
 export const MAX_PELVIS_LIFT = 0.08;
 /** The body is never moved sideways (x and z together) more than this to get clear of furniture (metres, absolute). */
-export const MAX_BODY_SHIFT = 0.15;
+const MAX_BODY_SHIFT = 0.15;
 /** Smoothing time of the body shift springs (seconds). */
 export const PELVIS_LIFT_SMOOTH_TIME = 0.12;
 /** Solver passes over all capsules per frame. */
