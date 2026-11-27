@@ -83,7 +83,7 @@ bija's window.
 
 ## Notes on what is built (PR 2)
 
-- Code: `frames.ts` (wire format), `room-hub.ts` (server), `room-devices.ts` (device file, code, lockout), `tailscale.ts` (peer check), `allowlist.ts`, `ipc-registry.ts` (main.ts registers every handler through `handleIpc`, which also stores it there).
+- Code: `frames.ts` (wire format), `room-hub.ts` (server), `room-devices.ts` (device file, code, lockout), `tailscale.ts` (peer check), `allowlist.ts`, `ipc/handle-ipc.ts` (every feature registers its handlers through `HandleIpc`, which also stores them there; each feature has its own `ipc.ts`).
 - Extra error codes the hub uses: `hello-timeout`, `bad-frame`, `bad-request`, `unknown-op`, `denied`, `unavailable` (no handler on bija), `failed` (the handler threw), `too-large`, `not-found` (asset), `revoked`, `replaced`.
 - `asset.get` answers with a binary frame `{op:"asset", ref, mime}` whose payload is the file. It has no `bins` list.
 - `places:snapshot` from a satellite is answered by the hub itself (relative to the satellite's place). `places:arrived` is only passed on when the avatar is on its way to that satellite's place.
