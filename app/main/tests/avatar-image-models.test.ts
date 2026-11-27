@@ -132,6 +132,20 @@ describe('view model', () => {
   });
 });
 
+describe('object model', () => {
+  it('draws objects with an installed Qwen even when the studio uses a character checkpoint', async () => {
+    const values = new Map([['avatar.imageModel', 'checkpoints:folder/variant.safetensors']]);
+    const store = { getValue: (key: string) => values.get(key) ?? null, setValue: vi.fn() };
+    const service = new AvatarImageModelService(async () => installed, store);
+    expect((await service.resolveObjectModel()).family).toBe('qwen-image-2.1');
+    const noQwen = new AvatarImageModelService(
+      async () => installed.filter((file) => file.kind !== 'qwen-image-2.1'),
+      store,
+    );
+    expect((await noQwen.resolveObjectModel()).model).toBe('folder/variant.safetensors');
+  });
+});
+
 describe('LoRAs', () => {
   const withLoras: ImageModelFile[] = [
     ...installed,

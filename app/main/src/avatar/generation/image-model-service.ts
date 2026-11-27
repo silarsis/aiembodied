@@ -395,6 +395,14 @@ export class AvatarImageModelService {
     const entry = qwen.find((candidate) => candidate.model.id === saved) ?? qwen[0];
     return entry ? { ...entry.model } : undefined;
   }
+  /**
+   * The model that draws furniture and room objects. The studio's pick is often a character
+   * checkpoint, which puts a character in every picture whatever the prompt says, so an installed
+   * Qwen-Image (a general model) goes first; the studio's model is the fallback.
+   */
+  async resolveObjectModel(): Promise<ImageWorkflowModel> {
+    return (await this.resolveViewModel()) ?? this.resolve();
+  }
   async resolve(id?: string): Promise<ImageWorkflowModel> {
     await this.refresh();
     const selected = id ?? this.current();

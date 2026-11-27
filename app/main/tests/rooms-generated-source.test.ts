@@ -169,6 +169,27 @@ describe('GeneratedSource', () => {
     expect(Object.keys(mesh.graph!)).not.toContain('back_image');
   });
 
+  it('steers a character checkpoint away from drawing a figure beside the object', async () => {
+    const { client, calls } = fakeComfy();
+    const generated = new GeneratedSource({
+      library: new GeneratedLibrary(dir),
+      pickComfy: async () => client,
+      imageModel: async () => ({
+        id: 'checkpoints:furry.safetensors',
+        name: 'Furry XL',
+        family: 'sdxl',
+        model: 'furry.safetensors',
+      }),
+      geometryModel: async () => trellis,
+    });
+    await generated.generate(layoutObject(), new AbortController().signal);
+    const image = calls.find((c) => c.stage === 'image')!;
+    expect(image.graph?.positive.inputs.text).toMatch(/^no humans, object focus, /);
+    expect(image.graph?.positive.inputs.text).toContain('a single rocking chair');
+    expect(image.graph?.negative.inputs.text).toContain('person');
+    expect(image.graph?.negative.inputs.text).toContain('anthro');
+  });
+
   it('fails with the reason and stores nothing when the image or the mesh step fails', async () => {
     const image = fakeComfy({ failImage: true });
     await expect(
