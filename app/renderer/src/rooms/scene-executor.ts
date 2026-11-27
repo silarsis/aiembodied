@@ -79,6 +79,8 @@ export interface SceneEnv {
   detach(event: StreamEvent): void;
   /** Puts every carried object back where it came from (the room is going away). */
   releaseHeld(): void;
+  /** The avatar is sitting down on this object: keep the pelvis from sinking below its surface while the clip lowers it. */
+  approachSeat?(objectId: string): void;
   /** The avatar sat down on this object and its sit clip is held: fit the pelvis onto the seat surface. */
   setSeat?(objectId: string): void;
   /** The avatar is standing (or getting up): let the seat fit ease away. */
@@ -791,6 +793,9 @@ export class SceneActionExecutor {
     this.env?.setStreamPlaying?.(true);
     // Getting up (or walking off) starts from the plain floor, so the seat fit eases out first.
     if (this.state.posture === 'seated' && !planned.repair) this.env?.clearSeat?.();
+    else if (planned.outcome.posture === 'seated' && !planned.repair) {
+      this.env?.approachSeat?.(planned.outcome.seat.objectId);
+    }
     this.emit({ type: 'start', id, label: planned.label });
     this.tr('stream.start', () => ({
       streamId: id,

@@ -73,6 +73,8 @@ export class RoomSceneEnv implements SceneEnv {
   private gripRig: AvatarRig | null = null;
   /** The object the avatar sits on while its sit clip is held; the fit below keeps the pelvis above it. */
   private seatId: string | null = null;
+  /** True while the sit clip is still lowering the avatar onto `seatId`: the fit then only raises. */
+  private seatApproaching = false;
   /** The vertical offset currently added to the avatar root's y by the seat fit (metres). */
   private seatOffset = 0;
   /** True while a motion stream is playing for this avatar. */
@@ -189,12 +191,19 @@ export class RoomSceneEnv implements SceneEnv {
     return target.distanceTo(node.position) < GRIP_SNAP_EPSILON ? null : target;
   }
 
+  approachSeat(objectId: string): void {
+    this.seatId = objectId;
+    this.seatApproaching = true;
+  }
+
   setSeat(objectId: string): void {
     this.seatId = objectId;
+    this.seatApproaching = false;
   }
 
   clearSeat(): void {
     this.seatId = null;
+    this.seatApproaching = false;
   }
 
   /** A motion stream starts or ends for this avatar; the seated head settle only runs while none plays. */
@@ -286,7 +295,7 @@ export class RoomSceneEnv implements SceneEnv {
       this.carriedCache,
       stage.debugNavmesh ? stage.group : null,
       this.seatId,
-      this.seatId !== null && !this.streamPlaying,
+      this.seated() && !this.streamPlaying,
     );
     if (isMotionTraceEnabled()) this.traceContact(rig, contact, deltaSeconds);
   }
@@ -294,7 +303,7 @@ export class RoomSceneEnv implements SceneEnv {
   /** Motion trace: a contact snapshot at 5 Hz while a limb touches or the pelvis is lifted, and on every seated/standing change. */
   private traceContact(rig: AvatarRig, contact: ContactBody, deltaSeconds: number): void {
     const avatar = this.host.avatarId ?? 'echo';
-    const seated = this.seatId !== null;
+    const seated = this.seated();
     const changed = this.traceSeated !== null && this.traceSeated !== seated;
     this.traceSeated = seated;
     const active = contact.isInContact();
@@ -335,7 +344,7 @@ export class RoomSceneEnv implements SceneEnv {
     };
     return {
       reason,
-      seated: this.seatId !== null,
+      seated: this.seated(),
       seatId: this.seatId,
       hips: hipsAt ? [r3(hipsAt.x), r3(hipsAt.y), r3(hipsAt.z)] : null,
       rootY: r3(rig.scene.position.y),
@@ -415,6 +424,10 @@ export class RoomSceneEnv implements SceneEnv {
    * surface under the pelvis (see seat-fit.ts); eases back to the plain floor when the seat is cleared. The
    * offset is applied to the root's y as a delta, so everything else (walking, standing up) sees the floor.
    */
+  private seated(): boolean {
+    return this.seatId !== null && !this.seatApproaching;
+  }
+
   private fitSeat(rig: AvatarRig | null, deltaSeconds: number): void {
     if (this.seatRig !== rig) {
       this.seatRig = rig;
@@ -433,10 +446,14 @@ export class RoomSceneEnv implements SceneEnv {
       if (surface === null) return;
       const contact = seatedContactY(p.y, rig.restHipsHeight, rig.scene.scale.x || 1);
       target = seatOffsetTarget(contact, surface, this.seatOffset);
+      // While the clip is still sitting down, the motion model (which knows nothing of the seat) may carry
+      // the hips below the cushion: the body is held up on the surface at once, never lowered onto it.
+      if (this.seatApproaching) target = Math.max(0, target);
     } else if (this.seatOffset === 0) {
       return;
     }
-    const next = easeOffset(this.seatOffset, target, deltaSeconds);
+    const raiseNow = this.seatApproaching && target > this.seatOffset;
+    const next = raiseNow ? target : easeOffset(this.seatOffset, target, deltaSeconds);
     if (next === this.seatOffset) return;
     rig.scene.position.y += next - this.seatOffset;
     this.seatOffset = next;

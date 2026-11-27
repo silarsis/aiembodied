@@ -246,6 +246,29 @@ describe('RoomSceneEnv', () => {
       expect(rig.scene.position.y).toBeCloseTo(0, 6);
     });
 
+    it('while sitting down only holds the pelvis up on the surface, at once, and never lowers it', () => {
+      const tag = cushionedSofa();
+      const surface = stage.room.objects.find((o) => o.id === 'sofa')!.position[1] + 0.4;
+      rig.scene.scale.setScalar(1);
+      rig.scene.rotation.y = 0;
+      rig.scene.position.set(tag.position[0], 0, tag.position[2]);
+      const hips = seatRig(surface + 0.2); // still standing over the seat
+      rig.scene.updateWorldMatrix(true, true);
+      env.approachSeat('sofa');
+      for (let i = 0; i < 60; i += 1) env.step(1 / 60);
+      expect(rig.scene.position.y).toBe(0);
+      // The clip carries the hips 5 cm into the cushion: one frame later the contact is on the surface.
+      hips.position.y = surface - 0.05;
+      rig.scene.updateWorldMatrix(true, true);
+      env.step(1 / 60);
+      const contact = () => hips.getWorldPosition(new THREE.Vector3()).y - 0.09 * (0.9 / 0.95);
+      expect(contact()).toBeCloseTo(surface, 3);
+      // Held: the full fit takes over and keeps it there.
+      env.setSeat('sofa');
+      for (let i = 0; i < 60; i += 1) env.step(1 / 60);
+      expect(contact()).toBeCloseTo(surface, 3);
+    });
+
     it('never moves the root further than the clamp', () => {
       const tag = cushionedSofa();
       rig.scene.scale.setScalar(1);
