@@ -43,9 +43,16 @@ describe('RoomOccupancy spots', () => {
     // Everything snaps back onto the occupied spot.
     expect(occupancy.freeSpotNear('echo', { x: 0, z: 0 }, () => ({ x: 0, z: 0 }))).toBeNull();
     // A wall: nothing walkable beyond x = 0.3, which is still inside the radius.
-    expect(occupancy.freeSpotNear('echo', { x: 0, z: 0 }, (p) => ({ x: Math.max(-0.3, Math.min(p.x, 0.3)), z: Math.max(-0.3, Math.min(p.z, 0.3)) }))).toBeNull();
+    expect(
+      occupancy.freeSpotNear('echo', { x: 0, z: 0 }, (p) => ({
+        x: Math.max(-0.3, Math.min(p.x, 0.3)),
+        z: Math.max(-0.3, Math.min(p.z, 0.3)),
+      })),
+    ).toBeNull();
     // Candidates further than maxShift are refused.
-    expect(occupancy.freeSpotNear('echo', { x: 0, z: 0 }, (p) => ({ x: p.x + 5, z: p.z }))).toBeNull();
+    expect(
+      occupancy.freeSpotNear('echo', { x: 0, z: 0 }, (p) => ({ x: p.x + 5, z: p.z })),
+    ).toBeNull();
   });
 });
 
@@ -64,7 +71,7 @@ describe('RoomOccupancy claims', () => {
     expect(occupancy.claim('seat', 'sofa', 'echo')).toBe(true);
   });
 
-  it('keepOnly and releaseAll drop an avatar\'s claims and goal', () => {
+  it("keepOnly and releaseAll drop an avatar's claims and goal", () => {
     const occupancy = new RoomOccupancy();
     occupancy.claim('seat', 'sofa', 'sage');
     occupancy.claim('object', 'mug', 'sage');

@@ -20,7 +20,13 @@ export function browserSocketFactory(Ctor: WebSocketCtor = globalThis.WebSocket)
         handlers.onError(message);
         handlers.onClose();
       }, 0);
-      const dead: LinkSocket = { isOpen: false, send: () => undefined, close: () => undefined, terminate: () => clearTimeout(timer), detach: () => clearTimeout(timer) };
+      const dead: LinkSocket = {
+        isOpen: false,
+        send: () => undefined,
+        close: () => undefined,
+        terminate: () => clearTimeout(timer),
+        detach: () => clearTimeout(timer),
+      };
       return dead;
     }
     ws.binaryType = 'arraybuffer';
@@ -29,7 +35,8 @@ export function browserSocketFactory(Ctor: WebSocketCtor = globalThis.WebSocket)
       const data: unknown = event.data;
       if (typeof data === 'string') handlers.onMessage(data);
       else if (data instanceof ArrayBuffer) handlers.onMessage(new Uint8Array(data));
-      else if (ArrayBuffer.isView(data)) handlers.onMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+      else if (ArrayBuffer.isView(data))
+        handlers.onMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
     };
     ws.onclose = () => handlers.onClose();
     ws.onerror = () => handlers.onError('The connection failed.');

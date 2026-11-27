@@ -96,7 +96,10 @@ export class MemoryOutbox {
     } else if (item.kind === 'fact') {
       this.store.enqueueMemoryOutbox('fact', { id: item.id, fact: item.fact });
     } else if (item.kind === 'handoff') {
-      this.store.enqueueMemoryOutbox('handoff', { sessionId: item.sessionId, handoff: item.handoff });
+      this.store.enqueueMemoryOutbox('handoff', {
+        sessionId: item.sessionId,
+        handoff: item.handoff,
+      });
     } else if (item.kind === 'coding_task') {
       this.store.enqueueMemoryOutbox('coding_task', { task: item.task });
     } else {
@@ -122,7 +125,11 @@ export class MemoryOutbox {
   }
 
   status(): { pending: number; failing: boolean; lastError: string | null } {
-    return { pending: this.store.countMemoryOutbox(), failing: this.failures > 0, lastError: this.lastError };
+    return {
+      pending: this.store.countMemoryOutbox(),
+      failing: this.failures > 0,
+      lastError: this.lastError,
+    };
   }
 
   /** Send everything queued. Resolves when the queue is empty or a send fails. */
@@ -163,10 +170,16 @@ export class MemoryOutbox {
         this.failures += 1;
         const message = error instanceof Error ? error.message : String(error);
         if (this.failures === 1 || message !== this.lastError) {
-          this.logger?.warn('Memory engine write failed; will retry', { message, pending: this.store.countMemoryOutbox() });
+          this.logger?.warn('Memory engine write failed; will retry', {
+            message,
+            pending: this.store.countMemoryOutbox(),
+          });
         }
         this.lastError = message;
-        const delay = Math.min(this.maxRetryMs, this.retryMs * 2 ** Math.min(this.failures - 1, 10));
+        const delay = Math.min(
+          this.maxRetryMs,
+          this.retryMs * 2 ** Math.min(this.failures - 1, 10),
+        );
         this.schedule(delay);
         return;
       }
@@ -180,11 +193,17 @@ export class MemoryOutbox {
       const entry = entries[index];
       if (entry.kind === 'message') {
         const run: MemoryOutboxEntry[] = [];
-        while (index < entries.length && entries[index].kind === 'message' && run.length < MESSAGE_BATCH) {
+        while (
+          index < entries.length &&
+          entries[index].kind === 'message' &&
+          run.length < MESSAGE_BATCH
+        ) {
           run.push(entries[index]);
           index += 1;
         }
-        await this.attempt(run, () => this.client.postMessages(run.map((e) => e.payload as MemoryEngineMessage)));
+        await this.attempt(run, () =>
+          this.client.postMessages(run.map((e) => e.payload as MemoryEngineMessage)),
+        );
       } else if (entry.kind === 'session') {
         const { id, session } = entry.payload as { id: string; session: MemoryEngineSession };
         await this.attempt([entry], () => this.client.putSession(id, session));
@@ -194,7 +213,10 @@ export class MemoryOutbox {
         await this.attempt([entry], () => this.client.putFact(id, fact));
         index += 1;
       } else if (entry.kind === 'handoff' && this.client.putHandoff) {
-        const { sessionId, handoff } = entry.payload as { sessionId: string; handoff: MemoryEngineHandoffWrite };
+        const { sessionId, handoff } = entry.payload as {
+          sessionId: string;
+          handoff: MemoryEngineHandoffWrite;
+        };
         const putHandoff = this.client.putHandoff.bind(this.client);
         await this.attempt([entry], () => putHandoff(sessionId, handoff));
         index += 1;
@@ -218,11 +240,17 @@ export class MemoryOutbox {
     } catch (error) {
       if (error instanceof MemoryEngineError && !error.retryable) {
         // The engine refused these as malformed. Retrying would block the queue forever.
-        this.logger?.warn('Memory engine refused queued writes; dropping them', { count: ids.length, message: error.message });
+        this.logger?.warn('Memory engine refused queued writes; dropping them', {
+          count: ids.length,
+          message: error.message,
+        });
         this.store.deleteMemoryOutbox(ids);
         return;
       }
-      this.store.markMemoryOutboxFailed(ids, error instanceof Error ? error.message : String(error));
+      this.store.markMemoryOutboxFailed(
+        ids,
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     }
     this.store.deleteMemoryOutbox(ids);

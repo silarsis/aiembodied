@@ -237,9 +237,9 @@ describe('MCPManager', () => {
     });
 
     it('throws error when server not found', async () => {
-      await expect(
-        manager.updateServer('non-existent-id', { name: 'New Name' }),
-      ).rejects.toThrow('Server not found');
+      await expect(manager.updateServer('non-existent-id', { name: 'New Name' })).rejects.toThrow(
+        'Server not found',
+      );
     });
   });
 
@@ -255,7 +255,7 @@ describe('MCPManager', () => {
 
       await manager.deleteServer(server.id);
 
-      const servers = (await manager.listServers());
+      const servers = await manager.listServers();
       expect(servers.find((s) => s.id === server.id)).toBeUndefined();
     });
 
@@ -428,12 +428,12 @@ describe('MCPManager', () => {
         autoStart: false,
       });
 
-      const servers = (await manager.listServers());
+      const servers = await manager.listServers();
       expect(servers.length).toBe(2);
     });
 
     it('returns empty array when no servers', async () => {
-      const servers = (await manager.listServers());
+      const servers = await manager.listServers();
       expect(servers).toEqual([]);
     });
   });
@@ -556,11 +556,17 @@ describe('MCPManager', () => {
     it("lets the person's choice win over the hint, and go back to the hint with null", async () => {
       const { server, tool } = await connected();
       await manager.updateToolPreferences(tool.id, { readOnly: false });
-      expect(manager.listTools(server.id)[0]).toMatchObject({ readOnly: false, readOnlyOverride: false });
+      expect(manager.listTools(server.id)[0]).toMatchObject({
+        readOnly: false,
+        readOnlyOverride: false,
+      });
       expect(toolRegistry.get(tool.id)?.readOnly).toBe(false);
 
       await manager.updateToolPreferences(tool.id, { readOnly: null });
-      expect(manager.listTools(server.id)[0]).toMatchObject({ readOnly: true, readOnlyOverride: null });
+      expect(manager.listTools(server.id)[0]).toMatchObject({
+        readOnly: true,
+        readOnlyOverride: null,
+      });
       expect(toolRegistry.get(tool.id)?.readOnly).toBe(true);
     });
 
@@ -593,7 +599,7 @@ describe('MCPManager', () => {
       const newManager = new MCPManager(db, new ToolRegistry());
       await newManager.initialize();
 
-      const servers = (await newManager.listServers());
+      const servers = await newManager.listServers();
       const autoStart = servers.find((s) => s.name === 'Auto Start Server');
       const manual = servers.find((s) => s.name === 'Manual Server');
 

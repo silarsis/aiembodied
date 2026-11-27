@@ -1,4 +1,7 @@
-import type { SpeechTtsEngine, SpeechTtsModel } from '../shared/local-voice/speech-service-client-types.js';
+import type {
+  SpeechTtsEngine,
+  SpeechTtsModel,
+} from '../shared/local-voice/speech-service-client-types.js';
 /** Client for services/speech (contract in services/speech/API.md). */
 
 export interface SpeechServiceHealth {
@@ -50,7 +53,9 @@ export class SpeechServiceClient {
         sttModel: typeof body.stt?.model === 'string' ? body.stt.model : null,
         sttUrl: typeof body.stt?.url === 'string' ? body.stt.url.replace(/\/+$/, '') : null,
         ttsModel: typeof body.tts?.engine === 'string' ? body.tts.engine : null,
-        voices: Array.isArray(body.tts?.voices) ? body.tts.voices.filter((v): v is string => typeof v === 'string') : [],
+        voices: Array.isArray(body.tts?.voices)
+          ? body.tts.voices.filter((v): v is string => typeof v === 'string')
+          : [],
         defaultVoice: typeof body.tts?.default_voice === 'string' ? body.tts.default_voice : null,
       };
     } catch {
@@ -61,14 +66,19 @@ export class SpeechServiceClient {
   /** True when the STT server at `url` answers /models (llama-server returns 503 while loading). */
   async isSttServerUp(url: string): Promise<boolean> {
     try {
-      const response = await this.fetchFn(`${url}/models`, { signal: AbortSignal.timeout(this.healthTimeoutMs) });
+      const response = await this.fetchFn(`${url}/models`, {
+        signal: AbortSignal.timeout(this.healthTimeoutMs),
+      });
       return response.ok;
     } catch {
       return false;
     }
   }
 
-  async transcribe(wav: Uint8Array, options: { signal?: AbortSignal } = {}): Promise<{ text: string; timings: Record<string, number> }> {
+  async transcribe(
+    wav: Uint8Array,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<{ text: string; timings: Record<string, number> }> {
     const response = await this.fetchFn(`${this.baseUrl}/v1/stt`, {
       method: 'POST',
       headers: { 'Content-Type': 'audio/wav' },
@@ -76,7 +86,9 @@ export class SpeechServiceClient {
       signal: options.signal,
     });
     if (!response.ok) {
-      throw new Error(`Speech-to-text failed: HTTP ${response.status} ${await errorText(response)}`);
+      throw new Error(
+        `Speech-to-text failed: HTTP ${response.status} ${await errorText(response)}`,
+      );
     }
     const body = (await response.json()) as { text?: unknown; timings?: unknown };
     const timings: Record<string, number> = {};
@@ -93,10 +105,14 @@ export class SpeechServiceClient {
   /** The service's TTS engines and their models; null when it is down or too old to say. */
   async ttsEngines(): Promise<SpeechTtsEngine[] | null> {
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/v1/tts/engines`, { signal: AbortSignal.timeout(this.healthTimeoutMs) });
+      const response = await this.fetchFn(`${this.baseUrl}/v1/tts/engines`, {
+        signal: AbortSignal.timeout(this.healthTimeoutMs),
+      });
       if (!response.ok) return null;
       const body = (await response.json()) as { engines?: unknown };
-      return Array.isArray(body.engines) ? body.engines.map(toEngine).filter((engine): engine is SpeechTtsEngine => engine !== null) : null;
+      return Array.isArray(body.engines)
+        ? body.engines.map(toEngine).filter((engine): engine is SpeechTtsEngine => engine !== null)
+        : null;
     } catch {
       return null;
     }
@@ -131,7 +147,9 @@ export class SpeechServiceClient {
       signal: options.signal,
     });
     if (!response.ok) {
-      throw new Error(`Text-to-speech failed: HTTP ${response.status} ${await errorText(response)}`);
+      throw new Error(
+        `Text-to-speech failed: HTTP ${response.status} ${await errorText(response)}`,
+      );
     }
     return new Uint8Array(await response.arrayBuffer());
   }
@@ -168,17 +186,25 @@ function toEngine(value: unknown): SpeechTtsEngine | null {
       if (!raw || typeof raw !== 'object') return [];
       const model = raw as Record<string, unknown>;
       if (typeof model.id !== 'string') return [];
-      const download = model.download && typeof model.download === 'object' ? (model.download as Record<string, unknown>) : null;
+      const download =
+        model.download && typeof model.download === 'object'
+          ? (model.download as Record<string, unknown>)
+          : null;
       return [
         {
           id: model.id,
           label: typeof model.label === 'string' ? model.label : model.id,
           installed: model.installed === true,
           ...(typeof model.size_mb === 'number' ? { sizeMb: model.size_mb } : {}),
-          voices: Array.isArray(model.voices) ? model.voices.filter((voice): voice is string => typeof voice === 'string') : [],
+          voices: Array.isArray(model.voices)
+            ? model.voices.filter((voice): voice is string => typeof voice === 'string')
+            : [],
           defaultVoice: typeof model.default_voice === 'string' ? model.default_voice : null,
           download:
-            download && (download.status === 'downloading' || download.status === 'done' || download.status === 'error')
+            download &&
+            (download.status === 'downloading' ||
+              download.status === 'done' ||
+              download.status === 'error')
               ? {
                   status: download.status,
                   received: typeof download.received === 'number' ? download.received : 0,

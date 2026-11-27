@@ -14,7 +14,8 @@ export interface FurnitureController {
   model: (id: string) => Promise<ArrayBuffer>;
 }
 
-const newestFirst = (items: FurnitureItem[]): FurnitureItem[] => [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+const newestFirst = (items: FurnitureItem[]): FurnitureItem[] =>
+  [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 /** The furniture library and its running jobs: the main process pushes each step, so progress needs no polling. */
 export function useFurniture(bridge: FurnitureBridge | undefined): FurnitureController {
@@ -33,10 +34,17 @@ export function useFurniture(bridge: FurnitureBridge | undefined): FurnitureCont
       .list()
       .then((list) => {
         // An update that arrived while listing is newer than the list.
-        if (!cancelled) setItems((current) => newestFirst([...list.filter((item) => !current.some((entry) => entry.id === item.id)), ...current]));
+        if (!cancelled)
+          setItems((current) =>
+            newestFirst([
+              ...list.filter((item) => !current.some((entry) => entry.id === item.id)),
+              ...current,
+            ]),
+          );
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not load the furniture.');
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : 'Could not load the furniture.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -48,7 +56,7 @@ export function useFurniture(bridge: FurnitureBridge | undefined): FurnitureCont
     };
   }, [bridge, put]);
 
-  const attempt = useCallback(async <T,>(work: () => Promise<T>): Promise<T | null> => {
+  const attempt = useCallback(async <T>(work: () => Promise<T>): Promise<T | null> => {
     setError(null);
     try {
       return await work();
@@ -73,8 +81,12 @@ export function useFurniture(bridge: FurnitureBridge | undefined): FurnitureCont
       if (item) put(item);
     },
     remove: async (id) => {
-      if (bridge && (await attempt(() => bridge.delete(id))) !== null) setItems((current) => current.filter((item) => item.id !== id));
+      if (bridge && (await attempt(() => bridge.delete(id))) !== null)
+        setItems((current) => current.filter((item) => item.id !== id));
     },
-    model: (id) => (bridge ? bridge.model(id) : Promise.reject(new Error('Furniture is available in the desktop app.'))),
+    model: (id) =>
+      bridge
+        ? bridge.model(id)
+        : Promise.reject(new Error('Furniture is available in the desktop app.')),
   };
 }

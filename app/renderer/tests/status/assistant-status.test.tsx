@@ -20,24 +20,46 @@ const call = (id: string, overrides: Partial<ToolCall> = {}): ToolCall => ({
 describe('AssistantStatusPanel', () => {
   it('marks the current stage and the ones before it', () => {
     render(
-      <AssistantStatusPanel activity={{ phase: 'thinking', detail: '“hello”', since: Date.now() }} wakeScore={null} toolCalls={[]} />,
+      <AssistantStatusPanel
+        activity={{ phase: 'thinking', detail: '“hello”', since: Date.now() }}
+        wakeScore={null}
+        toolCalls={[]}
+      />,
     );
 
     const stages = screen.getByRole('list', { name: 'Conversation stage' });
     const items = within(stages).getAllByRole('listitem');
-    expect(items.map((item) => item.getAttribute('data-state'))).toEqual(['done', 'done', 'done', 'active', 'idle']);
-    expect(within(stages).getByText('Thinking').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(items.map((item) => item.getAttribute('data-state'))).toEqual([
+      'done',
+      'done',
+      'done',
+      'active',
+      'idle',
+    ]);
+    expect(within(stages).getByText('Thinking').closest('li')).toHaveAttribute(
+      'aria-current',
+      'step',
+    );
     expect(screen.getByTestId('assistant-status-summary')).toHaveTextContent('Thinking of a reply');
     expect(screen.getByTestId('assistant-status-detail')).toHaveTextContent('“hello”');
   });
 
   it('prompts for the wake phrase while waiting', () => {
     render(
-      <AssistantStatusPanel activity={{ phase: 'waiting', since: Date.now() }} wakeScore={null} toolCalls={[]} wakePhrase="Hey Jarvis" />,
+      <AssistantStatusPanel
+        activity={{ phase: 'waiting', since: Date.now() }}
+        wakeScore={null}
+        toolCalls={[]}
+        wakePhrase="Hey Jarvis"
+      />,
     );
 
-    expect(screen.getByTestId('assistant-status-summary')).toHaveTextContent('Waiting for the wake word (say “Hey Jarvis”)');
-    expect(screen.getByTestId('wake-score')).toHaveTextContent('Nothing close to the wake word yet');
+    expect(screen.getByTestId('assistant-status-summary')).toHaveTextContent(
+      'Waiting for the wake word (say “Hey Jarvis”)',
+    );
+    expect(screen.getByTestId('wake-score')).toHaveTextContent(
+      'Nothing close to the wake word yet',
+    );
   });
 
   it('shows errors as an alert', () => {
@@ -71,7 +93,13 @@ describe('AssistantStatusPanel', () => {
         wakeScore={null}
         toolCalls={[
           call('a', { label: 'wave hello', status: 'done', finishedAt: 3500, detail: '2 chunks' }),
-          call('b', { kind: 'pose', label: 'thinker', status: 'failed', finishedAt: 1200, detail: 'not found' }),
+          call('b', {
+            kind: 'pose',
+            label: 'thinker',
+            status: 'failed',
+            finishedAt: 1200,
+            detail: 'not found',
+          }),
         ]}
       />,
     );

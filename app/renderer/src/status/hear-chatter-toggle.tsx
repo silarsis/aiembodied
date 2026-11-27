@@ -29,7 +29,13 @@ export function HearChatterToggle({ api }: { api?: FloorBridge }) {
   };
   return (
     <label className="kiosk__helper" data-testid="hear-chatter-toggle">
-      <input type="checkbox" checked={enabled} disabled={!ready} onChange={(event) => toggle(event.target.checked)} /> Hear avatar chatter
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={!ready}
+        onChange={(event) => toggle(event.target.checked)}
+      />{' '}
+      Hear avatar chatter
       <span> (avatars talk to each other out loud; otherwise it stays in text)</span>
     </label>
   );

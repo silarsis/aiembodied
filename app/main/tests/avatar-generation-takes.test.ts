@@ -46,7 +46,11 @@ async function setup(run = vi.fn().mockResolvedValue(Buffer.from('bytes'))) {
       shapeVae: 'shape.safetensors',
       textureVae: 'texture.safetensors',
     })),
-    resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig', face: 'fitted' as const })),
+    resolveRig: vi.fn(async () => ({
+      id: BLENDER_FACE_FIT_RIG,
+      name: 'Blender rig',
+      face: 'fitted' as const,
+    })),
   };
   const service = new AvatarGenerationService({
     comfy: comfy as unknown as ComfyUIClient,
@@ -290,7 +294,9 @@ describe('3D avatar model choices', () => {
       face: 'stylised',
       visionModel: DEFAULT_FACE_VISION_MODEL,
     });
-    await expect(service.resolveRig(BLENDER_FACE_FIT_RIG)).resolves.toMatchObject({ face: 'fitted' });
+    await expect(service.resolveRig(BLENDER_FACE_FIT_RIG)).resolves.toMatchObject({
+      face: 'fitted',
+    });
 
     const without = new AvatarCharacterModelService(
       vi.fn().mockResolvedValue(files.slice(0, 5)),
@@ -327,7 +333,9 @@ describe('3D avatar model choices', () => {
       kind: 'hunyuan3d-2mv',
       checkpoint: DEFAULT_HUNYUAN_MV,
     });
-    await expect(service.resolveGeometry('trellis_2_int8_convrot.safetensors')).resolves.toMatchObject({
+    await expect(
+      service.resolveGeometry('trellis_2_int8_convrot.safetensors'),
+    ).resolves.toMatchObject({
       unet: 'trellis_2_int8_convrot.safetensors',
       shapeVae: 'trellis_2_shape_vae_bf16.safetensors',
     });
@@ -339,7 +347,11 @@ describe('3D avatar model choices', () => {
     const service = new AvatarCharacterModelService(
       vi.fn().mockResolvedValue([
         ...files,
-        { folder: 'checkpoints', name: 'hunyuan3d-dit-v2-mv-turbo.safetensors', kind: 'hunyuan3d-2mv' },
+        {
+          folder: 'checkpoints',
+          name: 'hunyuan3d-dit-v2-mv-turbo.safetensors',
+          kind: 'hunyuan3d-2mv',
+        },
         { folder: 'checkpoints', name: DEFAULT_HUNYUAN_MV, kind: 'hunyuan3d-2mv' },
       ]),
       vi.fn().mockResolvedValue(undefined),
@@ -405,7 +417,10 @@ describe('removing an image background on request', () => {
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
     const before = service.getStatus(jobId).previewDataUrl;
     await expect(service.removeConceptBackground(jobId)).rejects.toThrow('No character');
-    expect(service.getStatus(jobId)).toMatchObject({ previewDataUrl: before, status: 'awaiting_confirmation' });
+    expect(service.getStatus(jobId)).toMatchObject({
+      previewDataUrl: before,
+      status: 'awaiting_confirmation',
+    });
     expect(service.getStatus(jobId).backgroundRemoved).toBeUndefined();
   });
 });
@@ -440,8 +455,9 @@ describe('side and back views for multi-view 3D models', () => {
     const comfy = {
       baseUrl: 'http://127.0.0.1:8188',
       isAvailable: vi.fn().mockResolvedValue(true),
-      run: vi.fn(async (_graph: Record<string, { class_type: string }>, options?: { output?: string }) =>
-        Buffer.from(options?.output === 'mesh' ? 'SHAPE' : `image-${++image}`),
+      run: vi.fn(
+        async (_graph: Record<string, { class_type: string }>, options?: { output?: string }) =>
+          Buffer.from(options?.output === 'mesh' ? 'SHAPE' : `image-${++image}`),
       ),
       uploadImage: vi.fn(async (name: string) => `up-${name}`),
       interrupt: vi.fn(),
@@ -478,7 +494,11 @@ describe('side and back views for multi-view 3D models', () => {
             }
           : hunyuan,
       ),
-      resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig', face: 'fitted' as const })),
+      resolveRig: vi.fn(async () => ({
+        id: BLENDER_FACE_FIT_RIG,
+        name: 'Blender rig',
+        face: 'fitted' as const,
+      })),
     };
     const service = new AvatarGenerationService({
       comfy: comfy as unknown as ComfyUIClient,
@@ -498,7 +518,9 @@ describe('side and back views for multi-view 3D models', () => {
     const { jobId } = await service.startJob({ prompt: 'Auburn explorer' });
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
     expect(comfy.run).toHaveBeenCalledTimes(3);
-    const [, side, back] = comfy.run.mock.calls.map(([graph]) => graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>);
+    const [, side, back] = comfy.run.mock.calls.map(
+      ([graph]) => graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>,
+    );
     expect(side.frontImage.inputs.image).toBe(`up-${jobId}-front.png`);
     expect(side.encode.inputs.prompt).toMatch(/left side/);
     expect(back.encode.inputs.prompt).toMatch(/from directly behind/);
@@ -514,7 +536,10 @@ describe('side and back views for multi-view 3D models', () => {
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
     await service.confirmConcept(jobId);
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
-    const mesh = comfy.run.mock.calls[3][0] as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    const mesh = comfy.run.mock.calls[3][0] as Record<
+      string,
+      { class_type: string; inputs: Record<string, unknown> }
+    >;
     expect(mesh.cond.class_type).toBe('Hunyuan3Dv2ConditioningMultiView');
     expect(Object.keys(mesh.cond.inputs)).toEqual(['front', 'left', 'back']);
     expect(mesh.checkpoint.inputs.ckpt_name).toBe(DEFAULT_HUNYUAN_MV);
@@ -535,31 +560,54 @@ describe('side and back views for multi-view 3D models', () => {
 
     await service.confirmConcept(jobId, { geometryModelId: 'trellis' });
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
-    const trellis = comfy.run.mock.calls[4][0] as Record<string, { inputs: Record<string, unknown> }>;
+    const trellis = comfy.run.mock.calls[4][0] as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
     expect(trellis.image.inputs.image).toBe(`up-${jobId}-concept.png`);
     expect(JSON.stringify(trellis)).not.toMatch(/-(left|back)\.png/);
     expect(characterRunner.paintViews).toHaveBeenCalledTimes(1);
   });
 
   describe('the head close-up', () => {
-    const models = { list: vi.fn(async () => ({ models: [], selectedModelId: null, modelFamilies: { 'diffusion_models:qwen.safetensors': 'qwen-image-2.1', 'checkpoints:nova.safetensors': 'sdxl' }, loras: [], selectedLoras: [] })) };
+    const models = {
+      list: vi.fn(async () => ({
+        models: [],
+        selectedModelId: null,
+        modelFamilies: {
+          'diffusion_models:qwen.safetensors': 'qwen-image-2.1',
+          'checkpoints:nova.safetensors': 'sdxl',
+        },
+        loras: [],
+        selectedLoras: [],
+      })),
+    };
 
-    async function build(paintHead: (input: { outputPath: string }) => Promise<void>, front: typeof qwen | typeof xl = qwen) {
+    async function build(
+      paintHead: (input: { outputPath: string }) => Promise<void>,
+      front: typeof qwen | typeof xl = qwen,
+    ) {
       const setup = await viewSetup(true, front);
       Object.assign(setup.characterRunner, { paintHead: vi.fn(paintHead) });
       Object.assign(setup.imageModels, models);
       const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
-      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await vi.waitFor(() =>
+        expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'),
+      );
       await setup.service.confirmConcept(jobId);
       await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
-      const runner = setup.characterRunner as typeof setup.characterRunner & { paintHead: ReturnType<typeof vi.fn> };
+      const runner = setup.characterRunner as typeof setup.characterRunner & {
+        paintHead: ReturnType<typeof vi.fn>;
+      };
       return { ...setup, characterRunner: runner, jobId };
     }
     const built = (characterRunner: { build: ReturnType<typeof vi.fn> }) =>
       readFile((characterRunner.build.mock.calls[0][0] as { meshPath: string }).meshPath, 'utf8');
 
     it('rigs the repainted model, drawn with an installed SDXL model', async () => {
-      const { service, characterRunner, jobId } = await build((input) => writeFile(input.outputPath, 'HEAD'));
+      const { service, characterRunner, jobId } = await build((input) =>
+        writeFile(input.outputPath, 'HEAD'),
+      );
       expect(characterRunner.paintHead).toHaveBeenCalledWith(
         expect.objectContaining({
           meshPath: expect.stringMatching(/source\.glb$/),
@@ -573,13 +621,20 @@ describe('side and back views for multi-view 3D models', () => {
 
     it("prefers the front's own model when it is SDXL", async () => {
       const { characterRunner } = await build((input) => writeFile(input.outputPath, 'HEAD'), xl);
-      expect(characterRunner.paintHead).toHaveBeenCalledWith(expect.objectContaining({ checkpoint: 'xl.safetensors' }));
+      expect(characterRunner.paintHead).toHaveBeenCalledWith(
+        expect.objectContaining({ checkpoint: 'xl.safetensors' }),
+      );
     });
 
     it('keeps the painted model and says why when the close-up fails', async () => {
-      const { service, characterRunner, jobId } = await build(() => Promise.reject(new Error('Only 6 GB of memory is free.')));
+      const { service, characterRunner, jobId } = await build(() =>
+        Promise.reject(new Error('Only 6 GB of memory is free.')),
+      );
       expect(await built(characterRunner)).toBe('PAINTED');
-      expect(service.getStatus(jobId).headPaint).toEqual({ painted: false, reason: 'Only 6 GB of memory is free.' });
+      expect(service.getStatus(jobId).headPaint).toEqual({
+        painted: false,
+        reason: 'Only 6 GB of memory is free.',
+      });
     });
 
     it('stops the LLM for the close-up, and starts it again only when the build has ended', async () => {
@@ -605,7 +660,9 @@ describe('side and back views for multi-view 3D models', () => {
         start: vi.fn(() => events.push('start')),
       };
       const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
-      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await vi.waitFor(() =>
+        expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'),
+      );
       await setup.service.confirmConcept(jobId);
       await vi.waitFor(() => expect(events).toEqual(['stop', 'paint', 'rig', 'start']));
     });
@@ -614,19 +671,30 @@ describe('side and back views for multi-view 3D models', () => {
       const setup = await viewSetup(true, xl);
       const start = vi.fn();
       const stop = vi.fn(async () => true);
-      Object.assign(setup.characterRunner, { paintHead: vi.fn(() => Promise.reject(new Error('Out of memory'))) });
-      (setup.service as unknown as { options: { localLlm: unknown } }).options.localLlm = { stop, start };
+      Object.assign(setup.characterRunner, {
+        paintHead: vi.fn(() => Promise.reject(new Error('Out of memory'))),
+      });
+      (setup.service as unknown as { options: { localLlm: unknown } }).options.localLlm = {
+        stop,
+        start,
+      };
       const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
-      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await vi.waitFor(() =>
+        expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'),
+      );
       await setup.service.confirmConcept(jobId);
       await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
       await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
 
       stop.mockClear();
       start.mockClear();
-      Object.assign(setup.characterRunner, { assertHeadPaintReady: vi.fn(() => Promise.reject(new Error('Not set up.'))) });
+      Object.assign(setup.characterRunner, {
+        assertHeadPaintReady: vi.fn(() => Promise.reject(new Error('Not set up.'))),
+      });
       await setup.service.confirmConcept(jobId);
-      await vi.waitFor(() => expect(setup.service.getStatus(jobId).headPaint?.reason).toBe('Not set up.'));
+      await vi.waitFor(() =>
+        expect(setup.service.getStatus(jobId).headPaint?.reason).toBe('Not set up.'),
+      );
       expect(stop).not.toHaveBeenCalled();
       expect(start).not.toHaveBeenCalled();
     });
@@ -636,7 +704,9 @@ describe('side and back views for multi-view 3D models', () => {
       const paintHead = vi.fn();
       Object.assign(setup.characterRunner, { paintHead });
       const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
-      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await vi.waitFor(() =>
+        expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'),
+      );
       await setup.service.confirmConcept(jobId);
       await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
       expect(paintHead).not.toHaveBeenCalled();
@@ -648,7 +718,9 @@ describe('side and back views for multi-view 3D models', () => {
       const paintHead = vi.fn();
       Object.assign(setup.characterRunner, { paintHead });
       const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
-      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await vi.waitFor(() =>
+        expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'),
+      );
       await setup.service.confirmConcept(jobId, { geometryModelId: 'trellis' });
       await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
       expect(paintHead).not.toHaveBeenCalled();
@@ -665,7 +737,9 @@ describe('side and back views for multi-view 3D models', () => {
     expect(service.getStatus(jobId).status).toBe('concept');
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
     expect(comfy.run).toHaveBeenCalledTimes(5);
-    const seed = (call: number) => (comfy.run.mock.calls[call][0] as Record<string, { inputs: Record<string, unknown> }>).sample.inputs.seed;
+    const seed = (call: number) =>
+      (comfy.run.mock.calls[call][0] as Record<string, { inputs: Record<string, unknown> }>).sample
+        .inputs.seed;
     expect(seed(3)).not.toBe(seed(1));
     expect(service.getStatus(jobId).views).not.toEqual(before);
   });
@@ -681,7 +755,9 @@ describe('side and back views for multi-view 3D models', () => {
     await service.confirmConcept(jobId);
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
     expect(comfy.run).toHaveBeenCalledTimes(4);
-    const graphs = comfy.run.mock.calls.map(([graph]) => graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>);
+    const graphs = comfy.run.mock.calls.map(
+      ([graph]) => graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>,
+    );
     expect(graphs[1].encode.inputs.prompt).toMatch(/left side/);
     expect(graphs[2].encode.inputs.prompt).toMatch(/from directly behind/);
     expect(Object.keys(graphs[3].cond.inputs)).toEqual(['front', 'left', 'back']);

@@ -86,7 +86,10 @@ export function extractMotionTags(text: string): MotionTag[] {
     const name = (match[1] ?? '').toLowerCase();
     const argument = match[2];
     if (name === 'move') {
-      const description = (argument ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_MOVE_TEXT_LENGTH);
+      const description = (argument ?? '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, MAX_MOVE_TEXT_LENGTH);
       if (description) results.push({ type: 'move', text: description });
     } else if (name === 'stand' || name === 'come') {
       if (argument === undefined) results.push({ type: name });
@@ -99,7 +102,8 @@ export function extractMotionTags(text: string): MotionTag[] {
     } else {
       const object = cleanRef(argument);
       // A bare {sit} means "sit down somewhere": the room picks the nearest free seat.
-      if (object || (name === 'sit' && argument === undefined)) results.push({ type: name as 'go' | 'sit' | 'look' | 'pick', object });
+      if (object || (name === 'sit' && argument === undefined))
+        results.push({ type: name as 'go' | 'sit' | 'look' | 'pick', object });
     }
   }
   return results;
@@ -124,7 +128,9 @@ export function extractAvatarTags(
     allowedPoseSlugs?: Iterable<string> | null;
   } = {},
 ): AvatarTag[] {
-  const allowedAnims = options.allowedAnimationSlugs ? new Set(options.allowedAnimationSlugs) : null;
+  const allowedAnims = options.allowedAnimationSlugs
+    ? new Set(options.allowedAnimationSlugs)
+    : null;
   const allowedPoses = options.allowedPoseSlugs ? new Set(options.allowedPoseSlugs) : null;
   const results: AvatarTag[] = [];
   // Match {anim:slug}, {pose:slug}, or {slug}; {move:...} is handled by extractMoveTags
@@ -176,5 +182,5 @@ export function extractAnimationTags(
   } = {},
 ): string[] {
   const tags = extractAvatarTags(text, { allowedAnimationSlugs: options.allowedSlugs });
-  return tags.filter(t => t.type === 'anim').map(t => t.slug);
+  return tags.filter((t) => t.type === 'anim').map((t) => t.slug);
 }

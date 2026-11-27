@@ -9,11 +9,21 @@ const ACTIVE = new Set(['queued', 'downloading', 'verifying']);
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (!bytes) return '0 MB';
-  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+  return bytes >= 1024 ** 3
+    ? `${(bytes / 1024 ** 3).toFixed(2)} GB`
+    : `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
 /** "Download a model" on a ComfyUI server's page: paste a Civitai link, check it, download it there. */
-export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge; server: ModelServerView; onFinished(): void }) {
+export function ModelDownloads({
+  api,
+  server,
+  onFinished,
+}: {
+  api: ModelsBridge;
+  server: ModelServerView;
+  onFinished(): void;
+}) {
   const [ref, setRef] = useState('');
   const [lookup, setLookup] = useState<CivitaiLookup | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +47,9 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
 
   const refresh = useCallback(async () => {
     if (!api.downloads) return;
-    const all = (await api.downloads().catch(() => [] as ModelDownload[])).filter((entry) => entry.serverId === server.id);
+    const all = (await api.downloads().catch(() => [] as ModelDownload[])).filter(
+      (entry) => entry.serverId === server.id,
+    );
     setDownloads(all);
     // A finished download changes the server's model list.
     let changed = false;
@@ -80,7 +92,9 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
     setBusy(true);
     setError(null);
     try {
-      await (remote ? api.download(server.id, ref.trim(), lookup.plan.versionId, target) : api.download(server.id, ref.trim(), lookup.plan.versionId));
+      await (remote
+        ? api.download(server.id, ref.trim(), lookup.plan.versionId, target)
+        : api.download(server.id, ref.trim(), lookup.plan.versionId));
       setLookup(null);
       setRef('');
       await refresh();
@@ -99,11 +113,15 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
       {needsAddon ? (
         <div className="modelsDialog__addon" role="note">
           <p>
-            <b>{server.name} needs the aiembodied add-on</b> before the app can download models to it. Copy this folder into that
-            machine’s <code>ComfyUI/custom_nodes</code> and restart its ComfyUI:
+            <b>{server.name} needs the aiembodied add-on</b> before the app can download models to
+            it. Copy this folder into that machine’s <code>ComfyUI/custom_nodes</code> and restart
+            its ComfyUI:
           </p>
           <code className="modelsDialog__path">{addon.folder}</code>
-          <p className="kiosk__helper">It’s also in the repo at app/main/assets/avatar-generation/comfyui-aiembodied. It adds no nodes.</p>
+          <p className="kiosk__helper">
+            It’s also in the repo at app/main/assets/avatar-generation/comfyui-aiembodied. It adds
+            no nodes.
+          </p>
           <button type="button" onClick={() => void checkAddon()}>
             Check again
           </button>
@@ -144,12 +162,17 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
           <b>{plan.title}</b>
           <span>
             {plan.type}
-            {plan.baseModel ? ` · ${plan.baseModel}` : ''} · {plan.file.name} · {formatBytes(plan.file.sizeKB * 1024)} → {plan.folder}
+            {plan.baseModel ? ` · ${plan.baseModel}` : ''} · {plan.file.name} ·{' '}
+            {formatBytes(plan.file.sizeKB * 1024)} → {plan.folder}
           </span>
           {lookup.versions.length > 1 ? (
             <label className="modelsDialog__inline">
               Version{' '}
-              <select value={plan.versionId} onChange={(event) => void look(Number(event.target.value))} disabled={busy}>
+              <select
+                value={plan.versionId}
+                onChange={(event) => void look(Number(event.target.value))}
+                disabled={busy}
+              >
                 {lookup.versions.map((version) => (
                   <option key={version.id} value={version.id}>
                     {version.name}
@@ -160,9 +183,22 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
             </label>
           ) : null}
           {plan.note ? <small className="kiosk__helper">{plan.note}</small> : null}
-          {server.managed ? <DownloadTo hosts={downloadHosts} value={target} onChange={setTarget} disabled={busy} id="models-civitai-download-to" /> : null}
+          {server.managed ? (
+            <DownloadTo
+              hosts={downloadHosts}
+              value={target}
+              onChange={setTarget}
+              disabled={busy}
+              id="models-civitai-download-to"
+            />
+          ) : null}
           <span className="modelsDialog__actions">
-            <button type="button" className="modelsDialog__primary" onClick={() => void start()} disabled={busy || Boolean(needsAddon)}>
+            <button
+              type="button"
+              className="modelsDialog__primary"
+              onClick={() => void start()}
+              disabled={busy || Boolean(needsAddon)}
+            >
               Download to {remote ? (target === 'auto' ? 'the best fit' : target) : server.name}
             </button>
           </span>
@@ -175,17 +211,30 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
           </span>
           {ACTIVE.has(entry.state) ? (
             <>
-              <progress max={entry.total ?? undefined} value={entry.received} aria-label={`Downloading ${entry.filename}`} />
+              <progress
+                max={entry.total ?? undefined}
+                value={entry.received}
+                aria-label={`Downloading ${entry.filename}`}
+              />
               <small>
-                {entry.state === 'verifying' ? 'Checking the file…' : `${formatBytes(entry.received)}${entry.total ? ` of ${formatBytes(entry.total)}` : ''}`}
+                {entry.state === 'verifying'
+                  ? 'Checking the file…'
+                  : `${formatBytes(entry.received)}${entry.total ? ` of ${formatBytes(entry.total)}` : ''}`}
               </small>
-              <button type="button" onClick={() => void api.cancelDownload?.(entry.id).then(() => refresh())}>
+              <button
+                type="button"
+                onClick={() => void api.cancelDownload?.(entry.id).then(() => refresh())}
+              >
                 Cancel
               </button>
             </>
           ) : (
             <small className={entry.state === 'done' ? undefined : 'kiosk__error'}>
-              {entry.state === 'done' ? `Downloaded.${entry.note ? ` ${entry.note}` : ''}` : entry.state === 'cancelled' ? 'Cancelled.' : entry.error ?? 'Failed.'}
+              {entry.state === 'done'
+                ? `Downloaded.${entry.note ? ` ${entry.note}` : ''}`
+                : entry.state === 'cancelled'
+                  ? 'Cancelled.'
+                  : (entry.error ?? 'Failed.')}
             </small>
           )}
         </div>

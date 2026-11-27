@@ -16,7 +16,12 @@ import { aliasFor, resolveUrl } from './huggingface.js';
 import type { HfFile, HfQuant } from '../shared/local-llm/huggingface-types.js';
 import { clampContextPerSlot, clampSlots, resolveLlmSettings } from './llm-settings.js';
 import type { LocalLlmSettings } from '../shared/local-llm/llm-settings-types.js';
-import type { LlmDownload, LocalLlmLibraryFile, LocalLlmModel, LlmDownloadState } from '../shared/local-llm/llm-library-types.js';
+import type {
+  LlmDownload,
+  LocalLlmLibraryFile,
+  LocalLlmModel,
+  LlmDownloadState,
+} from '../shared/local-llm/llm-library-types.js';
 
 export interface LlmLibraryOptions {
   /** local-llm.json. */
@@ -32,7 +37,10 @@ export interface LlmLibraryOptions {
   persist?: (model: LocalLlmModel) => Promise<void>;
   /** Called after a download that should be put to use; returns what happened, for the page. */
   onDownloaded?: (model: LocalLlmModel) => Promise<string | undefined>;
-  logger?: { info(message: string, meta?: unknown): void; warn(message: string, meta?: unknown): void };
+  logger?: {
+    info(message: string, meta?: unknown): void;
+    warn(message: string, meta?: unknown): void;
+  };
 }
 
 const ACTIVE: LlmDownloadState[] = ['queued', 'downloading', 'verifying'];
@@ -66,11 +74,21 @@ export class LlmLibrary {
 
   async read(): Promise<LocalLlmLibraryFile> {
     try {
-      const parsed = JSON.parse(await fs.readFile(this.options.file, 'utf8')) as Partial<LocalLlmLibraryFile>;
+      const parsed = JSON.parse(
+        await fs.readFile(this.options.file, 'utf8'),
+      ) as Partial<LocalLlmLibraryFile>;
       const models = Array.isArray(parsed.models)
-        ? parsed.models.filter((entry): entry is LocalLlmModel => typeof entry?.id === 'string' && typeof entry.path === 'string' && typeof entry.alias === 'string')
+        ? parsed.models.filter(
+            (entry): entry is LocalLlmModel =>
+              typeof entry?.id === 'string' &&
+              typeof entry.path === 'string' &&
+              typeof entry.alias === 'string',
+          )
         : [];
-      const selected = typeof parsed.selected === 'string' && models.some((entry) => entry.id === parsed.selected) ? parsed.selected : undefined;
+      const selected =
+        typeof parsed.selected === 'string' && models.some((entry) => entry.id === parsed.selected)
+          ? parsed.selected
+          : undefined;
       const slots = clampSlots(parsed.slots);
       const contextPerSlot = clampContextPerSlot(parsed.contextPerSlot);
       return {
@@ -120,7 +138,8 @@ export class LlmLibrary {
     const library = await this.read();
     const model = id ? library.models.find((entry) => entry.id === id) : undefined;
     if (id && !model) throw new Error('That model is no longer downloaded.');
-    if (model && !existsSync(model.path)) throw new Error(`${model.path} is missing. Download it again.`);
+    if (model && !existsSync(model.path))
+      throw new Error(`${model.path} is missing. Download it again.`);
     const next = { ...library };
     delete next.selected;
     await this.write({ ...next, ...(model ? { selected: model.id } : {}) });
@@ -144,7 +163,9 @@ export class LlmLibrary {
   }
 
   list(): LlmDownload[] {
-    return [...this.downloads.values()].sort((a, b) => b.startedAt - a.startedAt).map((entry) => ({ ...entry }));
+    return [...this.downloads.values()]
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .map((entry) => ({ ...entry }));
   }
 
   cancel(id: string): void {
@@ -153,7 +174,10 @@ export class LlmLibrary {
 
   /** Where a repo's files go. */
   folderFor(repo: string): string {
-    return path.join(this.options.modelsDirectory, ...(this.options.folderName ? [this.options.folderName(repo)] : repo.split('/')));
+    return path.join(
+      this.options.modelsDirectory,
+      ...(this.options.folderName ? [this.options.folderName(repo)] : repo.split('/')),
+    );
   }
 
   /** Start downloading one size of a repo. It carries on in the background; poll list(). */
@@ -163,18 +187,36 @@ export class LlmLibrary {
     { token, use, contextLength }: { token?: string; use: boolean; contextLength?: number },
   ): Promise<LlmDownload> {
     const id = `${repo}:${quant.id}`;
-    if ([...this.downloads.values()].some((entry) => `${entry.repo}:${entry.quant}` === id && ACTIVE.includes(entry.state))) {
+    if (
+      [...this.downloads.values()].some(
+        (entry) => `${entry.repo}:${entry.quant}` === id && ACTIVE.includes(entry.state),
+      )
+    ) {
       throw new Error(`${repo} ${quant.label} is already downloading.`);
     }
     const folder = this.folderFor(repo);
     const have = await Promise.all(
-      quant.files.map(async (file) => (await fs.stat(path.join(folder, file.path)).catch(() => null))?.size === file.size && file.size > 0),
+      quant.files.map(
+        async (file) =>
+          (await fs.stat(path.join(folder, file.path)).catch(() => null))?.size === file.size &&
+          file.size > 0,
+      ),
     );
-    const partial = await Promise.all(quant.files.map(async (file) => (await fs.stat(path.join(folder, `${file.path}.part`)).catch(() => null))?.size ?? 0));
-    const needed = quant.files.reduce((sum, file, index) => sum + (have[index] ? 0 : file.size - partial[index]), 0);
+    const partial = await Promise.all(
+      quant.files.map(
+        async (file) =>
+          (await fs.stat(path.join(folder, `${file.path}.part`)).catch(() => null))?.size ?? 0,
+      ),
+    );
+    const needed = quant.files.reduce(
+      (sum, file, index) => sum + (have[index] ? 0 : file.size - partial[index]),
+      0,
+    );
     const free = await (this.options.freeSpace ?? defaultFreeSpace)(folder);
     if (free !== null && needed + SPARE_BYTES > free) {
-      throw new Error(`Not enough disk space: ${quant.label} needs ${gb(needed)} more and ${folder} has ${gb(free)} free. Pick a smaller size or set LOCAL_LLM_MODELS_DIR to another drive.`);
+      throw new Error(
+        `Not enough disk space: ${quant.label} needs ${gb(needed)} more and ${folder} has ${gb(free)} free. Pick a smaller size or set LOCAL_LLM_MODELS_DIR to another drive.`,
+      );
     }
     const download: LlmDownload = {
       id: randomUUID(),
@@ -211,13 +253,19 @@ export class LlmLibrary {
           await this.options.persist(model);
         } else {
           const library = await this.read();
-          await this.write({ ...library, models: [...library.models.filter((entry) => entry.id !== id), model] });
+          await this.write({
+            ...library,
+            models: [...library.models.filter((entry) => entry.id !== id), model],
+          });
         }
         download.state = 'done';
         if (use && this.options.onDownloaded) {
-          download.result = await this.options.onDownloaded(model).catch(
-            (error: unknown) => `Downloaded, but it couldn't be switched on: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          download.result = await this.options
+            .onDownloaded(model)
+            .catch(
+              (error: unknown) =>
+                `Downloaded, but it couldn't be switched on: ${error instanceof Error ? error.message : String(error)}`,
+            );
         }
       })
       .catch((error: unknown) => {
@@ -227,12 +275,23 @@ export class LlmLibrary {
       })
       .finally(() => {
         this.cancels.delete(download.id);
-        this.options.logger?.info('Language model download finished.', { repo, quant: quant.id, state: download.state, error: download.error });
+        this.options.logger?.info('Language model download finished.', {
+          repo,
+          quant: quant.id,
+          state: download.state,
+          error: download.error,
+        });
       });
     return { ...download };
   }
 
-  private async run(download: LlmDownload, folder: string, quant: HfQuant, token: string | undefined, signal: AbortSignal): Promise<void> {
+  private async run(
+    download: LlmDownload,
+    folder: string,
+    quant: HfQuant,
+    token: string | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
     let done = 0;
     for (const file of quant.files) {
       const target = path.join(folder, file.path);
@@ -248,7 +307,14 @@ export class LlmLibrary {
   }
 
   /** One file: resume its .part file if there is one, check it, then move it into place. */
-  private async fetchFile(download: LlmDownload, done: number, target: string, file: HfFile, token: string | undefined, signal: AbortSignal): Promise<void> {
+  private async fetchFile(
+    download: LlmDownload,
+    done: number,
+    target: string,
+    file: HfFile,
+    token: string | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
     const part = `${target}.part`;
     let offset = (await fs.stat(part).catch(() => null))?.size ?? 0;
     if (file.size && offset > file.size) {
@@ -267,19 +333,25 @@ export class LlmLibrary {
       let response: Response;
       try {
         response = await (this.options.fetchFn ?? fetch)(resolveUrl(download.repo, file.path), {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(offset ? { Range: `bytes=${offset}-` } : {}) },
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(offset ? { Range: `bytes=${offset}-` } : {}),
+          },
           signal,
         });
       } catch (error) {
         if (signal.aborted) return;
-        throw new Error(`Could not reach Hugging Face: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+          `Could not reach Hugging Face: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       if (response.status === 401 || response.status === 403) {
         throw new Error(
           `Hugging Face refused the download (${response.status}). Gated models need their licence accepted on huggingface.co and a token under Servers → Hugging Face.`,
         );
       }
-      if (!response.ok || !response.body) throw new Error(`Hugging Face answered ${response.status} for ${file.path}.`);
+      if (!response.ok || !response.body)
+        throw new Error(`Hugging Face answered ${response.status} for ${file.path}.`);
       if (offset && response.status !== 206) {
         // The server ignored the range: start this file again.
         await response.body.cancel().catch(() => undefined);
@@ -294,7 +366,12 @@ export class LlmLibrary {
         },
       });
       try {
-        await pipeline(Readable.fromWeb(response.body as never), counter, createWriteStream(part, { flags: offset ? 'a' : 'w' }), { signal });
+        await pipeline(
+          Readable.fromWeb(response.body as never),
+          counter,
+          createWriteStream(part, { flags: offset ? 'a' : 'w' }),
+          { signal },
+        );
       } catch (error) {
         if (signal.aborted) return;
         throw error;

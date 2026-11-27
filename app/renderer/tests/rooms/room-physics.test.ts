@@ -47,18 +47,30 @@ describe('RoomPhysics furniture shapes and queries', () => {
     expect(sunk?.depth).toBeCloseTo(0.03, 2);
     expect(sunk?.normal.y).toBeGreaterThan(0.9);
     expect(physics.penetration(capsule, { x: sx, y: 0.46 + 0.75 + 0.05, z: sz + 0.05 })).toBeNull();
-    expect(physics.penetration(capsule, { x: sx, y: 0.46 - 0.03 + 0.75, z: sz + 0.05 }, undefined, 'sofa')?.objectId).not.toBe('sofa');
+    expect(
+      physics.penetration(
+        capsule,
+        { x: sx, y: 0.46 - 0.03 + 0.75, z: sz + 0.05 },
+        undefined,
+        'sofa',
+      )?.objectId,
+    ).not.toBe('sofa');
     // Avatar capsules are ignored.
     physics.setAvatarPosition(-1, 0.5, 'sage');
     expect(physics.penetration(capsule, { x: -1, y: 0.8, z: 0.5 })).toBeNull();
     physics.dispose();
   });
 
-  it('swaps an object\'s colliders for new shapes', async () => {
+  it("swaps an object's colliders for new shapes", async () => {
     const physics = await RoomPhysics.create(room, new Map());
     expect(physics.replaceObjectColliders('nobody', [])).toBe(false);
     const ok = physics.replaceObjectColliders('sofa', [
-      { kind: 'cuboid', halfExtents: [0.1, 0.1, 0.1], translation: [0, 2, 0], rotation: { x: 0, y: 0, z: 0, w: 1 } },
+      {
+        kind: 'cuboid',
+        halfExtents: [0.1, 0.1, 0.1],
+        translation: [0, 2, 0],
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
     ]);
     expect(ok).toBe(true);
     expect(physics.surfaceAt(sx, sz, 5, 'sofa')).toBeCloseTo(2.1, 2);

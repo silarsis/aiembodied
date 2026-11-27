@@ -15,7 +15,8 @@ const nodeBuiltins = {
 };
 const electron = {
   regex: '^electron(/|$)',
-  message: 'Electron is main-process only. The renderer reaches it through the preload bridge (window.aiembodied).',
+  message:
+    'Electron is main-process only. The renderer reaches it through the preload bridge (window.aiembodied).',
 };
 const mainRuntime = {
   regex: '(^|/)main/src/(?!shared/)',
@@ -49,7 +50,13 @@ const restrict = (...patterns) => ['error', { patterns }];
 
 export default [
   {
-    ignores: ['dist/**', 'coverage/**', 'playwright-report/**', 'test-results/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'playwright-report/**',
+      'test-results/**',
+      'node_modules/**',
+    ],
   },
   js.configs.recommended,
   {
@@ -157,7 +164,8 @@ export default [
         { regex: '^[^.]', message: 'app/main/src/shared must not import npm packages.' },
         {
           regex: '^\\.\\./\\.\\./',
-          message: 'app/main/src/shared must not import from outside shared/. Move what it needs into shared/.',
+          message:
+            'app/main/src/shared must not import from outside shared/. Move what it needs into shared/.',
         },
       ),
     },

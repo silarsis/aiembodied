@@ -76,14 +76,20 @@ export class AssetCache {
     const name = this.name(key);
     if (!index.has(name)) return null;
     try {
-      const [data, meta] = await Promise.all([readFile(this.dataPath(name)), readFile(this.metaPath(name), 'utf8')]);
+      const [data, meta] = await Promise.all([
+        readFile(this.dataPath(name)),
+        readFile(this.metaPath(name), 'utf8'),
+      ]);
       const parsed = JSON.parse(meta) as { key?: unknown; mime?: unknown };
       if (parsed.key !== key) return null;
       const time = new Date(this.now());
       const entry = index.get(name);
       if (entry) entry.usedAt = time.getTime();
       void utimes(this.dataPath(name), time, time).catch(() => undefined);
-      return { mime: typeof parsed.mime === 'string' ? parsed.mime : 'application/octet-stream', data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
+      return {
+        mime: typeof parsed.mime === 'string' ? parsed.mime : 'application/octet-stream',
+        data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+      };
     } catch {
       // The file vanished or its note is broken: forget it.
       await this.drop(name);
@@ -116,7 +122,9 @@ export class AssetCache {
   private async prune(keep: string): Promise<void> {
     const index = await this.load();
     if (this.total <= this.maxBytes) return;
-    const oldest = [...index.entries()].filter(([name]) => name !== keep).sort((a, b) => a[1].usedAt - b[1].usedAt);
+    const oldest = [...index.entries()]
+      .filter(([name]) => name !== keep)
+      .sort((a, b) => a[1].usedAt - b[1].usedAt);
     for (const [name] of oldest) {
       if (this.total <= this.maxBytes) break;
       await this.drop(name);
@@ -127,7 +135,10 @@ export class AssetCache {
     const entry = this.index?.get(name);
     if (entry) this.total -= entry.size;
     this.index?.delete(name);
-    await Promise.all([rm(this.dataPath(name), { force: true }), rm(this.metaPath(name), { force: true })]);
+    await Promise.all([
+      rm(this.dataPath(name), { force: true }),
+      rm(this.metaPath(name), { force: true }),
+    ]);
   }
 
   /** Bytes in the cache. */

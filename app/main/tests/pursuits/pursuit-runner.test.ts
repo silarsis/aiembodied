@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { runPursuit, type ChooseResult, type NextResult, type Pursuit, type PursuitEnd } from '../../src/pursuits/pursuit.js';
+import {
+  runPursuit,
+  type ChooseResult,
+  type NextResult,
+  type Pursuit,
+  type PursuitEnd,
+} from '../../src/pursuits/pursuit.js';
 
 /** A pursuit that logs its steps and answers from lists. */
-function scripted(options: { choices?: ChooseResult[]; nexts?: NextResult[]; failAt?: string; onStep?: (step: string) => void } = {}) {
+function scripted(
+  options: {
+    choices?: ChooseResult[];
+    nexts?: NextResult[];
+    failAt?: string;
+    onStep?: (step: string) => void;
+  } = {},
+) {
   const log: string[] = [];
   const choices = [...(options.choices ?? ['consume'])];
   const nexts = [...(options.nexts ?? ['stop'])];
@@ -39,7 +52,10 @@ describe('runPursuit', () => {
   it('tells the body about every step', async () => {
     const { pursuit } = scripted();
     const seen: string[] = [];
-    await runPursuit(pursuit, { signal: new AbortController().signal, onStep: (step) => seen.push(step) });
+    await runPursuit(pursuit, {
+      signal: new AbortController().signal,
+      onStep: (step) => seen.push(step),
+    });
     expect(seen).toEqual(['want', 'act', 'choose', 'consume', 'note', 'next']);
   });
 
@@ -51,21 +67,29 @@ describe('runPursuit', () => {
   });
 
   it('goes on to another item when next says again, and stops at the item limit', async () => {
-    const { pursuit, log } = scripted({ choices: ['consume', 'consume', 'consume'], nexts: ['again', 'again', 'again'] });
+    const { pursuit, log } = scripted({
+      choices: ['consume', 'consume', 'consume'],
+      nexts: ['again', 'again', 'again'],
+    });
     const result = await runPursuit(pursuit, { signal: new AbortController().signal, maxItems: 2 });
     expect(log.filter((s) => s === 'note')).toHaveLength(2);
     expect(result).toMatchObject({ end: 'limit', items: 2 });
   });
 
   it('stops at the step limit', async () => {
-    const { pursuit } = scripted({ choices: ['consume', 'consume', 'consume'], nexts: ['again', 'again', 'again'] });
+    const { pursuit } = scripted({
+      choices: ['consume', 'consume', 'consume'],
+      nexts: ['again', 'again', 'again'],
+    });
     const result = await runPursuit(pursuit, { signal: new AbortController().signal, maxSteps: 8 });
     expect(result).toMatchObject({ end: 'limit', steps: 8 });
   });
 
   it('ends as aborted when the signal fires, still calling finish', async () => {
     const controller = new AbortController();
-    const { pursuit, ended } = scripted({ onStep: (step) => step === 'choose' && controller.abort() });
+    const { pursuit, ended } = scripted({
+      onStep: (step) => step === 'choose' && controller.abort(),
+    });
     const result = await runPursuit(pursuit, { signal: controller.signal });
     expect(result.end).toBe('aborted');
     expect(ended()).toBe('aborted');

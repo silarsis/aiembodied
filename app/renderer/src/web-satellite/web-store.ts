@@ -24,8 +24,18 @@ export class WebStore {
 
   pairing(): StoredPairing | null {
     try {
-      const raw = JSON.parse(this.storage.getItem(PAIRING_KEY) ?? 'null') as Partial<StoredPairing> | null;
-      if (raw && typeof raw.hubUrl === 'string' && typeof raw.deviceId === 'string' && typeof raw.token === 'string' && raw.hubUrl && raw.deviceId && raw.token) {
+      const raw = JSON.parse(
+        this.storage.getItem(PAIRING_KEY) ?? 'null',
+      ) as Partial<StoredPairing> | null;
+      if (
+        raw &&
+        typeof raw.hubUrl === 'string' &&
+        typeof raw.deviceId === 'string' &&
+        typeof raw.token === 'string' &&
+        raw.hubUrl &&
+        raw.deviceId &&
+        raw.token
+      ) {
         return {
           hubUrl: raw.hubUrl,
           deviceId: raw.deviceId,
@@ -79,8 +89,12 @@ export class WebStore {
     try {
       const raw = JSON.parse(this.storage.getItem(AUDIO_KEY) ?? '{}') as AudioDevicePreferences;
       return {
-        ...(typeof raw.audioInputDeviceId === 'string' && raw.audioInputDeviceId ? { audioInputDeviceId: raw.audioInputDeviceId } : {}),
-        ...(typeof raw.audioOutputDeviceId === 'string' && raw.audioOutputDeviceId ? { audioOutputDeviceId: raw.audioOutputDeviceId } : {}),
+        ...(typeof raw.audioInputDeviceId === 'string' && raw.audioInputDeviceId
+          ? { audioInputDeviceId: raw.audioInputDeviceId }
+          : {}),
+        ...(typeof raw.audioOutputDeviceId === 'string' && raw.audioOutputDeviceId
+          ? { audioOutputDeviceId: raw.audioOutputDeviceId }
+          : {}),
       };
     } catch {
       return {};

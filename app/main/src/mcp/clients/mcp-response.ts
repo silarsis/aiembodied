@@ -27,8 +27,11 @@ export function normalizeToolList(tools: unknown): MCPToolDefinition[] {
         : { type: 'object', properties: {} };
     // Tools may say they only read (annotations.readOnlyHint); stations use it to decide on a trip.
     const annotations = isRecord(record.annotations) ? record.annotations : {};
-    const readOnlyHint = typeof annotations.readOnlyHint === 'boolean' ? annotations.readOnlyHint : undefined;
-    return readOnlyHint === undefined ? { name, description, inputSchema } : { name, description, inputSchema, readOnlyHint };
+    const readOnlyHint =
+      typeof annotations.readOnlyHint === 'boolean' ? annotations.readOnlyHint : undefined;
+    return readOnlyHint === undefined
+      ? { name, description, inputSchema }
+      : { name, description, inputSchema, readOnlyHint };
   });
 }
 
@@ -57,7 +60,12 @@ export function normalizeCallToolResult(response: unknown): unknown {
   if (content.length === 0) return null;
 
   const first = content[0];
-  if (content.length === 1 && isRecord(first) && first.type === 'text' && typeof first.text === 'string') {
+  if (
+    content.length === 1 &&
+    isRecord(first) &&
+    first.type === 'text' &&
+    typeof first.text === 'string'
+  ) {
     return first.text;
   }
 

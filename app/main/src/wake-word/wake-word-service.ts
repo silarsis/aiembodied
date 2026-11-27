@@ -3,7 +3,12 @@ import { EventEmitter } from 'node:events';
 import { Worker, type WorkerOptions } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import type { Logger } from 'winston';
-import type { WakeWordReadyEvent, WakeWordWorkerCommand, WakeWordWorkerConfig, WakeWordWorkerMessage } from './types.js';
+import type {
+  WakeWordReadyEvent,
+  WakeWordWorkerCommand,
+  WakeWordWorkerConfig,
+  WakeWordWorkerMessage,
+} from './types.js';
 import type { WakeWordDetectionEvent } from '../shared/wake-word/types.js';
 
 export interface WakeWordServiceOptions {
@@ -44,7 +49,7 @@ export interface WakeWordServiceEvents {
 class WakeWordEventFilter {
   private lastEmitTimestamp: number | null = null;
 
-  constructor(private readonly options: { cooldownMs: number; minConfidence: number }) { }
+  constructor(private readonly options: { cooldownMs: number; minConfidence: number }) {}
 
   shouldEmit(event: WakeWordDetectionEvent): boolean {
     if (event.confidence < this.options.minConfidence) {
@@ -208,7 +213,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
 
     const delay = Math.min(
       this.baseRestartDelayMs * Math.pow(2, this.restartAttempts),
-      this.maxRestartDelayMs
+      this.maxRestartDelayMs,
     );
     this.restartAttempts++;
 

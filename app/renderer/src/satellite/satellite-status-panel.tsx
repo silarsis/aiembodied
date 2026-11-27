@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus, TurnTiming } from '../../../main/src/shared/satellite/bridge-types.js';
+import type {
+  DeviceGateBridge,
+  DeviceGateState,
+  SatelliteBridge,
+  SatelliteStatus,
+  TurnTiming,
+} from '../../../main/src/shared/satellite/bridge-types.js';
 import type { AudioDeviceSelection } from '../hooks/use-audio-devices.js';
 import type { CameraChoice } from '../hooks/use-camera-devices.js';
 
@@ -38,7 +44,20 @@ function cameraWords(gate: DeviceGateState | null): string {
 }
 const seconds = (ms: number | null) => (ms === null ? 'n/a' : `${(ms / 1000).toFixed(2)} s`);
 
-export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, outputs = [], selectedOutput = '', onOutputChange, lastTurn = null, cameras = [], selectedCamera = '', onCameraChange, cameraError = null }: SatelliteStatusPanelProps) {
+export function SatelliteStatusPanel({
+  status,
+  bridge,
+  gate = null,
+  gateBridge,
+  outputs = [],
+  selectedOutput = '',
+  onOutputChange,
+  lastTurn = null,
+  cameras = [],
+  selectedCamera = '',
+  onCameraChange,
+  cameraError = null,
+}: SatelliteStatusPanelProps) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // "Start when I sign in": off until Kevin turns it on. Hidden when this build cannot do it (not Windows).
@@ -95,7 +114,9 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
         <div>
           <dt>Microphone</dt>
           <dd data-testid="satellite-mic">
-            {gate ? `${LEVEL_WORDS[gate.mic][0].toUpperCase()}${LEVEL_WORDS[gate.mic].slice(1)}${gate.mic === 'off' && gate.summary ? `: ${gate.summary}` : ''}` : 'Off'}
+            {gate
+              ? `${LEVEL_WORDS[gate.mic][0].toUpperCase()}${LEVEL_WORDS[gate.mic].slice(1)}${gate.mic === 'off' && gate.summary ? `: ${gate.summary}` : ''}`
+              : 'Off'}
           </dd>
         </div>
         <div>
@@ -111,7 +132,12 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
             <label htmlFor="satellite-camera-device" className="srOnly">
               Camera to use
             </label>
-            <select id="satellite-camera-device" value={selectedCamera} onChange={(event) => onCameraChange?.(event.target.value)} disabled={!onCameraChange}>
+            <select
+              id="satellite-camera-device"
+              value={selectedCamera}
+              onChange={(event) => onCameraChange?.(event.target.value)}
+              disabled={!onCameraChange}
+            >
               <option value="">System default</option>
               {cameras.map((camera) => (
                 <option key={camera.deviceId} value={camera.deviceId}>
@@ -127,7 +153,12 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
             <label htmlFor="satellite-speakers" className="srOnly">
               Speakers
             </label>
-            <select id="satellite-speakers" value={selectedOutput} onChange={(event) => onOutputChange?.(event.target.value)} disabled={!onOutputChange}>
+            <select
+              id="satellite-speakers"
+              value={selectedOutput}
+              onChange={(event) => onOutputChange?.(event.target.value)}
+              disabled={!onOutputChange}
+            >
               <option value="">System default</option>
               {outputs.map((output) => (
                 <option key={output.deviceId} value={output.deviceId}>
@@ -152,20 +183,42 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
         </p>
       ) : null}
       {gateBridge ? (
-        <button type="button" className="btn btn--secondary" data-testid="satellite-kill-switch" onClick={() => void gateBridge.setOpen(gate?.open === false)}>
+        <button
+          type="button"
+          className="btn btn--secondary"
+          data-testid="satellite-kill-switch"
+          onClick={() => void gateBridge.setOpen(gate?.open === false)}
+        >
           {gate?.open === false ? 'Open this room' : 'Close this room'}
         </button>
       ) : null}
-      <p className="kiosk__helper">The microphone is live only while a character is in this room, the screen is unlocked, the link to bija is up, the room is open and no other app is full screen. {status.deviceKind === 'browser' ? '' : 'Ctrl+Alt+Shift+R closes or opens the room from anywhere.'}</p>
-      <p className="kiosk__helper">The camera follows the same rules and also needs Camera presence to be on for this room (set on bija, Settings, Places). It only notes that a face is there: no picture leaves this PC and nothing is stored.</p>
+      <p className="kiosk__helper">
+        The microphone is live only while a character is in this room, the screen is unlocked, the
+        link to bija is up, the room is open and no other app is full screen.{' '}
+        {status.deviceKind === 'browser'
+          ? ''
+          : 'Ctrl+Alt+Shift+R closes or opens the room from anywhere.'}
+      </p>
+      <p className="kiosk__helper">
+        The camera follows the same rules and also needs Camera presence to be on for this room (set
+        on bija, Settings, Places). It only notes that a face is there: no picture leaves this PC
+        and nothing is stored.
+      </p>
       {startAtLogin !== null && bridge.setStartAtLogin && status.deviceKind !== 'browser' ? (
         <label className="satelliteStatus__login">
-          <input type="checkbox" checked={startAtLogin} onChange={(event) => void changeStartAtLogin(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={startAtLogin}
+            onChange={(event) => void changeStartAtLogin(event.target.checked)}
+          />
           Start when I sign in
         </label>
       ) : null}
       {status.deviceKind === 'browser' ? (
-        <p className="kiosk__helper">This is a web page, so the page itself keeps these rules: it stops the microphone and camera when the page is hidden or the room is closed. There is no wake word in a browser.</p>
+        <p className="kiosk__helper">
+          This is a web page, so the page itself keeps these rules: it stops the microphone and
+          camera when the page is hidden or the room is closed. There is no wake word in a browser.
+        </p>
       ) : (
         <p className="kiosk__helper">F11 switches between a window and full screen.</p>
       )}

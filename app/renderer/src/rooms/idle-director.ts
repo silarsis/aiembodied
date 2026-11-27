@@ -9,7 +9,11 @@
  * Time, timers, randomness, the model and the executor all come in through `IdleDirectorDeps`, so
  * the whole thing runs in tests with fakes.
  */
-import type { IdlePickContext, IdlePickResult, RoomFile } from '../../../main/src/shared/rooms/types.js';
+import type {
+  IdlePickContext,
+  IdlePickResult,
+  RoomFile,
+} from '../../../main/src/shared/rooms/types.js';
 import {
   RESTLESSNESS_MEAN_SECONDS,
   type IdleSettings,
@@ -32,7 +36,12 @@ import { describeAvatarWhere, describeFeet } from './scene-instructions.js';
 import type { IdleInput, IdlePlace, IdlePursuit, IdleTag } from './idle-types.js';
 import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { isPhonePlace } from '../../../main/src/shared/places/place-kind.js';
-import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/shared/places/wander.js';
+import {
+  ACTIVE_WINDOW_MS,
+  WANDER_COOLDOWN_MS,
+  activeWithin,
+  othersAt,
+} from '../../../main/src/shared/places/wander.js';
 import { talkStartActions } from './idle-talk.js';
 import type { AvatarState, PlanWorld } from './scene-actions.js';
 import type { PlanBuilder } from './scene-executor.js';
@@ -340,7 +349,9 @@ export class IdleDirector {
    */
   private roster(): readonly IdleAvatar[] {
     const avatars = this.deps.avatars?.() ?? [];
-    return avatars.length >= 2 || (avatars.length === 1 && avatars[0]?.id !== ECHO_ID) ? avatars : [];
+    return avatars.length >= 2 || (avatars.length === 1 && avatars[0]?.id !== ECHO_ID)
+      ? avatars
+      : [];
   }
 
   /** Who acts now: Echo alone as before, else the picker's choice. Null when nobody can act yet. */
@@ -392,14 +403,21 @@ export class IdleDirector {
         });
         return { name: avatar.name, where };
       });
-    const pursuits = this.deps.pursuing?.(actor.id) ? [] : [...(this.deps.pursuitsFor?.(actor.id) ?? [])];
+    const pursuits = this.deps.pursuing?.(actor.id)
+      ? []
+      : [...(this.deps.pursuitsFor?.(actor.id) ?? [])];
     const state = executor.getState();
-    const feet = state.posture === 'seated' && state.seat ? describeFeet(room, world, state.seat.objectId) : null;
+    const feet =
+      state.posture === 'seated' && state.seat
+        ? describeFeet(room, world, state.seat.objectId)
+        : null;
     const failures = executor.recentFailures?.() ?? [];
     return {
       ...persona,
       room,
-      ...(feet || failures.length > 0 ? { contact: { ...(feet ? { feet } : {}), ...(failures.length > 0 ? { failures } : {}) } } : {}),
+      ...(feet || failures.length > 0
+        ? { contact: { ...(feet ? { feet } : {}), ...(failures.length > 0 ? { failures } : {}) } }
+        : {}),
       visible: visibleObjects(room, world.cameraAspect ?? DEFAULT_ASPECT),
       state: executor.getState(),
       position: [world.frame.origin.x, 0, world.frame.origin.z],
@@ -423,15 +441,23 @@ export class IdleDirector {
     const movedAt = snapshot.movedAt?.[actor.id];
     if (typeof movedAt === 'number' && now - movedAt < WANDER_COOLDOWN_MS) return [];
     const here = snapshot.locations[actor.id] ?? snapshot.localPlaceId;
-    return snapshot.places
-      .filter((place) => place.id !== here && place.online !== false && place.closed !== true && !isPhonePlace(place))
-      .map((place) => ({
-        name: place.name,
-        who: othersAt(snapshot, place.id, actor.id).map((id) => view.nameOf(id)),
-        recentlyUsed: activeWithin(snapshot, place.id, ACTIVE_WINDOW_MS, now),
-      }))
-      // A place nobody used lately and nobody stands in is not worth offering: the rules would refuse it.
-      .filter((place) => place.recentlyUsed || place.who.length > 0);
+    return (
+      snapshot.places
+        .filter(
+          (place) =>
+            place.id !== here &&
+            place.online !== false &&
+            place.closed !== true &&
+            !isPhonePlace(place),
+        )
+        .map((place) => ({
+          name: place.name,
+          who: othersAt(snapshot, place.id, actor.id).map((id) => view.nameOf(id)),
+          recentlyUsed: activeWithin(snapshot, place.id, ACTIVE_WINDOW_MS, now),
+        }))
+        // A place nobody used lately and nobody stands in is not worth offering: the rules would refuse it.
+        .filter((place) => place.recentlyUsed || place.who.length > 0)
+    );
   }
 
   private async act(actor: IdleAvatar): Promise<void> {
@@ -489,7 +515,9 @@ export class IdleDirector {
     this.lastActed.set(actor.id, this.deps.now());
     // Reading is the character's own pursuit: main walks its body to the station and runs the session.
     if (first.type === 'read') {
-      void this.deps.startPursuit?.(actor.id, first.station).catch((error: unknown) => console.warn('[idle] could not start reading', error));
+      void this.deps
+        .startPursuit?.(actor.id, first.station)
+        .catch((error: unknown) => console.warn('[idle] could not start reading', error));
       this.finish();
       return;
     }
@@ -639,10 +667,12 @@ export function createIdleDirector(
     avatars: () => latest.avatars?.() ?? [],
     nobodyHere: () => latest.nobodyHere?.() === true,
     places: () => latest.places?.() ?? null,
-    canWander: (avatarId, place, speaking) => latest.canWander?.(avatarId, place, speaking) ?? Promise.resolve(false),
+    canWander: (avatarId, place, speaking) =>
+      latest.canWander?.(avatarId, place, speaking) ?? Promise.resolve(false),
     run: (text, avatarId) => (avatarId ? latest.run(text, avatarId) : latest.run(text)),
     pursuitsFor: (avatarId) => latest.pursuitsFor?.(avatarId) ?? [],
-    startPursuit: (avatarId, stationId) => latest.startPursuit?.(avatarId, stationId) ?? Promise.resolve(false),
+    startPursuit: (avatarId, stationId) =>
+      latest.startPursuit?.(avatarId, stationId) ?? Promise.resolve(false),
     pursuing: (avatarId) => latest.pursuing?.(avatarId) === true,
     onNoteChange,
   });

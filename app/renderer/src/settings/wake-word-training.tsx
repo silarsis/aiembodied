@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { WakeWordOption, WakeWordTrainingJob, WakeWordTrainingStatus } from '../../../main/src/shared/wake-word/types.js';
+import type {
+  WakeWordOption,
+  WakeWordTrainingJob,
+  WakeWordTrainingStatus,
+} from '../../../main/src/shared/wake-word/types.js';
 import type { WakeWordBridge } from '../preload-api.js';
 
 export interface WakeWordLibrary {
@@ -116,7 +120,8 @@ export function WakeWordTraining({
   }
   const job = training.job;
   const running = job?.state === 'running';
-  const resumable = job && (job.state === 'interrupted' || job.state === 'failed' || job.state === 'cancelled');
+  const resumable =
+    job && (job.state === 'interrupted' || job.state === 'failed' || job.state === 'cancelled');
 
   const act = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -134,13 +139,16 @@ export function WakeWordTraining({
     <div className="wakeWordTraining">
       <h4>Train a new wake word</h4>
       {!training.available ? (
-        <p className="kiosk__helper">{training.reason ?? 'Training is not available on this machine.'}</p>
+        <p className="kiosk__helper">
+          {training.reason ?? 'Training is not available on this machine.'}
+        </p>
       ) : (
         <>
           <p className="kiosk__helper">
-            Trains an openWakeWord model in WSL from synthetic speech, the way &ldquo;Hey Echo&rdquo; was made. It takes three to four
-            hours on the CPU (the first run also downloads about 20 GB) and carries on if you close the app. Two or three
-            syllables work best.
+            Trains an openWakeWord model in WSL from synthetic speech, the way &ldquo;Hey
+            Echo&rdquo; was made. It takes three to four hours on the CPU (the first run also
+            downloads about 20 GB) and carries on if you close the app. Two or three syllables work
+            best.
           </p>
           <div className="control">
             <label htmlFor="settings-wake-train-phrase">Phrase</label>
@@ -175,7 +183,13 @@ export function WakeWordTraining({
               className="wakeWordTraining__progress"
             />
           ) : null}
-          <p className={job.state === 'failed' || job.state === 'interrupted' ? 'kiosk__error' : 'kiosk__helper'}>
+          <p
+            className={
+              job.state === 'failed' || job.state === 'interrupted'
+                ? 'kiosk__error'
+                : 'kiosk__helper'
+            }
+          >
             {running ? `Training "${job.phrase}": ${Math.round(job.progress * 100)}%. ` : ''}
             {describeJob(job)}
           </p>
@@ -189,7 +203,11 @@ export function WakeWordTraining({
               </button>
             ) : null}
             {resumable && training.available ? (
-              <button type="button" onClick={() => void act(() => onTrain(job.phrase))} disabled={disabled || busy}>
+              <button
+                type="button"
+                onClick={() => void act(() => onTrain(job.phrase))}
+                disabled={disabled || busy}
+              >
                 {job.state === 'cancelled' ? 'Train again' : 'Resume'}
               </button>
             ) : null}

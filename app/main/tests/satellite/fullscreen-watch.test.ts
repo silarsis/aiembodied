@@ -1,6 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FULLSCREEN_POLL_MS, FullscreenWatcher, encodeScript, type SpawnLike } from '../../src/satellite/fullscreen-watch.js';
+import {
+  FULLSCREEN_POLL_MS,
+  FullscreenWatcher,
+  encodeScript,
+  type SpawnLike,
+} from '../../src/satellite/fullscreen-watch.js';
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -21,7 +26,12 @@ function setup(platform: NodeJS.Platform = 'win32') {
     return child as unknown as ReturnType<SpawnLike>;
   });
   const seen: boolean[] = [];
-  const watcher = new FullscreenWatcher({ platform, spawn: spawn as unknown as SpawnLike, onChange: (value) => seen.push(value), ownPid: 4242 });
+  const watcher = new FullscreenWatcher({
+    platform,
+    spawn: spawn as unknown as SpawnLike,
+    onChange: (value) => seen.push(value),
+    ownPid: 4242,
+  });
   return { watcher, spawn, children, seen };
 }
 
@@ -45,7 +55,10 @@ describe('FullscreenWatcher', () => {
     const [command, args] = spawn.mock.calls[0];
     expect(command).toBe('powershell.exe');
     expect(args).toContain('-EncodedCommand');
-    expect((spawn.mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }])[2].env.AIEMBODIED_PID).toBe('4242');
+    expect(
+      (spawn.mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }])[2].env
+        .AIEMBODIED_PID,
+    ).toBe('4242');
     children[0].say('ready\n');
     // The first poll goes out as soon as the helper is ready.
     expect(children[0].written).toEqual(['\n']);

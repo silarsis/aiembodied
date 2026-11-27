@@ -1,7 +1,10 @@
 import { vi } from 'vitest';
 
 export interface FakeMicNode {
-  port: { onmessage: ((event: { data: Float32Array }) => void) | null; close: ReturnType<typeof vi.fn> };
+  port: {
+    onmessage: ((event: { data: Float32Array }) => void) | null;
+    close: ReturnType<typeof vi.fn>;
+  };
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
 }

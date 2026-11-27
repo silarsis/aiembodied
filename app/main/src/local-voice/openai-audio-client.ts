@@ -46,7 +46,9 @@ export class OpenAiAudioClient {
       signal: options.signal,
     });
     if (!response.ok) {
-      throw new Error(`OpenAI speech-to-text failed: HTTP ${response.status} ${await errorText(response)}`);
+      throw new Error(
+        `OpenAI speech-to-text failed: HTTP ${response.status} ${await errorText(response)}`,
+      );
     }
     const body = (await response.json()) as { text?: unknown };
     return {
@@ -93,7 +95,10 @@ async function errorText(response: Response): Promise<string> {
     const text = await response.text();
     try {
       const parsed = JSON.parse(text) as { error?: { message?: unknown } | unknown };
-      const message = typeof parsed.error === 'object' && parsed.error ? (parsed.error as { message?: unknown }).message : parsed.error;
+      const message =
+        typeof parsed.error === 'object' && parsed.error
+          ? (parsed.error as { message?: unknown }).message
+          : parsed.error;
       if (typeof message === 'string') {
         return message;
       }

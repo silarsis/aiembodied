@@ -96,25 +96,43 @@ describe('start at login with a command', () => {
 
   it('writes the Run entry with the exe and its arguments, quoted', async () => {
     const calls: string[][] = [];
-    const command = new WindowsRunCommand('App Satellite', 'C:\\repo\\electron.exe', ['C:\\repo\\app\\main\\dist\\main.js', '--satellite'], async (args) => {
-      calls.push(args);
-      return '';
-    });
+    const command = new WindowsRunCommand(
+      'App Satellite',
+      'C:\\repo\\electron.exe',
+      ['C:\\repo\\app\\main\\dist\\main.js', '--satellite'],
+      async (args) => {
+        calls.push(args);
+        return '';
+      },
+    );
     await command.enable();
-    expect(calls[0].slice(0, 5)).toEqual(['add', expect.stringContaining('CurrentVersion\\Run'), '/v', 'App Satellite', '/t']);
-    expect(calls[0]).toContain('"C:\\repo\\electron.exe" "C:\\repo\\app\\main\\dist\\main.js" "--satellite"');
+    expect(calls[0].slice(0, 5)).toEqual([
+      'add',
+      expect.stringContaining('CurrentVersion\\Run'),
+      '/v',
+      'App Satellite',
+      '/t',
+    ]);
+    expect(calls[0]).toContain(
+      '"C:\\repo\\electron.exe" "C:\\repo\\app\\main\\dist\\main.js" "--satellite"',
+    );
   });
 
   it('is enabled when the entry exists, and removes it only when it is there', async () => {
     let present = false;
     const calls: string[][] = [];
-    const command = new WindowsRunCommand('App Satellite', 'e.exe', ['--satellite'], async (args) => {
-      calls.push(args);
-      if (args[0] === 'query' && !present) throw new Error('not found');
-      if (args[0] === 'add') present = true;
-      if (args[0] === 'delete') present = false;
-      return '';
-    });
+    const command = new WindowsRunCommand(
+      'App Satellite',
+      'e.exe',
+      ['--satellite'],
+      async (args) => {
+        calls.push(args);
+        if (args[0] === 'query' && !present) throw new Error('not found');
+        if (args[0] === 'add') present = true;
+        if (args[0] === 'delete') present = false;
+        return '';
+      },
+    );
     expect(await command.isEnabled()).toBe(false);
     await command.disable();
     expect(calls.some((call) => call[0] === 'delete')).toBe(false);
@@ -134,12 +152,22 @@ describe('start at login with a command', () => {
       platform: 'win32',
       runReg: async (args) => {
         calls.push(args);
-        if (args[0] === 'query' && calls.every((call) => call[0] !== 'add')) throw new Error('not found');
+        if (args[0] === 'query' && calls.every((call) => call[0] !== 'add'))
+          throw new Error('not found');
         return '';
       },
     });
     expect(await manager.sync(true)).toBe(true);
     expect(calls.map((call) => call[0])).toEqual(['query', 'add']);
-    expect(() => new AutoLaunchManager({ logger, appName: 'x', appPath: 'x', args: ['a'], platform: 'linux' })).toThrow(/Windows/);
+    expect(
+      () =>
+        new AutoLaunchManager({
+          logger,
+          appName: 'x',
+          appPath: 'x',
+          args: ['a'],
+          platform: 'linux',
+        }),
+    ).toThrow(/Windows/);
   });
 });

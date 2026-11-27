@@ -1,9 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FloorController } from '../src/floor/index.js';
-import type { IntentFunction, IntentInput, QuickIntentFunction } from '../src/floor/floor-manager.js';
+import type {
+  IntentFunction,
+  IntentInput,
+  QuickIntentFunction,
+} from '../src/floor/floor-manager.js';
 import { buildIntentPrompt } from '../src/floor/intent-router.js';
 import { LOCATIONS_KEY, PlaceManager } from '../src/places/place-manager.js';
-import type { LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/shared/local-voice/types.js';
+import type {
+  LocalVoiceRespondRequest,
+  LocalVoiceRespondResult,
+} from '../src/shared/local-voice/types.js';
 
 const PROFILES = [
   { id: 'echo', name: 'Echo', vrmModelId: 'm1' },
@@ -11,19 +18,38 @@ const PROFILES = [
   { id: 'rex', name: 'Rex', vrmModelId: 'm1' },
 ];
 
-function harness(options: { away?: string[]; intent?: IntentFunction; quick?: QuickIntentFunction; summon?: (id: string) => Promise<boolean> } = {}) {
+function harness(
+  options: {
+    away?: string[];
+    intent?: IntentFunction;
+    quick?: QuickIntentFunction;
+    summon?: (id: string) => Promise<boolean>;
+  } = {},
+) {
   const kv = new Map<string, string>();
-  if (options.away) kv.set(LOCATIONS_KEY, JSON.stringify(Object.fromEntries(options.away.map((id) => [id, 'next-door']))));
-  const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
-  const registry = { list: () => PROFILES, get: (id: string) => PROFILES.find((p) => p.id === id) ?? null };
+  if (options.away)
+    kv.set(
+      LOCATIONS_KEY,
+      JSON.stringify(Object.fromEntries(options.away.map((id) => [id, 'next-door']))),
+    );
+  const store = {
+    getValue: (key: string) => kv.get(key) ?? null,
+    setValue: (key: string, value: string) => void kv.set(key, value),
+  };
+  const registry = {
+    list: () => PROFILES,
+    get: (id: string) => PROFILES.find((p) => p.id === id) ?? null,
+  };
   const places = new PlaceManager({ store, registry });
   const turns: string[] = [];
   const heard: Array<{ to: string; from: string }> = [];
   const errors: string[] = [];
-  const respond = (avatarId: string) => async (request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult> => {
-    turns.push(avatarId);
-    return { requestId: request.requestId, text: `${avatarId} speaks.`, cancelled: false };
-  };
+  const respond =
+    (avatarId: string) =>
+    async (request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult> => {
+      turns.push(avatarId);
+      return { requestId: request.requestId, text: `${avatarId} speaks.`, cancelled: false };
+    };
   const summon = vi.fn(options.summon ?? (async () => true));
   const controller = new FloorController({
     registry,
@@ -31,7 +57,11 @@ function harness(options: { away?: string[]; intent?: IntentFunction; quick?: Qu
     store,
     summon,
     reportError: (avatarId, _requestId, message) => void errors.push(`${avatarId}: ${message}`),
-    voice: (avatarId) => ({ respond: respond(avatarId), cancel: () => undefined, overhear: (line) => void heard.push({ to: avatarId, from: line.from }) }),
+    voice: (avatarId) => ({
+      respond: respond(avatarId),
+      cancel: () => undefined,
+      overhear: (line) => void heard.push({ to: avatarId, from: line.from }),
+    }),
     runPersonTurn: (avatarId, request) => respond(avatarId)(request),
     saveLine: () => undefined,
     quickIntent: options.quick,
@@ -45,14 +75,23 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 describe('the floor scene comes from the places', () => {
   it('is the same as before when everybody is here', () => {
     const { controller } = harness();
-    expect(controller.manager.scene()).toEqual({ id: 'home', avatarIds: ['echo', 'sage', 'rex'], hostId: 'echo' });
+    expect(controller.manager.scene()).toEqual({
+      id: 'home',
+      avatarIds: ['echo', 'sage', 'rex'],
+      hostId: 'echo',
+    });
     expect(controller.isMulti()).toBe(true);
     expect(controller.hasAway()).toBe(false);
   });
 
   it('leaves out avatars that are somewhere else', () => {
     const { controller } = harness({ away: ['sage'] });
-    expect(controller.manager.scene()).toEqual({ id: 'home', avatarIds: ['echo', 'rex'], hostId: 'echo', awayIds: ['sage'] });
+    expect(controller.manager.scene()).toEqual({
+      id: 'home',
+      avatarIds: ['echo', 'rex'],
+      hostId: 'echo',
+      awayIds: ['sage'],
+    });
     expect(controller.hasAway()).toBe(true);
   });
 
@@ -82,21 +121,35 @@ describe('the floor scene comes from the places', () => {
 
   it('lets an absent avatar neither answer nor receive chatter', async () => {
     const { controller } = harness({ away: ['sage'] });
-    const decision = await controller.manager.route({ from: 'avatar:echo', text: 'Sage, what do you think?', at: 1_000 });
+    const decision = await controller.manager.route({
+      from: 'avatar:echo',
+      text: 'Sage, what do you think?',
+      at: 1_000,
+    });
     expect(decision.speakers.map((speaker) => speaker.avatarId)).not.toContain('sage');
   });
 });
 
 describe('Kevin speaks while someone is away', () => {
-  const sayOf = (addressed: string): IntentFunction => async () => ({ addressed, wants: 'answer', other: null });
+  const sayOf =
+    (addressed: string): IntentFunction =>
+    async () => ({ addressed, wants: 'answer', other: null });
 
   it('offers the away avatars to the chat-model step only, and never the quick model', async () => {
     const seen: IntentInput[] = [];
-    const quick = vi.fn<QuickIntentFunction>(async () => ({ addressed: 'echo', wants: 'answer', other: null, confidence: 0.99 }));
+    const quick = vi.fn<QuickIntentFunction>(async () => ({
+      addressed: 'echo',
+      wants: 'answer',
+      other: null,
+      confidence: 0.99,
+    }));
     const { controller } = harness({
       away: ['sage'],
       quick,
-      intent: async (input) => (seen.push(input), { addressed: 'echo', wants: 'answer', other: null }),
+      intent: async (input) => (
+        seen.push(input),
+        { addressed: 'echo', wants: 'answer', other: null }
+      ),
     });
     await controller.respondToPerson({ requestId: 'r1', text: 'Hi' });
     expect(quick).not.toHaveBeenCalled();
@@ -106,7 +159,12 @@ describe('Kevin speaks while someone is away', () => {
   });
 
   it('uses the quick model as before when nobody is away', async () => {
-    const quick = vi.fn<QuickIntentFunction>(async () => ({ addressed: 'sage', wants: 'answer', other: null, confidence: 0.99 }));
+    const quick = vi.fn<QuickIntentFunction>(async () => ({
+      addressed: 'sage',
+      wants: 'answer',
+      other: null,
+      confidence: 0.99,
+    }));
     const { controller, turns, summon } = harness({ quick });
     await controller.respondToPerson({ requestId: 'r1', text: 'Sage?' });
     expect(quick).toHaveBeenCalled();
@@ -116,7 +174,10 @@ describe('Kevin speaks while someone is away', () => {
 
   it('calls over an away avatar that the line is aimed at, then runs its turn', async () => {
     const { controller, turns, summon } = harness({ away: ['sage'], intent: sayOf('sage') });
-    const result = await controller.respondToPerson({ requestId: 'r1', text: 'Sage, come and look' });
+    const result = await controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Sage, come and look',
+    });
     expect(summon).toHaveBeenCalledWith('sage', 'summoned');
     expect(turns).toEqual(['sage']);
     expect(result.text).toBe('sage speaks.');
@@ -137,7 +198,10 @@ describe('Kevin speaks while someone is away', () => {
   });
 
   it('never counts away avatars as part of everyone', async () => {
-    const { controller, turns, summon } = harness({ away: ['sage'], intent: async () => ({ addressed: 'everyone', wants: 'answer', other: null }) });
+    const { controller, turns, summon } = harness({
+      away: ['sage'],
+      intent: async () => ({ addressed: 'everyone', wants: 'answer', other: null }),
+    });
     await controller.respondToPerson({ requestId: 'r1', text: 'Hey all' });
     await settle();
     expect(turns.sort()).toEqual(['echo', 'rex']);
@@ -145,13 +209,22 @@ describe('Kevin speaks while someone is away', () => {
   });
 
   it('falls back to someone who is here when the model cannot say', async () => {
-    const { controller, turns } = harness({ away: ['echo'], intent: async () => { throw new Error('down'); } });
+    const { controller, turns } = harness({
+      away: ['echo'],
+      intent: async () => {
+        throw new Error('down');
+      },
+    });
     await controller.respondToPerson({ requestId: 'r1', text: 'Anyone?' });
     expect(turns).toEqual(['sage']);
   });
 
   it('tells Kevin and runs nothing when the avatar does not come', async () => {
-    const { controller, turns, errors } = harness({ away: ['sage'], intent: sayOf('sage'), summon: async () => false });
+    const { controller, turns, errors } = harness({
+      away: ['sage'],
+      intent: sayOf('sage'),
+      summon: async () => false,
+    });
     const result = await controller.respondToPerson({ requestId: 'r1', text: 'Sage?' });
     expect(result.cancelled).toBe(true);
     expect(turns).toEqual([]);
@@ -181,13 +254,24 @@ describe('the chat-model intent prompt', () => {
     };
     const prompt = buildIntentPrompt(input, () => 'Kevin');
     expect(prompt.system).toContain('Now the actual room: Echo (host).');
-    expect(prompt.system).toContain('In another place right now, and Kevin can call them over: Sage.');
+    expect(prompt.system).toContain(
+      'In another place right now, and Kevin can call them over: Sage.',
+    );
     expect(prompt.system).toContain('addressed = echo | sage | everyone | unclear');
     expect(prompt.keys.get('sage')?.avatarId).toBe('sage');
   });
 
   it('is unchanged without away avatars', () => {
-    const input: IntentInput = { text: 'hi', recent: [], candidates: [{ avatarId: 'echo', name: 'Echo' }, { avatarId: 'sage', name: 'Sage' }], hostId: 'echo', partnerId: null };
+    const input: IntentInput = {
+      text: 'hi',
+      recent: [],
+      candidates: [
+        { avatarId: 'echo', name: 'Echo' },
+        { avatarId: 'sage', name: 'Sage' },
+      ],
+      hostId: 'echo',
+      partnerId: null,
+    };
     expect(buildIntentPrompt(input, () => 'Kevin').system).not.toContain('another place');
   });
 });

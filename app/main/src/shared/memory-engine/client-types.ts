@@ -1,6 +1,5 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface MemoryEngineSearchResult {
   id: string;
   kind: string;
@@ -22,7 +21,6 @@ export interface MemoryEngineSearchResult {
   home_name?: string | null;
 }
 
-
 export interface MemoryEngineTimelineSession {
   session_id: string;
   agent: string | null;
@@ -36,7 +34,6 @@ export interface MemoryEngineTimelineSession {
   turns: Array<{ id: string; at: string; text: string }>;
 }
 
-
 /** A day, week or month summary. */
 export interface MemoryEngineSummary {
   id: string;
@@ -48,12 +45,10 @@ export interface MemoryEngineSummary {
   topics: string[];
 }
 
-
 export interface MemoryEngineTimeline {
   summaries: MemoryEngineSummary[];
   sessions: MemoryEngineTimelineSession[];
 }
-
 
 export interface MemoryEngineMemoryDetail {
   id: string;
@@ -64,9 +59,15 @@ export interface MemoryEngineMemoryDetail {
   text?: string;
   subject?: string | null;
   status?: string;
-  messages?: Array<{ id: string; role: string; speaker: string | null; content: string; tool: { name?: string } | null; created_at: string }>;
+  messages?: Array<{
+    id: string;
+    role: string;
+    speaker: string | null;
+    content: string;
+    tool: { name?: string } | null;
+    created_at: string;
+  }>;
 }
-
 
 /** A stored fact, as the engine lists it. */
 export interface MemoryEngineStoredFact {
@@ -92,7 +93,6 @@ export interface MemoryEngineStoredFact {
   accessibility?: number;
 }
 
-
 export interface MemoryEngineFactPatch {
   text?: string;
   subject?: string | null;
@@ -101,7 +101,6 @@ export interface MemoryEngineFactPatch {
   private?: boolean;
   reviewed?: boolean;
 }
-
 
 export interface MemoryEngineRecallLogEntry {
   id: number;

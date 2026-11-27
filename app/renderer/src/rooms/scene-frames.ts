@@ -26,7 +26,10 @@ export function wrapRadians(angle: number): number {
 export const degToRad = (degrees: number): number => (degrees * Math.PI) / 180;
 
 /** World yaw of the direction from one floor point to another. */
-export function yawToward(from: readonly [number, number, number], to: readonly [number, number, number]): number {
+export function yawToward(
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+): number {
   return Math.atan2(to[0] - from[0], to[2] - from[2]);
 }
 
@@ -64,13 +67,19 @@ export function heightToMotion(frame: MotionFrame, y: number): number {
  * its last frame, back in the world. The hips then stay at the local origin and the standing pose
  * takes over, so nothing visibly moves.
  */
-export function bakedRootPose(frame: MotionFrame, endPose: Pick<AvatarMotionEndPose, 'root' | 'heading'>): RootPose {
+export function bakedRootPose(
+  frame: MotionFrame,
+  endPose: Pick<AvatarMotionEndPose, 'root' | 'heading'>,
+): RootPose {
   const [x, z] = motionToWorld(frame, endPose.root[0], endPose.root[1]);
   return { x, z, yaw: motionYawToWorld(frame, endPose.heading) };
 }
 
 /** World position of a point given in the motion frame (x, height above the floor, z). */
-export function motionPointToWorld(frame: MotionFrame, p: readonly [number, number, number]): [number, number, number] {
+export function motionPointToWorld(
+  frame: MotionFrame,
+  p: readonly [number, number, number],
+): [number, number, number] {
   const [x, z] = motionToWorld(frame, p[0], p[2]);
   return [x, p[1] * frame.scale, z];
 }

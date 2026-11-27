@@ -10,7 +10,10 @@ import { readShellHook } from '../../src/web-satellite/shell-hook.js';
  * builds the hook the page reads (`readShellHook`) and talks to the native object the way the Kotlin side expects.
  */
 const source = readFileSync(
-  path.resolve(__dirname, '../../../../android-room/app/src/main/java/com/silarsis/aiembodied/room/ProxyMapping.kt'),
+  path.resolve(
+    __dirname,
+    '../../../../android-room/app/src/main/java/com/silarsis/aiembodied/room/ProxyMapping.kt',
+  ),
   'utf8',
 );
 const script = /SHELL_SCRIPT: String = """([\s\S]*?)""".trimIndent\(\)/.exec(source)?.[1] ?? '';
@@ -36,17 +39,33 @@ describe('the Android shell script', () => {
 
   it('sets the pairing the page reads and the phone kind', () => {
     const win = run({
-      pairing: () => JSON.stringify({ hubUrl: 'ws://bija:8791', deviceId: 'dev-1', token: 'tok', deviceName: 'Pixel' }),
+      pairing: () =>
+        JSON.stringify({
+          hubUrl: 'ws://bija:8791',
+          deviceId: 'dev-1',
+          token: 'tok',
+          deviceName: 'Pixel',
+        }),
       foreground: () => true,
       reportGate: () => undefined,
     });
     const hook = readShellHook(win);
-    expect(hook).toMatchObject({ hubUrl: 'ws://bija:8791', deviceId: 'dev-1', token: 'tok', deviceName: 'Pixel', kind: 'phone' });
+    expect(hook).toMatchObject({
+      hubUrl: 'ws://bija:8791',
+      deviceId: 'dev-1',
+      token: 'tok',
+      deviceName: 'Pixel',
+      kind: 'phone',
+    });
   });
 
   it('reads the foreground from the shell each time, and anything but true counts as no', () => {
     let value: unknown = true;
-    const win = run({ pairing: () => '{}', foreground: () => value as boolean, reportGate: () => undefined });
+    const win = run({
+      pairing: () => '{}',
+      foreground: () => value as boolean,
+      reportGate: () => undefined,
+    });
     const hook = readShellHook(win);
     const foreground = hook?.foreground as () => boolean;
     expect(foreground()).toBe(true);
@@ -63,7 +82,9 @@ describe('the Android shell script', () => {
     const off = hook?.onForeground?.(() => {
       calls += 1;
     }) as () => void;
-    const native = (win as unknown as { __AIEMBODIED_SHELL_NATIVE__: { foregroundChanged: () => void } }).__AIEMBODIED_SHELL_NATIVE__;
+    const native = (
+      win as unknown as { __AIEMBODIED_SHELL_NATIVE__: { foregroundChanged: () => void } }
+    ).__AIEMBODIED_SHELL_NATIVE__;
     native.foregroundChanged();
     expect(calls).toBe(1);
     off();
@@ -73,9 +94,21 @@ describe('the Android shell script', () => {
 
   it('passes every gate state to the shell as JSON', () => {
     const reports: string[] = [];
-    const win = run({ pairing: () => '{}', foreground: () => true, reportGate: (json) => reports.push(json) });
-    readShellHook(win)?.onGate?.({ micAllowed: true, cameraAllowed: false, occupied: true } as never);
-    expect(JSON.parse(reports[0] ?? '{}')).toEqual({ micAllowed: true, cameraAllowed: false, occupied: true });
+    const win = run({
+      pairing: () => '{}',
+      foreground: () => true,
+      reportGate: (json) => reports.push(json),
+    });
+    readShellHook(win)?.onGate?.({
+      micAllowed: true,
+      cameraAllowed: false,
+      occupied: true,
+    } as never);
+    expect(JSON.parse(reports[0] ?? '{}')).toEqual({
+      micAllowed: true,
+      cameraAllowed: false,
+      occupied: true,
+    });
   });
 
   it('survives a shell that throws, failing closed', () => {

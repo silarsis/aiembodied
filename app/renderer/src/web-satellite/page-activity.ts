@@ -28,7 +28,11 @@ export class PageActivity {
   note(): void {
     if (!this.options.isForeground()) return;
     const now = (this.options.now ?? Date.now)();
-    if (this.lastSentAt !== null && now - this.lastSentAt < (this.options.throttleMs ?? ACTIVITY_POLL_MS)) return;
+    if (
+      this.lastSentAt !== null &&
+      now - this.lastSentAt < (this.options.throttleMs ?? ACTIVITY_POLL_MS)
+    )
+      return;
     if (this.options.send(now)) this.lastSentAt = now;
   }
 
@@ -42,7 +46,10 @@ export class PageActivity {
 
   stop(): void {
     if (this.handle === null) return;
-    (this.options.clearInterval ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>)))(this.handle);
+    (
+      this.options.clearInterval ??
+      ((handle) => clearInterval(handle as ReturnType<typeof setInterval>))
+    )(this.handle);
     this.handle = null;
   }
 }

@@ -31,7 +31,10 @@ function createFakeContext() {
     micNode: processor,
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => {
-      const created = { ...node(), stream: { id: `stream-${destinations.length}` } as unknown as MediaStream };
+      const created = {
+        ...node(),
+        stream: { id: `stream-${destinations.length}` } as unknown as MediaStream,
+      };
       destinations.push(created);
       return created;
     }),
@@ -45,7 +48,12 @@ function createFakeContext() {
   return { context: context as unknown as AudioContext, processor, destinations, sources };
 }
 
-function createBridge(respond: (request: { requestId: string }, emit: (event: LocalVoiceEvent) => void) => Promise<unknown>) {
+function createBridge(
+  respond: (
+    request: { requestId: string },
+    emit: (event: LocalVoiceEvent) => void,
+  ) => Promise<unknown>,
+) {
   let listener: ((event: LocalVoiceEvent) => void) | null = null;
   const emit = (event: LocalVoiceEvent) => listener?.(event);
   const bridge: LocalVoiceBridge = {
@@ -53,8 +61,12 @@ function createBridge(respond: (request: { requestId: string }, emit: (event: Lo
       llm: { available: true, baseUrl: 'http://llm' },
       speech: { available: true, ready: true, error: null },
     })) as unknown as LocalVoiceBridge['getStatus'],
-    transcribe: vi.fn(async () => ({ text: 'Hey Jarvis, what time is it?' })) as unknown as LocalVoiceBridge['transcribe'],
-    respond: vi.fn((request: { requestId: string }) => respond(request, emit)) as unknown as LocalVoiceBridge['respond'],
+    transcribe: vi.fn(async () => ({
+      text: 'Hey Jarvis, what time is it?',
+    })) as unknown as LocalVoiceBridge['transcribe'],
+    respond: vi.fn((request: { requestId: string }) =>
+      respond(request, emit),
+    ) as unknown as LocalVoiceBridge['respond'],
     cancel: vi.fn(async () => undefined),
     resetHistory: vi.fn(async () => undefined),
     onEvent: vi.fn((next: (event: LocalVoiceEvent) => void) => {
@@ -67,8 +79,19 @@ function createBridge(respond: (request: { requestId: string }, emit: (event: Lo
   return { bridge, emit };
 }
 
-const sentence = (requestId: string, avatarId: string | undefined, text = 'Hello.'): LocalVoiceEvent =>
-  ({ type: 'sentence', requestId, index: 0, text, wav: new Uint8Array([1]), ...(avatarId ? { avatarId } : {}) }) as LocalVoiceEvent;
+const sentence = (
+  requestId: string,
+  avatarId: string | undefined,
+  text = 'Hello.',
+): LocalVoiceEvent =>
+  ({
+    type: 'sentence',
+    requestId,
+    index: 0,
+    text,
+    wav: new Uint8Array([1]),
+    ...(avatarId ? { avatarId } : {}),
+  }) as LocalVoiceEvent;
 
 describe('LocalVoiceClient with several avatars', () => {
   let now = 0;
@@ -82,7 +105,10 @@ describe('LocalVoiceClient with several avatars', () => {
     vi.useRealTimers();
   });
 
-  async function setup(respond: Parameters<typeof createBridge>[0], extra: { interruptFloor?: () => Promise<void> } = {}) {
+  async function setup(
+    respond: Parameters<typeof createBridge>[0],
+    extra: { interruptFloor?: () => Promise<void> } = {},
+  ) {
     const { bridge, emit } = createBridge(respond);
     let systemListener: ((info?: { urgent: boolean; avatarId?: string }) => void) | null = null;
     bridge.onSystemReady = (next) => {
@@ -102,7 +128,8 @@ describe('LocalVoiceClient with several avatars', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => fake.context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => fake.context,
+      createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks,
       ...extra,
@@ -120,7 +147,8 @@ describe('LocalVoiceClient with several avatars', () => {
       }
       await vi.advanceTimersByTimeAsync(2000);
     };
-    const emitSystemReady = (info: { urgent: boolean; avatarId?: string }) => systemListener?.(info);
+    const emitSystemReady = (info: { urgent: boolean; avatarId?: string }) =>
+      systemListener?.(info);
     return { client, bridge, emit, fake, callbacks, activity, ask, emitSystemReady };
   }
 
@@ -181,10 +209,15 @@ describe('LocalVoiceClient with several avatars', () => {
   });
 
   it('plays out-loud chatter of an unknown request on the speaker output, without touching busy state', async () => {
-    const { client, emit, fake, callbacks, activity } = await setup(async () => ({ text: '', cancelled: false }));
+    const { client, emit, fake, callbacks, activity } = await setup(async () => ({
+      text: '',
+      cancelled: false,
+    }));
     client.notifyWake(now);
     expect(client.getActivity().phase).toBe('listening');
-    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 0.5 });
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      duration: 0.5,
+    });
 
     emit(sentence('chatter-1-sage', 'sage', 'Psst.'));
     await vi.advanceTimersByTimeAsync(100);
@@ -225,7 +258,11 @@ describe('LocalVoiceClient with several avatars', () => {
 
   it('holds chatter while the own request is still transcribing, before any turn audio exists', async () => {
     let transcribed: (() => void) | null = null;
-    const { bridge, emit, ask, callbacks, fake } = await setup(async () => ({ text: 'Hi.', cancelled: false, avatarId: 'echo' }));
+    const { bridge, emit, ask, callbacks, fake } = await setup(async () => ({
+      text: 'Hi.',
+      cancelled: false,
+      avatarId: 'echo',
+    }));
     bridge.transcribe = vi.fn(
       () =>
         new Promise((resolve) => {
@@ -292,7 +329,9 @@ describe('LocalVoiceClient with several avatars', () => {
     const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }));
     client.notifyWake(now);
     // Long enough that it is still playing.
-    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      duration: 5,
+    });
     emit(sentence('chatter-3-sage', 'sage', 'One.'));
     await vi.advanceTimersByTimeAsync(50);
     expect(fake.sources).toHaveLength(1);
@@ -323,7 +362,9 @@ describe('LocalVoiceClient with several avatars', () => {
   });
   it('plays a second chatter turn only after the first has finished', async () => {
     const { emit, fake, callbacks } = await setup(async () => ({ text: '', cancelled: false }));
-    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 1 });
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      duration: 1,
+    });
     emit(sentence('chatter-a', 'sage', 'First.'));
     emit(sentence('chatter-b', 'rex', 'Second.'));
     await vi.advanceTimersByTimeAsync(100);
@@ -348,7 +389,9 @@ describe('LocalVoiceClient with several avatars', () => {
       });
       return { text: 'Own.', cancelled: false, avatarId: 'echo' };
     });
-    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 2 });
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      duration: 2,
+    });
     await ask();
     const own = fake.sources.length;
     expect(own).toBe(1);
@@ -374,9 +417,14 @@ describe('LocalVoiceClient with several avatars', () => {
     };
 
     it('does not hear the avatars as Kevin: loud mic input while chatter plays is dropped', async () => {
-      const { client, bridge, emit, fake } = await setup(async () => ({ text: '', cancelled: false }));
+      const { client, bridge, emit, fake } = await setup(async () => ({
+        text: '',
+        cancelled: false,
+      }));
       client.notifyWake(now); // awake, so speech would be answered
-      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        duration: 5,
+      });
       emit(sentence('chatter-m1', 'sage', 'Loud talk.'));
       await vi.advanceTimersByTimeAsync(50);
       expect(fake.sources).toHaveLength(1);
@@ -388,9 +436,14 @@ describe('LocalVoiceClient with several avatars', () => {
     });
 
     it('keeps ignoring the mic for the playback tail, then listens again with a clean buffer', async () => {
-      const { client, bridge, emit, fake } = await setup(async () => ({ text: '', cancelled: false }));
+      const { client, bridge, emit, fake } = await setup(async () => ({
+        text: '',
+        cancelled: false,
+      }));
       client.notifyWake(now);
-      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 0.5 });
+      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        duration: 0.5,
+      });
       emit(sentence('chatter-m2', 'sage', 'Short.'));
       await vi.advanceTimersByTimeAsync(50);
       speak(fake, true, 2); // ignored: chatter is playing
@@ -407,8 +460,12 @@ describe('LocalVoiceClient with several avatars', () => {
 
     it('lets the wake word, push-to-talk and a tap interrupt chatter', async () => {
       const interruptFloor = vi.fn(async () => undefined);
-      const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }), { interruptFloor });
-      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+      const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }), {
+        interruptFloor,
+      });
+      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        duration: 5,
+      });
       emit(sentence('chatter-m3', 'sage', 'Chat.'));
       await vi.advanceTimersByTimeAsync(50);
       client.notifyWake(now);
@@ -425,8 +482,13 @@ describe('LocalVoiceClient with several avatars', () => {
   });
 
   it('drops waiting chatter turns with stopChatter()', async () => {
-    const { client, emit, fake, callbacks } = await setup(async () => ({ text: '', cancelled: false }));
-    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+    const { client, emit, fake, callbacks } = await setup(async () => ({
+      text: '',
+      cancelled: false,
+    }));
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      duration: 5,
+    });
     emit(sentence('chatter-d', 'sage', 'Playing.'));
     emit(sentence('chatter-e', 'rex', 'Waiting.'));
     await vi.advanceTimersByTimeAsync(100);
@@ -456,10 +518,14 @@ describe('LocalVoiceClient with several avatars', () => {
 
   it('tells main about a barge-in only when chatter was active', async () => {
     const interruptFloor = vi.fn(async () => undefined);
-    const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }), { interruptFloor });
+    const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }), {
+      interruptFloor,
+    });
     client.talk();
     expect(interruptFloor).not.toHaveBeenCalled();
-    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      duration: 5,
+    });
     emit(sentence('chatter-f', 'sage', 'Hmm.'));
     await vi.advanceTimersByTimeAsync(100);
     client.talk();

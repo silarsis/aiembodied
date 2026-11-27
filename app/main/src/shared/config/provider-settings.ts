@@ -141,7 +141,12 @@ function flag(value: unknown): boolean | undefined {
 }
 
 function unitNumber(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : NaN;
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
 }
 
@@ -205,7 +210,10 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
 }
 
 /** Merge `patch` over `base`, section by section. */
-export function mergeProviderPatch<T extends ProviderSettingsPatch>(base: T, patch: ProviderSettingsPatch): T {
+export function mergeProviderPatch<T extends ProviderSettingsPatch>(
+  base: T,
+  patch: ProviderSettingsPatch,
+): T {
   const merged: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) {
@@ -213,7 +221,9 @@ export function mergeProviderPatch<T extends ProviderSettingsPatch>(base: T, pat
     }
     const current = merged[key];
     merged[key] =
-      typeof value === 'object' && typeof current === 'object' && current !== null ? { ...current, ...value } : value;
+      typeof value === 'object' && typeof current === 'object' && current !== null
+        ? { ...current, ...value }
+        : value;
   }
   return merged as T;
 }
@@ -248,19 +258,31 @@ export function providerPatchFromEnv(env: Env): ProviderSettingsPatch {
   });
 }
 
-export function resolveProviderSettings(env: Env, saved: ProviderSettingsPatch = {}): ProviderSettings {
-  return mergeProviderPatch(mergeProviderPatch(DEFAULT_PROVIDER_SETTINGS, providerPatchFromEnv(env)), saved);
+export function resolveProviderSettings(
+  env: Env,
+  saved: ProviderSettingsPatch = {},
+): ProviderSettings {
+  return mergeProviderPatch(
+    mergeProviderPatch(DEFAULT_PROVIDER_SETTINGS, providerPatchFromEnv(env)),
+    saved,
+  );
 }
 
 /** One short label per part ("openai:gpt-4.1-mini"), for logging. */
 export function describeProviders(settings: ProviderSettings): Record<string, string> {
   return {
-    llm: settings.llm.provider === 'openai' ? `openai:${settings.llm.openaiModel}` : `local:${settings.llm.localModel}`,
+    llm:
+      settings.llm.provider === 'openai'
+        ? `openai:${settings.llm.openaiModel}`
+        : `local:${settings.llm.localModel}`,
     stt: settings.stt.provider === 'openai' ? `openai:${settings.stt.openaiModel}` : 'local',
     tts:
       settings.tts.provider === 'openai'
         ? `openai:${settings.tts.openaiModel}/${settings.tts.openaiVoice}`
         : `kokoro:${settings.tts.kokoroVoice || 'default'}`,
-    motion: settings.motion.provider === 'openai' ? `openai:${settings.motion.openaiModel}` : `local:${settings.motion.localBackend}`,
+    motion:
+      settings.motion.provider === 'openai'
+        ? `openai:${settings.motion.openaiModel}`
+        : `local:${settings.motion.localBackend}`,
   };
 }

@@ -10,19 +10,32 @@ import type { SwitchboardEvent, SwitchboardEventInput } from '../src/switchboard
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const warn = { warn: vi.fn() };
 const ev = (type: string, extra: Partial<SwitchboardEventInput> = {}): SwitchboardEventInput => ({
-  type, producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'], payload: { text: 'hello' }, ...extra,
+  type,
+  producer: { kind: 'service', id: 'app' },
+  to: ['avatar:echo'],
+  payload: { text: 'hello' },
+  ...extra,
 });
 
 describe('inbox policy', () => {
   it('maps types to rules', () => {
     expect(lookupRule(DEFAULT_INBOX_POLICY, 'home.alert')?.action).toBe('speak-urgent');
-    const inboxAction = lookupRule(DEFAULT_INBOX_POLICY, 'avatar.inbox')?.action as (e: SwitchboardEvent) => string;
+    const inboxAction = lookupRule(DEFAULT_INBOX_POLICY, 'avatar.inbox')?.action as (
+      e: SwitchboardEvent,
+    ) => string;
     expect(inboxAction({ priority: 'normal' } as SwitchboardEvent)).toBe('deliberate');
     expect(inboxAction({ priority: 'high' } as SwitchboardEvent)).toBe('speak-urgent');
     expect(inboxAction({ priority: 'urgent' } as SwitchboardEvent)).toBe('speak-urgent');
-    expect(lookupRule(DEFAULT_INBOX_POLICY, 'home.change')).toEqual({ action: 'deliberate', source: 'Home Assistant', fallback: 'remember' });
+    expect(lookupRule(DEFAULT_INBOX_POLICY, 'home.change')).toEqual({
+      action: 'deliberate',
+      source: 'Home Assistant',
+      fallback: 'remember',
+    });
     expect(lookupRule(DEFAULT_INBOX_POLICY, 'speech.heard')?.action).toBe('ignore');
-    expect(lookupRule({ 'home.*': { action: 'speak-idle' }, '*': { action: 'ignore' } }, 'home.door')?.action).toBe('speak-idle');
+    expect(
+      lookupRule({ 'home.*': { action: 'speak-idle' }, '*': { action: 'ignore' } }, 'home.door')
+        ?.action,
+    ).toBe('speak-idle');
   });
 
   it('speaks by action and drops expired or textless events', async () => {
@@ -30,7 +43,9 @@ describe('inbox policy', () => {
     const notify = vi.fn();
     new AvatarInbox({ avatarId: 'echo', bus, notify, logger: warn }).start();
     bus.publish(ev('avatar.inbox', { priority: 'high' }));
-    bus.publish(ev('avatar.inbox', { priority: 'normal', payload: { text: 'later', source: 'coding' } })); // deliberate, no model: falls back to speak-idle
+    bus.publish(
+      ev('avatar.inbox', { priority: 'normal', payload: { text: 'later', source: 'coding' } }),
+    ); // deliberate, no model: falls back to speak-idle
     bus.publish(ev('home.alert', { payload: { text: 'Smoke in kitchen' } }));
     bus.publish(ev('home.change'));
     bus.publish(ev('speech.heard'));
@@ -53,7 +68,14 @@ describe('inbox while asleep', () => {
     const notify = vi.fn();
     const remember = vi.fn();
     let asleep = true;
-    new AvatarInbox({ avatarId: 'echo', bus, notify, remember, asleep: () => asleep, logger: warn }).start();
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify,
+      remember,
+      asleep: () => asleep,
+      logger: warn,
+    }).start();
     bus.publish(ev('avatar.inbox', { priority: 'normal', payload: { text: 'later' } }));
     bus.publish(ev('home.change', { payload: { text: 'door opened' } }));
     bus.publish(ev('home.alert', { payload: { text: 'Smoke' } }));
@@ -71,22 +93,40 @@ describe('inbox while asleep', () => {
 });
 
 describe('inbox decision step', () => {
-  function setup(opts: { decision?: Decision | null | Error; dnd?: boolean; noDeliberate?: boolean } = {}) {
+  function setup(
+    opts: { decision?: Decision | null | Error; dnd?: boolean; noDeliberate?: boolean } = {},
+  ) {
     const bus = new LocalOnlyBus(makeEventId);
     const notify = vi.fn();
     const remember = vi.fn();
     const deliberate = vi.fn(async () => {
       if (opts.decision instanceof Error) throw opts.decision;
-      return opts.decision === undefined ? { action: 'say', reason: 'r', urgent: false } satisfies Decision : opts.decision;
+      return opts.decision === undefined
+        ? ({ action: 'say', reason: 'r', urgent: false } satisfies Decision)
+        : opts.decision;
     });
     const journal: SwitchboardEvent[] = [];
-    bus.subscribe({ actor: 'service:test', to: [], types: ['avatar.decision'], observe: true, onEvent: (e) => journal.push(e) } as never);
+    bus.subscribe({
+      actor: 'service:test',
+      to: [],
+      types: ['avatar.decision'],
+      observe: true,
+      onEvent: (e) => journal.push(e),
+    } as never);
     const originalPublish = bus.publish.bind(bus);
     bus.publish = (input) => {
       if (input.type === 'avatar.decision') journal.push(input as SwitchboardEvent);
       return originalPublish(input);
     };
-    new AvatarInbox({ avatarId: 'echo', bus, notify, remember, deliberate: opts.noDeliberate ? undefined : deliberate, doNotDisturb: () => opts.dnd === true, logger: warn }).start();
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify,
+      remember,
+      deliberate: opts.noDeliberate ? undefined : deliberate,
+      doNotDisturb: () => opts.dnd === true,
+      logger: warn,
+    }).start();
     return { bus, notify, remember, deliberate, journal };
   }
 
@@ -98,8 +138,19 @@ describe('inbox decision step', () => {
     expect(t.notify).toHaveBeenCalledWith('Build finished', { urgent: true, source: 'ci' });
     expect(t.remember).not.toHaveBeenCalled();
     expect(t.journal).toHaveLength(1);
-    expect(t.journal[0]).toMatchObject({ type: 'avatar.decision', to: [], audience: 'private', producer: { kind: 'avatar', id: 'echo' } });
-    expect(t.journal[0].payload).toMatchObject({ type: 'avatar.inbox', action: 'say', reason: 'r', fallback: false, doNotDisturb: false });
+    expect(t.journal[0]).toMatchObject({
+      type: 'avatar.decision',
+      to: [],
+      audience: 'private',
+      producer: { kind: 'avatar', id: 'echo' },
+    });
+    expect(t.journal[0].payload).toMatchObject({
+      type: 'avatar.inbox',
+      action: 'say',
+      reason: 'r',
+      fallback: false,
+      doNotDisturb: false,
+    });
     expect(t.journal[0].txn?.state).toBe('done');
   });
 
@@ -163,7 +214,10 @@ describe('inbox decision step', () => {
 });
 
 describe('static remember rule', () => {
-  const policy = { 'home.change': { action: 'remember' as const }, '*': { action: 'ignore' as const } };
+  const policy = {
+    'home.change': { action: 'remember' as const },
+    '*': { action: 'ignore' as const },
+  };
   function setup() {
     const bus = new LocalOnlyBus(makeEventId);
     const remember = vi.fn();
@@ -174,10 +228,33 @@ describe('static remember rule', () => {
       return originalPublish(input);
     };
     let clock = 1_000_000;
-    const inbox = new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, now: () => clock, policy, logger: warn });
-    return { inbox, remember, journal, advance: (ms: number) => { clock += ms; } };
+    const inbox = new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify: vi.fn(),
+      remember,
+      now: () => clock,
+      policy,
+      logger: warn,
+    });
+    return {
+      inbox,
+      remember,
+      journal,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+    };
   }
-  const change = (text = 'Door opened'): SwitchboardEvent => ({ ...ev('home.change', { payload: { text } }), id: 'E1', v: 1, at: '', to: ['avatar:echo'], payload: { text } }) as SwitchboardEvent;
+  const change = (text = 'Door opened'): SwitchboardEvent =>
+    ({
+      ...ev('home.change', { payload: { text } }),
+      id: 'E1',
+      v: 1,
+      at: '',
+      to: ['avatar:echo'],
+      payload: { text },
+    }) as SwitchboardEvent;
 
   it('saves the text and journals a rule decision', () => {
     const t = setup();
@@ -185,7 +262,14 @@ describe('static remember rule', () => {
     expect(t.remember).toHaveBeenCalledTimes(1);
     expect(t.remember.mock.calls[0][1]).toBe('Door opened');
     expect(t.journal).toHaveLength(1);
-    expect(t.journal[0].payload).toMatchObject({ action: 'remember', reason: 'rule', ms: 0, fallback: false, doNotDisturb: false, type: 'home.change' });
+    expect(t.journal[0].payload).toMatchObject({
+      action: 'remember',
+      reason: 'rule',
+      ms: 0,
+      fallback: false,
+      doNotDisturb: false,
+      type: 'home.change',
+    });
   });
 
   it('skips identical text within 60 seconds, but not different text or later repeats', () => {
@@ -205,7 +289,14 @@ describe('static remember rule', () => {
     const bus = new LocalOnlyBus(makeEventId);
     const remember = vi.fn();
     const publish = vi.spyOn(bus, 'publish');
-    new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, policy, logger: warn }).handle({ ...change(), type: 'speech.heard' });
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify: vi.fn(),
+      remember,
+      policy,
+      logger: warn,
+    }).handle({ ...change(), type: 'speech.heard' });
     expect(remember).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
   });
@@ -214,7 +305,18 @@ describe('static remember rule', () => {
 describe('decision log', () => {
   it('keeps the newest ten, newest first', () => {
     const log = new DecisionLog(10);
-    for (let i = 0; i < 12; i += 1) log.record({ at: `t${i}`, avatarId: 'echo', event: `e${i}`, type: 'x', action: 'say', reason: '', ms: 0, fallback: false, doNotDisturb: false });
+    for (let i = 0; i < 12; i += 1)
+      log.record({
+        at: `t${i}`,
+        avatarId: 'echo',
+        event: `e${i}`,
+        type: 'x',
+        action: 'say',
+        reason: '',
+        ms: 0,
+        fallback: false,
+        doNotDisturb: false,
+      });
     expect(log.recent()).toHaveLength(10);
     expect(log.recent()[0].event).toBe('e11');
     expect(log.recent()[9].event).toBe('e2');
@@ -223,7 +325,17 @@ describe('decision log', () => {
   it('is fed by the inbox with the bus down, for rule and decision-step outcomes', async () => {
     const bus = new LocalOnlyBus(makeEventId);
     const log = new DecisionLog();
-    const inbox = new AvatarInbox({ avatarId: 'sage', bus, notify: vi.fn(), remember: vi.fn(), onDecision: (d) => log.record(d), deliberate: async () => ({ action: 'ignore', reason: 'noise', urgent: false }), now: () => Date.parse('2026-01-01T00:00:00Z'), policy: { 'home.change': { action: 'remember' }, 'avatar.inbox': { action: 'deliberate' } }, logger: warn });
+    const inbox = new AvatarInbox({
+      avatarId: 'sage',
+      bus,
+      notify: vi.fn(),
+      remember: vi.fn(),
+      onDecision: (d) => log.record(d),
+      deliberate: async () => ({ action: 'ignore', reason: 'noise', urgent: false }),
+      now: () => Date.parse('2026-01-01T00:00:00Z'),
+      policy: { 'home.change': { action: 'remember' }, 'avatar.inbox': { action: 'deliberate' } },
+      logger: warn,
+    });
     inbox.start();
     bus.publish(ev('home.change', { to: ['avatar:sage'] }));
     bus.publish(ev('avatar.inbox', { to: ['avatar:sage'], payload: { text: 'other' } }));
@@ -246,7 +358,10 @@ describe('notify lambdas go through the inbox', () => {
     new SwitchboardMirror({ client: bus, node: 'n' }).noteQueued('Task 1 needs an answer', true);
     expect(notify).not.toHaveBeenCalled();
     await flush();
-    expect(notify).toHaveBeenCalledWith('Task 1 needs an answer', { urgent: true, source: undefined });
+    expect(notify).toHaveBeenCalledWith('Task 1 needs an answer', {
+      urgent: true,
+      source: undefined,
+    });
   });
 });
 
@@ -256,10 +371,18 @@ class FakeWs implements WebSocketLike {
   onclose: WebSocketLike['onclose'] = null;
   onerror: WebSocketLike['onerror'] = null;
   sent: Array<Record<string, unknown>> = [];
-  send(data: string) { this.sent.push(JSON.parse(data)); }
-  close() { this.onclose?.({}); }
-  open() { this.onopen?.({}); }
-  serve(msg: unknown) { this.onmessage?.({ data: JSON.stringify(msg) }); }
+  send(data: string) {
+    this.sent.push(JSON.parse(data));
+  }
+  close() {
+    this.onclose?.({});
+  }
+  open() {
+    this.onopen?.({});
+  }
+  serve(msg: unknown) {
+    this.onmessage?.({ data: JSON.stringify(msg) });
+  }
 }
 
 describe('client subscription', () => {
@@ -269,7 +392,15 @@ describe('client subscription', () => {
   it('delivers locally while disconnected, dedupes the replay, resumes with since', async () => {
     const sockets: FakeWs[] = [];
     const fetchFn = vi.fn(async () => new Response('{"ids":[]}'));
-    const client = new SwitchboardClient({ baseUrl: 'http://sb', fetchFn: fetchFn as unknown as typeof fetch, webSocketFactory: () => { const w = new FakeWs(); sockets.push(w); return w; } });
+    const client = new SwitchboardClient({
+      baseUrl: 'http://sb',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      webSocketFactory: () => {
+        const w = new FakeWs();
+        sockets.push(w);
+        return w;
+      },
+    });
     const got: SwitchboardEvent[] = [];
     client.subscribe({ to: ['avatar:echo'], onEvent: (e) => got.push(e) });
     expect(client.connected()).toBe(false);
@@ -279,7 +410,11 @@ describe('client subscription', () => {
     expect(got.map((e) => e.id)).toEqual([local.id]);
 
     sockets[0].open();
-    expect(sockets[0].sent[0]).toMatchObject({ op: 'hello', since: null, subscribe: { to: ['avatar:echo'], observe: false } });
+    expect(sockets[0].sent[0]).toMatchObject({
+      op: 'hello',
+      since: null,
+      subscribe: { to: ['avatar:echo'], observe: false },
+    });
     sockets[0].serve({ op: 'welcome' });
     expect(client.connected()).toBe(true);
     sockets[0].serve({ op: 'event', event: local }); // replay of what was delivered locally
@@ -305,10 +440,31 @@ describe('approvals and task parentage', () => {
   it('uses requestedBy and approvers; hangs a task under the start tool call', () => {
     const events: SwitchboardEventInput[] = [];
     const mirror = new SwitchboardMirror({ client: { publish: (e) => events.push(e) }, node: 'n' });
-    mirror.approvalRequested({ id: 'a', toolId: 't', toolName: 'x', params: {}, summary: 's', createdAt: 0, expiresAt: 1, source: 'voice', cardOnly: false, requestedBy: 'tool:coding', approvers: ['person:ann'] });
+    mirror.approvalRequested({
+      id: 'a',
+      toolId: 't',
+      toolName: 'x',
+      params: {},
+      summary: 's',
+      createdAt: 0,
+      expiresAt: 1,
+      source: 'voice',
+      cardOnly: false,
+      requestedBy: 'tool:coding',
+      approvers: ['person:ann'],
+    });
     expect(events[0].producer).toMatchObject({ kind: 'tool', id: 'coding' });
     expect(events[0].to).toEqual(['person:ann']);
-    mirror.toolResult({ name: 'start_coding_task', arguments: {}, result: 'Started task T-1 in ws. It runs', ok: true, at: 1 }, 'r1');
+    mirror.toolResult(
+      {
+        name: 'start_coding_task',
+        arguments: {},
+        result: 'Started task T-1 in ws. It runs',
+        ok: true,
+        at: 1,
+      },
+      'r1',
+    );
     mirror.runnerEvent({ task_id: 'T-1', status: 'running' } as never);
     expect(events[2].txn).toMatchObject({ id: 'task:T-1', parent: 'tool:r1:1' });
   });
@@ -319,9 +475,21 @@ describe('inbox onRemembered and engine', () => {
     const bus = new LocalOnlyBus(makeEventId);
     const seen: string[] = [];
     const decisions = new DecisionLog();
-    const deliberate = vi.fn(async (): Promise<Decision> => ({ action: 'remember', reason: 'quick decision (remember 0.90)', urgent: false, engine: 'system-one' }));
+    const deliberate = vi.fn(async (): Promise<Decision> => ({
+      action: 'remember',
+      reason: 'quick decision (remember 0.90)',
+      urgent: false,
+      engine: 'system-one',
+    }));
     new AvatarInbox({
-      avatarId: 'echo', bus, notify: vi.fn(), remember: vi.fn(), deliberate, onRemembered: (t) => seen.push(t), onDecision: (d) => decisions.record(d), logger: warn,
+      avatarId: 'echo',
+      bus,
+      notify: vi.fn(),
+      remember: vi.fn(),
+      deliberate,
+      onRemembered: (t) => seen.push(t),
+      onDecision: (d) => decisions.record(d),
+      logger: warn,
     }).start();
     bus.publish(ev('avatar.inbox', { payload: { text: 'later one' } }));
     bus.publish(ev('home.change', { payload: { text: 'door opened' } }));
@@ -343,8 +511,25 @@ describe('home.change deliberation', () => {
       if (decision === 'throw') throw new Error('down');
       return decision;
     });
-    new AvatarInbox({ avatarId: 'echo', bus, notify, remember, deliberate, onDecision: (d) => decisions.record(d), now: () => clock, logger: warn }).start();
-    return { bus, notify, remember, decisions, advance: (ms: number) => { clock += ms; } };
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify,
+      remember,
+      deliberate,
+      onDecision: (d) => decisions.record(d),
+      now: () => clock,
+      logger: warn,
+    }).start();
+    return {
+      bus,
+      notify,
+      remember,
+      decisions,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+    };
   }
 
   it('remembers with the Home Assistant source and never speaks when the decision step fails', async () => {
@@ -357,7 +542,11 @@ describe('home.change deliberation', () => {
       expect(t.remember).toHaveBeenCalledTimes(1);
       expect(t.remember.mock.calls[0][1]).toBe('Bedroom curtain opened');
       expect(t.remember.mock.calls[0][2]).toBe('Home Assistant');
-      expect(t.decisions.recent()[0]).toMatchObject({ action: 'remember', reason: 'deliberation failed; remembering', fallback: true });
+      expect(t.decisions.recent()[0]).toMatchObject({
+        action: 'remember',
+        reason: 'deliberation failed; remembering',
+        fallback: true,
+      });
     }
   });
 
@@ -366,7 +555,10 @@ describe('home.change deliberation', () => {
     t.bus.publish(ev('home.change', { payload: { text: 'Front door opened' } }));
     await flush();
     await flush();
-    expect(t.notify).toHaveBeenCalledWith('Front door opened', { urgent: true, source: 'Home Assistant' });
+    expect(t.notify).toHaveBeenCalledWith('Front door opened', {
+      urgent: true,
+      source: 'Home Assistant',
+    });
     expect(t.remember).not.toHaveBeenCalled();
   });
 

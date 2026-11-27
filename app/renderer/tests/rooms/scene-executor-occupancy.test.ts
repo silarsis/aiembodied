@@ -1,10 +1,20 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
-import type { AvatarMotionChunkEvent, AvatarMotionStreamRequest, AvatarMotionStreamResult } from '../../src/avatar/types.js';
+import type {
+  AvatarMotionChunkEvent,
+  AvatarMotionStreamRequest,
+  AvatarMotionStreamResult,
+} from '../../src/avatar/types.js';
 import { RoomOccupancy } from '../../src/rooms/room-occupancy.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import type { PlanWorld, StreamEvent } from '../../src/rooms/scene-actions.js';
-import { SceneActionExecutor, type ChunkHooks, type SceneActivity, type SceneBridge, type SceneEnv } from '../../src/rooms/scene-executor.js';
+import {
+  SceneActionExecutor,
+  type ChunkHooks,
+  type SceneActivity,
+  type SceneBridge,
+  type SceneEnv,
+} from '../../src/rooms/scene-executor.js';
 import type { RootPose } from '../../src/rooms/scene-frames.js';
 import { builtInRoom } from './fixtures.js';
 
@@ -32,7 +42,9 @@ class Env implements SceneEnv {
       objectPosition: () => null,
       frame: { origin: { ...this.pose }, scale: 1 },
       restHipsHeight: 0.95,
-      ...(this.occupancy ? { others: this.occupancy.others(this.id), occupancy: this.occupancy.forAvatar(this.id) } : {}),
+      ...(this.occupancy
+        ? { others: this.occupancy.others(this.id), occupancy: this.occupancy.forAvatar(this.id) }
+        : {}),
     };
   }
   setRootPose(pose: RootPose): void {
@@ -49,10 +61,15 @@ class Env implements SceneEnv {
 class Bridge implements SceneBridge {
   requests: AvatarMotionStreamRequest[] = [];
   played: Array<{ chunk: AvatarMotionChunkEvent; hooks: ChunkHooks }> = [];
-  private resolvers = new Map<string, { resolve: (r: AvatarMotionStreamResult) => void; reject: (e: unknown) => void }>();
+  private resolvers = new Map<
+    string,
+    { resolve: (r: AvatarMotionStreamResult) => void; reject: (e: unknown) => void }
+  >();
   streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult> {
     this.requests.push(request);
-    return new Promise((resolve, reject) => this.resolvers.set(request.streamId, { resolve, reject }));
+    return new Promise((resolve, reject) =>
+      this.resolvers.set(request.streamId, { resolve, reject }),
+    );
   }
   cancelMotion(streamId: string): void {
     this.resolvers.get(streamId)?.reject(new Error('aborted'));
@@ -64,8 +81,22 @@ class Bridge implements SceneBridge {
   async complete(streamId: string, executor: SceneActionExecutor, session?: string): Promise<void> {
     const request = this.requests.find((entry) => entry.streamId === streamId)!;
     const end = request.path?.points.at(-1) ?? [0, 0];
-    executor.handleChunk({ streamId, index: 0, start: 0, name: 'c', duration: 2, data: '', endPose: { root: end as [number, number], height: 0.95, heading: 0 } });
-    this.resolvers.get(streamId)?.resolve({ streamId, chunks: 1, firstChunkMs: 1, totalMs: 2, ...(session ? { session } : {}) });
+    executor.handleChunk({
+      streamId,
+      index: 0,
+      start: 0,
+      name: 'c',
+      duration: 2,
+      data: '',
+      endPose: { root: end as [number, number], height: 0.95, heading: 0 },
+    });
+    this.resolvers.get(streamId)?.resolve({
+      streamId,
+      chunks: 1,
+      firstChunkMs: 1,
+      totalMs: 2,
+      ...(session ? { session } : {}),
+    });
     await tick();
     const entry = this.played[this.played.length - 1]!;
     entry.hooks.onStart();
@@ -175,7 +206,11 @@ describe('executors sharing a RoomOccupancy', () => {
     b.submit([{ kind: 'sit', objectId: 'sofa' }]);
     await tick();
     expect(bridgeB.requests).toHaveLength(0);
-    expect(activityB).toContainEqual({ type: 'skipped', label: 'sit sofa', reason: 'Echo is sitting on the sofa' });
+    expect(activityB).toContainEqual({
+      type: 'skipped',
+      label: 'sit sofa',
+      reason: 'Echo is sitting on the sofa',
+    });
 
     a.submit([{ kind: 'stand' }]);
     await until(() => bridgeA.requests.length === 2);

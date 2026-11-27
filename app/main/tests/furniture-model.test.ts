@@ -12,7 +12,9 @@ describe('fitBounds', () => {
   });
 
   it('refuses a flat model', () => {
-    expect(() => fitBounds({ min: [0, 0, 0], max: [1, 0, 1], size: [1, 0, 1] }, 1)).toThrow('no height');
+    expect(() => fitBounds({ min: [0, 0, 0], max: [1, 0, 1], size: [1, 0, 1] }, 1)).toThrow(
+      'no height',
+    );
   });
 });
 
@@ -31,7 +33,10 @@ describe('fitGlb', () => {
     const fitted = fitGlb(boxGlb([0, 0, 0], [1, 1, 1]), 2);
     const parsed = parseGlb(fitted.glb);
     expect(parsed?.bin?.length).toBe(24);
-    const json = parsed?.json as { scenes: Array<{ nodes: number[] }>; nodes: Array<{ children?: number[] }> };
+    const json = parsed?.json as {
+      scenes: Array<{ nodes: number[] }>;
+      nodes: Array<{ children?: number[] }>;
+    };
     expect(json.nodes).toHaveLength(2);
     expect(json.scenes[0].nodes).toEqual([1]);
     expect(json.nodes[1].children).toEqual([0]);
@@ -39,6 +44,8 @@ describe('fitGlb', () => {
 
   it('throws on something that is not a model', () => {
     expect(() => fitGlb(Buffer.from('nope'), 1)).toThrow('usable model');
-    expect(() => bakeTransform(Buffer.from('nope'), { scale: 1, offset: [0, 0, 0] })).toThrow('valid model');
+    expect(() => bakeTransform(Buffer.from('nope'), { scale: 1, offset: [0, 0, 0] })).toThrow(
+      'valid model',
+    );
   });
 });

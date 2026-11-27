@@ -23,11 +23,19 @@ export const PROACTIVE_ACT_THRESHOLD = 0.75;
 export const PROACTIVE_WHAT_THRESHOLD = 0.6;
 const MAX_NOTES = 5;
 const NOTE_CHARS = 120;
-const BUSY_PHASES: readonly PresenceVoicePhase[] = ['listening', 'transcribing', 'thinking', 'responding'];
+const BUSY_PHASES: readonly PresenceVoicePhase[] = [
+  'listening',
+  'transcribing',
+  'thinking',
+  'responding',
+];
 
 export type ProactiveReason = 'arrival' | 'noted';
 
-type Logger = Pick<Console, 'warn'> & { debug?: (message: string, data?: Record<string, unknown>) => void; info?: (message: string, data?: Record<string, unknown>) => void };
+type Logger = Pick<Console, 'warn'> & {
+  debug?: (message: string, data?: Record<string, unknown>) => void;
+  info?: (message: string, data?: Record<string, unknown>) => void;
+};
 
 /** Hours "22-7" (start-end, local, end exclusive, may wrap past midnight) as a pair, or null for none. */
 export function parseQuietHours(value: string | undefined): { start: number; end: number } | null {
@@ -41,7 +49,9 @@ export function parseQuietHours(value: string | undefined): { start: number; end
 
 export function inQuietHours(hours: { start: number; end: number } | null, hour: number): boolean {
   if (!hours) return false;
-  return hours.start < hours.end ? hour >= hours.start && hour < hours.end : hour >= hours.start || hour < hours.end;
+  return hours.start < hours.end
+    ? hour >= hours.start && hour < hours.end
+    : hour >= hours.start || hour < hours.end;
 }
 
 export interface ProactiveTickOptions {
@@ -61,7 +71,9 @@ export interface ProactiveTickOptions {
 }
 
 /** Reads the PROACTIVE_* settings from an environment. */
-export function proactiveSettingsFromEnv(env: NodeJS.ProcessEnv): Pick<ProactiveTickOptions, 'tickMs' | 'minGapMs' | 'quietHours' | 'enabled'> {
+export function proactiveSettingsFromEnv(
+  env: NodeJS.ProcessEnv,
+): Pick<ProactiveTickOptions, 'tickMs' | 'minGapMs' | 'quietHours' | 'enabled'> {
   const num = (value: string | undefined, fallback: number): number => {
     const n = Number(value);
     return value && Number.isFinite(n) && n > 0 ? n : fallback;
@@ -116,7 +128,9 @@ export class ProactiveTick {
     try {
       return await this.run();
     } catch (error) {
-      this.options.logger?.warn('Proactive tick failed.', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Proactive tick failed.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }
@@ -125,13 +139,22 @@ export class ProactiveTick {
     const now = this.now();
     const { presence } = this.options;
     const snap = presence.snapshot(now);
-    const faceAt = snap.secondsSinceFaceSeen === null ? null : now - snap.secondsSinceFaceSeen * 1000;
-    const assistantAt = snap.secondsSinceAssistantSpoke === null ? null : now - snap.secondsSinceAssistantSpoke * 1000;
+    const faceAt =
+      snap.secondsSinceFaceSeen === null ? null : now - snap.secondsSinceFaceSeen * 1000;
+    const assistantAt =
+      snap.secondsSinceAssistantSpoke === null
+        ? null
+        : now - snap.secondsSinceAssistantSpoke * 1000;
 
     // Arrival: a face is in view now, and the sighting before it was long ago.
     let awayMs = 0;
-    if (faceAt !== null && snap.secondsSinceFaceSeen !== null && snap.secondsSinceFaceSeen * 1000 <= this.tickMs) {
-      if (this.lastFaceSeenAt !== null && faceAt - this.lastFaceSeenAt >= PROACTIVE_AWAY_MS) awayMs = faceAt - this.lastFaceSeenAt;
+    if (
+      faceAt !== null &&
+      snap.secondsSinceFaceSeen !== null &&
+      snap.secondsSinceFaceSeen * 1000 <= this.tickMs
+    ) {
+      if (this.lastFaceSeenAt !== null && faceAt - this.lastFaceSeenAt >= PROACTIVE_AWAY_MS)
+        awayMs = faceAt - this.lastFaceSeenAt;
     }
     if (faceAt !== null) this.lastFaceSeenAt = faceAt;
 
@@ -140,8 +163,16 @@ export class ProactiveTick {
 
     if (snap.doNotDisturb) return false;
     if (BUSY_PHASES.includes(snap.voicePhase)) return false;
-    if (snap.secondsSinceUserSpoke !== null && snap.secondsSinceUserSpoke * 1000 < PROACTIVE_RECENT_SPEECH_MS) return false;
-    if (snap.secondsSinceAssistantSpoke !== null && snap.secondsSinceAssistantSpoke * 1000 < PROACTIVE_RECENT_SPEECH_MS) return false;
+    if (
+      snap.secondsSinceUserSpoke !== null &&
+      snap.secondsSinceUserSpoke * 1000 < PROACTIVE_RECENT_SPEECH_MS
+    )
+      return false;
+    if (
+      snap.secondsSinceAssistantSpoke !== null &&
+      snap.secondsSinceAssistantSpoke * 1000 < PROACTIVE_RECENT_SPEECH_MS
+    )
+      return false;
     if (inQuietHours(this.quiet, new Date(now).getHours())) return false;
     if (this.lastProactiveAt !== null && now - this.lastProactiveAt < this.minGapMs) return false;
 
@@ -155,8 +186,10 @@ export class ProactiveTick {
     const name = this.options.avatarName?.() ?? 'Echo';
     const awayMinutes = Math.round(awayMs / 60_000);
     const criteria: Record<string, string> = { nothing: 'Say nothing now.' };
-    if (reasons.includes('arrival')) criteria.arrival = 'Greet Kevin, who just came back after being away.';
-    if (reasons.includes('noted')) criteria.noted = 'Mention something that was noted quietly while Kevin was busy.';
+    if (reasons.includes('arrival'))
+      criteria.arrival = 'Greet Kevin, who just came back after being away.';
+    if (reasons.includes('noted'))
+      criteria.noted = 'Mention something that was noted quietly while Kevin was busy.';
     const state = {
       kevin: {
         secondsSinceHeLastSpoke: snap.secondsSinceUserSpoke,
@@ -167,7 +200,9 @@ export class ProactiveTick {
       },
       reasons: {
         ...(reasons.includes('arrival') ? { cameBackAfterMinutes: awayMinutes } : {}),
-        ...(reasons.includes('noted') ? { notedItems: this.notes.slice(-3).map((note) => note.text) } : {}),
+        ...(reasons.includes('noted')
+          ? { notedItems: this.notes.slice(-3).map((note) => note.text) }
+          : {}),
       },
     };
     let act = 0;
@@ -176,18 +211,33 @@ export class ProactiveTick {
     let chosen: string | null = null;
     try {
       const answers = await client.ask(state, {
-        act: { type: 'noul', instructions: `Is this a good moment for ${name} to say something to Kevin unprompted?` },
-        what: { type: 'choice', instructions: `What should ${name} say something about?`, criteria },
+        act: {
+          type: 'noul',
+          instructions: `Is this a good moment for ${name} to say something to Kevin unprompted?`,
+        },
+        what: {
+          type: 'choice',
+          instructions: `What should ${name} say something about?`,
+          criteria,
+        },
       });
       act = answers.act;
       what = answers.what;
     } catch (error) {
-      this.options.logger?.warn('Proactive check: Quick decisions failed; staying quiet.', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Proactive check: Quick decisions failed; staying quiet.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
     let best: { key: string; p: number } | null = null;
     for (const [key, p] of Object.entries(what)) if (!best || p > best.p) best = { key, p };
-    if (act >= PROACTIVE_ACT_THRESHOLD && best && best.key !== 'nothing' && best.p >= PROACTIVE_WHAT_THRESHOLD && reasons.includes(best.key as ProactiveReason)) {
+    if (
+      act >= PROACTIVE_ACT_THRESHOLD &&
+      best &&
+      best.key !== 'nothing' &&
+      best.p >= PROACTIVE_WHAT_THRESHOLD &&
+      reasons.includes(best.key as ProactiveReason)
+    ) {
       chosen = best.key;
       acted = this.act(chosen as ProactiveReason, awayMinutes, now);
     }
@@ -200,13 +250,18 @@ export class ProactiveTick {
     if (reason === 'arrival') {
       text = `[Kevin just came back after about ${awayMinutes} minutes away. Greet him in one short line.]`;
     } else {
-      const quoted = this.notes.slice(-3).map((note) => `"${note.text}"`).join('; ');
+      const quoted = this.notes
+        .slice(-3)
+        .map((note) => `"${note.text}"`)
+        .join('; ');
       text = `[Things noted quietly since you last spoke: ${quoted}. If one is worth mentioning now, say it in one short line.]`;
     }
     try {
       this.options.notify(text, { urgent: false, source: 'proactive check' });
     } catch (error) {
-      this.options.logger?.warn('Proactive note could not be sent.', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Proactive note could not be sent.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
     this.lastProactiveAt = now;

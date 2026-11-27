@@ -41,8 +41,17 @@ export interface CapturedToolCall {
 
 /** What the importer needs from the app's SQLite conversation archive. */
 export interface ConversationArchive {
-  listSessions(options?: { limit?: number }): Array<{ id: string; startedAt: number; title: string | null }>;
-  listMessages(sessionId: string): Array<{ id: string; sessionId: string; role: string; ts: number; content: string; speaker?: string | null }>;
+  listSessions(options?: {
+    limit?: number;
+  }): Array<{ id: string; startedAt: number; title: string | null }>;
+  listMessages(sessionId: string): Array<{
+    id: string;
+    sessionId: string;
+    role: string;
+    ts: number;
+    content: string;
+    speaker?: string | null;
+  }>;
   getValue(key: string): string | null;
   setValue(key: string, value: string): void;
 }
@@ -144,7 +153,10 @@ export class MemoryCapture {
       }
     }
     archive.setValue(IMPORTED_KEY, new Date().toISOString());
-    this.logger?.info('Queued conversation history for the memory engine', { sessions: sessions.length, messages: count });
+    this.logger?.info('Queued conversation history for the memory engine', {
+      sessions: sessions.length,
+      messages: count,
+    });
     return count;
   }
 

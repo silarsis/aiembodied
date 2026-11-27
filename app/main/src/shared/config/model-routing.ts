@@ -32,7 +32,22 @@ export type ServerType =
   | 'coder'
   | 'systemone';
 export const SERVER_TYPES: readonly ServerType[] = [
-  'chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder', 'systemone', 'openai', 'anthropic', 'github', 'brave', 'civitai', 'huggingface',
+  'chat',
+  'transcribe',
+  'speech',
+  'motion',
+  'comfy',
+  'search',
+  'memory',
+  'homeassistant',
+  'coder',
+  'systemone',
+  'openai',
+  'anthropic',
+  'github',
+  'brave',
+  'civitai',
+  'huggingface',
 ];
 /**
  * Types a user can add more servers of. OpenAI, Brave, Civitai and Hugging Face are one account each; Civitai and
@@ -42,7 +57,18 @@ export const SERVER_TYPES: readonly ServerType[] = [
  * runner runs no job as such: the Coding page picks which one takes the tasks, so one on another
  * machine can be added. A quick-decision server (Laya) runs the Quick decisions use, so one on another machine can be added.
  */
-export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder', 'systemone'];
+export const ADDABLE_SERVER_TYPES: readonly ServerType[] = [
+  'chat',
+  'transcribe',
+  'speech',
+  'motion',
+  'comfy',
+  'search',
+  'memory',
+  'homeassistant',
+  'coder',
+  'systemone',
+];
 
 export type UseId =
   | 'llm'
@@ -111,7 +137,17 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   coding: ['chat', 'openai', 'anthropic'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
-export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle', 'decide', 'scenelayout'];
+export const USES_WITH_BACKUPS: readonly UseId[] = [
+  'llm',
+  'stt',
+  'tts',
+  'search',
+  'image',
+  'mesh',
+  'idle',
+  'decide',
+  'scenelayout',
+];
 /** Uses that can send each job to whichever of their servers is least busy. */
 export const USES_WITH_SPREAD: readonly UseId[] = ['image', 'mesh'];
 
@@ -214,7 +250,14 @@ export const DEFAULT_HELPER_MODELS: Record<'describe' | 'posegen' | 'posecheck',
   posecheck: 'gpt-4o',
 };
 
-export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRunnerUrl, coderLlmUrl, layaUrl }: BuiltInServerSources): ModelServer[] {
+export function builtInServers({
+  providers,
+  comfyUiBaseUrl,
+  searxngUrl,
+  coderRunnerUrl,
+  coderLlmUrl,
+  layaUrl,
+}: BuiltInServerSources): ModelServer[] {
   const local = (id: string, name: string, type: ServerType, url: string): ModelServer => ({
     id,
     name,
@@ -225,21 +268,98 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRun
   });
   return [
     local(BUILT_IN_SERVER_IDS.llm, 'Language model on this PC', 'chat', providers.llm.localBaseUrl),
-    local(BUILT_IN_SERVER_IDS.speech, 'Speech service on this PC', 'speech', providers.speechServiceUrl),
-    local(BUILT_IN_SERVER_IDS.motion, 'Motion service on this PC', 'motion', providers.motion.localServiceUrl),
+    local(
+      BUILT_IN_SERVER_IDS.speech,
+      'Speech service on this PC',
+      'speech',
+      providers.speechServiceUrl,
+    ),
+    local(
+      BUILT_IN_SERVER_IDS.motion,
+      'Motion service on this PC',
+      'motion',
+      providers.motion.localServiceUrl,
+    ),
     local(BUILT_IN_SERVER_IDS.comfy, 'ComfyUI on this PC', 'comfy', comfyUiBaseUrl),
-    local(BUILT_IN_SERVER_IDS.searxng, 'SearXNG on this PC', 'search', searxngUrl || DEFAULT_SEARXNG_URL),
-    local(BUILT_IN_SERVER_IDS.memory, 'Memory database on this PC', 'memory', LOCAL_MEMORY_DATABASE_URL),
-    local(BUILT_IN_SERVER_IDS.coderRunner, 'Coding runner on this PC', 'coder', coderRunnerUrl || DEFAULT_CODER_RUNNER_URL),
-    local(BUILT_IN_SERVER_IDS.coderLlm, 'Qwen3-Coder-Next (coding)', 'chat', coderLlmUrl || DEFAULT_CODER_LLM_URL),
-    local(BUILT_IN_SERVER_IDS.laya, 'Quick decisions (Laya) on this PC', 'systemone', layaUrl || DEFAULT_LAYA_URL),
+    local(
+      BUILT_IN_SERVER_IDS.searxng,
+      'SearXNG on this PC',
+      'search',
+      searxngUrl || DEFAULT_SEARXNG_URL,
+    ),
+    local(
+      BUILT_IN_SERVER_IDS.memory,
+      'Memory database on this PC',
+      'memory',
+      LOCAL_MEMORY_DATABASE_URL,
+    ),
+    local(
+      BUILT_IN_SERVER_IDS.coderRunner,
+      'Coding runner on this PC',
+      'coder',
+      coderRunnerUrl || DEFAULT_CODER_RUNNER_URL,
+    ),
+    local(
+      BUILT_IN_SERVER_IDS.coderLlm,
+      'Qwen3-Coder-Next (coding)',
+      'chat',
+      coderLlmUrl || DEFAULT_CODER_LLM_URL,
+    ),
+    local(
+      BUILT_IN_SERVER_IDS.laya,
+      'Quick decisions (Laya) on this PC',
+      'systemone',
+      layaUrl || DEFAULT_LAYA_URL,
+    ),
     local(BUILT_IN_SERVER_IDS.vision, 'Vision model on this PC', 'chat', DEFAULT_VISION_URL),
-    { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
-    { id: BUILT_IN_SERVER_IDS.anthropic, name: 'Anthropic', type: 'anthropic', url: ANTHROPIC_BASE_URL, builtIn: true, managed: false },
-    { id: BUILT_IN_SERVER_IDS.github, name: 'GitHub', type: 'github', url: GITHUB_API_URL, builtIn: true, managed: false },
-    { id: BUILT_IN_SERVER_IDS.brave, name: 'Brave Search', type: 'brave', url: BRAVE_BASE_URL, builtIn: true, managed: false },
-    { id: BUILT_IN_SERVER_IDS.civitai, name: 'Civitai', type: 'civitai', url: CIVITAI_BASE_URL, builtIn: true, managed: false },
-    { id: BUILT_IN_SERVER_IDS.huggingface, name: 'Hugging Face', type: 'huggingface', url: HUGGINGFACE_BASE_URL, builtIn: true, managed: false },
+    {
+      id: BUILT_IN_SERVER_IDS.openai,
+      name: 'OpenAI',
+      type: 'openai',
+      url: OPENAI_BASE_URL,
+      builtIn: true,
+      managed: false,
+    },
+    {
+      id: BUILT_IN_SERVER_IDS.anthropic,
+      name: 'Anthropic',
+      type: 'anthropic',
+      url: ANTHROPIC_BASE_URL,
+      builtIn: true,
+      managed: false,
+    },
+    {
+      id: BUILT_IN_SERVER_IDS.github,
+      name: 'GitHub',
+      type: 'github',
+      url: GITHUB_API_URL,
+      builtIn: true,
+      managed: false,
+    },
+    {
+      id: BUILT_IN_SERVER_IDS.brave,
+      name: 'Brave Search',
+      type: 'brave',
+      url: BRAVE_BASE_URL,
+      builtIn: true,
+      managed: false,
+    },
+    {
+      id: BUILT_IN_SERVER_IDS.civitai,
+      name: 'Civitai',
+      type: 'civitai',
+      url: CIVITAI_BASE_URL,
+      builtIn: true,
+      managed: false,
+    },
+    {
+      id: BUILT_IN_SERVER_IDS.huggingface,
+      name: 'Hugging Face',
+      type: 'huggingface',
+      url: HUGGINGFACE_BASE_URL,
+      builtIn: true,
+      managed: false,
+    },
   ];
 }
 
@@ -247,14 +367,23 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRun
  * The routes before the user changes anything: what provider settings and env vars already say,
  * so upgrading changes nothing. `webSearchProvider` is WEB_SEARCH_PROVIDER ("searxng,brave", "off").
  */
-export function defaultRoutes(providers: ProviderSettings, webSearchProvider = 'searxng'): Record<UseId, ModelRoute> {
+export function defaultRoutes(
+  providers: ProviderSettings,
+  webSearchProvider = 'searxng',
+): Record<UseId, ModelRoute> {
   const openai = BUILT_IN_SERVER_IDS.openai;
   const searchNames = webSearchProvider
     .split(',')
     .map((name) => name.trim().toLowerCase())
     .filter(Boolean);
   const searchServers = searchNames
-    .map((name): string | null => (name === 'searxng' ? BUILT_IN_SERVER_IDS.searxng : name === 'brave' ? BUILT_IN_SERVER_IDS.brave : null))
+    .map((name): string | null =>
+      name === 'searxng'
+        ? BUILT_IN_SERVER_IDS.searxng
+        : name === 'brave'
+          ? BUILT_IN_SERVER_IDS.brave
+          : null,
+    )
     .filter((id): id is string => Boolean(id));
   const llm: ModelRoute =
     providers.llm.provider === 'openai'
@@ -272,9 +401,14 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
             server: openai,
             model: providers.tts.openaiModel,
             voice: providers.tts.openaiVoice,
-            ...(providers.tts.openaiInstructions ? { style: providers.tts.openaiInstructions } : {}),
+            ...(providers.tts.openaiInstructions
+              ? { style: providers.tts.openaiInstructions }
+              : {}),
           }
-        : { server: BUILT_IN_SERVER_IDS.speech, ...(providers.tts.kokoroVoice ? { model: providers.tts.kokoroVoice } : {}) },
+        : {
+            server: BUILT_IN_SERVER_IDS.speech,
+            ...(providers.tts.kokoroVoice ? { model: providers.tts.kokoroVoice } : {}),
+          },
     motion:
       providers.motion.provider === 'openai'
         ? { server: openai, model: providers.motion.openaiModel }
@@ -309,14 +443,33 @@ export function resolveModelRouting(
   const servers = builtIns.map((server) => {
     const override = stored.servers?.find((entry) => entry.id === server.id);
     if (!override) return { ...server };
-    const fixed = server.type === 'openai' || server.type === 'anthropic' || server.type === 'github' || server.type === 'brave' || server.type === 'civitai' || server.type === 'huggingface' || server.id === BUILT_IN_SERVER_IDS.memory;
+    const fixed =
+      server.type === 'openai' ||
+      server.type === 'anthropic' ||
+      server.type === 'github' ||
+      server.type === 'brave' ||
+      server.type === 'civitai' ||
+      server.type === 'huggingface' ||
+      server.id === BUILT_IN_SERVER_IDS.memory;
     const url = override.url && !fixed ? serverUrl(server.type, override.url) : server.url;
-    return { ...server, name: override.name || server.name, url, managed: server.managed && isLocalUrl(url) };
+    return {
+      ...server,
+      name: override.name || server.name,
+      url,
+      managed: server.managed && isLocalUrl(url),
+    };
   });
   for (const entry of stored.servers ?? []) {
     if (servers.some((server) => server.id === entry.id)) continue;
     if (!entry.type || !ADDABLE_SERVER_TYPES.includes(entry.type) || !entry.url) continue;
-    servers.push({ id: entry.id, name: entry.name || entry.url, type: entry.type, url: serverUrl(entry.type, entry.url), builtIn: false, managed: false });
+    servers.push({
+      id: entry.id,
+      name: entry.name || entry.url,
+      type: entry.type,
+      url: serverUrl(entry.type, entry.url),
+      builtIn: false,
+      managed: false,
+    });
   }
 
   const routes: Partial<Record<UseId, ModelRoute>> = {};
@@ -326,10 +479,15 @@ export function resolveModelRouting(
       const server = servers.find((entry) => entry.id === id);
       return Boolean(server && USE_SERVER_TYPES[use].includes(server.type));
     };
-    const usable = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === ''));
+    const usable =
+      saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === ''));
     // Idle thoughts, Room layout and Animation clips follow Thinking (server, model and, where the use
     // has them, backups) until they are pointed somewhere else.
-    const base = usable ? saved : (use === 'idle' || use === 'scenelayout' || use === 'clips') && routes.llm ? routes.llm : defaults[use];
+    const base = usable
+      ? saved
+      : (use === 'idle' || use === 'scenelayout' || use === 'clips') && routes.llm
+        ? routes.llm
+        : defaults[use];
     const primary = base.server;
     const seen = new Set([primary]);
     const backups = USES_WITH_BACKUPS.includes(use)
@@ -342,7 +500,14 @@ export function resolveModelRouting(
     routes[use] = {
       server: primary,
       ...(base.model ? { model: base.model } : {}),
-      ...(backups.length ? { backups: backups.map((target) => ({ server: target.server, ...(target.model ? { model: target.model } : {}) })) } : {}),
+      ...(backups.length
+        ? {
+            backups: backups.map((target) => ({
+              server: target.server,
+              ...(target.model ? { model: target.model } : {}),
+            })),
+          }
+        : {}),
       ...(USES_WITH_SPREAD.includes(use) && base.spread ? { spread: true } : {}),
       ...(use === 'tts' && base.voice ? { voice: base.voice } : {}),
       ...(use === 'tts' && base.style ? { style: base.style } : {}),
@@ -352,7 +517,10 @@ export function resolveModelRouting(
 }
 
 /** The servers a use tries, in order, with the model to ask each for. Unknown servers are skipped. */
-export function routeTargets(routing: ModelRouting, use: UseId): Array<{ server: ModelServer; model?: string }> {
+export function routeTargets(
+  routing: ModelRouting,
+  use: UseId,
+): Array<{ server: ModelServer; model?: string }> {
   const route = routing.routes[use];
   const targets: Array<{ server: ModelServer; model?: string }> = [];
   const primary = routing.servers.find((server) => server.id === route.server);
@@ -362,7 +530,10 @@ export function routeTargets(routing: ModelRouting, use: UseId): Array<{ server:
     const server = routing.servers.find((entry) => entry.id === backup.server);
     if (!server) continue;
     // A backup of the same kind can run the same model; another kind falls back to its own default.
-    targets.push({ server, model: backup.model || (server.type === primary.type ? route.model : undefined) });
+    targets.push({
+      server,
+      model: backup.model || (server.type === primary.type ? route.model : undefined),
+    });
   }
   return targets;
 }
@@ -387,7 +558,10 @@ export function routeTargetsWithOverride(
   const targets = routeTargets(routing, use);
   if (!override) return targets;
   const skip = new Set([override.server.id, ...(override.exclude ?? [])]);
-  return [{ server: override.server, model: override.model }, ...targets.filter(({ server }) => !skip.has(server.id))];
+  return [
+    { server: override.server, model: override.model },
+    ...targets.filter(({ server }) => !skip.has(server.id)),
+  ];
 }
 
 /** Keep only well-formed saved servers and routes. */
@@ -400,13 +574,24 @@ export function sanitizeStoredModels(input: unknown): StoredModels {
       .map((entry) => ({
         id: text(entry.id),
         name: text(entry.name),
-        type: SERVER_TYPES.includes(entry.type as ServerType) ? (entry.type as ServerType) : undefined,
+        type: SERVER_TYPES.includes(entry.type as ServerType)
+          ? (entry.type as ServerType)
+          : undefined,
         url: validUrl(entry.url),
       }))
-      .filter((entry): entry is { id: string; name: string | undefined; type: ServerType | undefined; url: string | undefined } =>
-        Boolean(entry.id),
+      .filter(
+        (
+          entry,
+        ): entry is {
+          id: string;
+          name: string | undefined;
+          type: ServerType | undefined;
+          url: string | undefined;
+        } => Boolean(entry.id),
       )
-      .map((entry) => compact(entry) as { id: string; name?: string; type?: ServerType; url?: string });
+      .map(
+        (entry) => compact(entry) as { id: string; name?: string; type?: ServerType; url?: string },
+      );
     if (servers.length) result.servers = servers;
   }
   if (isRecord(input.routes)) {
@@ -516,7 +701,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function compact<T extends object>(value: T): Partial<T> {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Partial<T>;
 }
 
 /** The text-to-speech engines in services/speech. */
@@ -529,7 +716,11 @@ export const DEFAULT_KITTEN_MODEL = 'mini-0.8';
  * holds "kokoro", "kitten:<model>" or "piper". Before there was a choice it held a Kokoro voice
  * name, which still means Kokoro with that voice.
  */
-export function parseSpeakingModel(model?: string): { engine: SpeakingEngineId; model?: string; legacyVoice?: string } {
+export function parseSpeakingModel(model?: string): {
+  engine: SpeakingEngineId;
+  model?: string;
+  legacyVoice?: string;
+} {
   const value = model?.trim() ?? '';
   if (!value || value === 'kokoro') return { engine: 'kokoro' };
   if (value === 'piper') return { engine: 'piper' };
@@ -544,7 +735,18 @@ export function formatSpeakingModel(engine: SpeakingEngineId, model?: string): s
 }
 
 /** The Realtime API's voices, for OpenAI speaking and the Realtime conversation engine. */
-export const OPENAI_TTS_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const;
+export const OPENAI_TTS_VOICES = [
+  'alloy',
+  'ash',
+  'ballad',
+  'cedar',
+  'coral',
+  'echo',
+  'marin',
+  'sage',
+  'shimmer',
+  'verse',
+] as const;
 
 /**
  * What a character's voice choice is saved for: each engine has its own voices, so a character

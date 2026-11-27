@@ -1,6 +1,5 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface CivitaiFile {
   id?: number;
   name: string;
@@ -10,7 +9,6 @@ export interface CivitaiFile {
   primary: boolean;
   format?: string;
 }
-
 
 /** What is saved beside a downloaded model (<name>.aiembodied.json) for the app to read back. */
 export interface ModelInfo {
@@ -23,13 +21,11 @@ export interface ModelInfo {
   triggerWords?: string[];
 }
 
-
 /** What the pop-up shows after a lookup. */
 export interface CivitaiLookup {
   versions: Array<{ id: number; name: string; baseModel: string }>;
   plan: CivitaiDownloadPlan;
 }
-
 
 /** What to download, and where it goes. */
 export interface CivitaiDownloadPlan {
@@ -48,7 +44,6 @@ export interface CivitaiDownloadPlan {
   info: ModelInfo;
 }
 
-
 /** What the studio shows when a LoRA has no model of its family to run on. */
 export interface BaseModelSuggestions {
   serverId: string;
@@ -57,7 +52,6 @@ export interface BaseModelSuggestions {
   vramBytes: number | null;
   suggestions: BaseModelSuggestion[];
 }
-
 
 /** A base model Civitai suggests for a LoRA's family, and whether it fits the server's GPU. */
 export interface BaseModelSuggestion {

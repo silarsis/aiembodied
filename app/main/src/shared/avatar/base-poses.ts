@@ -18,4 +18,5 @@ export const BASE_POSES = [
 ] as const;
 
 /** Exact hash of the old renderer-generated default; customized poses are preserved. */
-export const LEGACY_DEFAULT_POSE_SHA = '55f0c9cf471102b018b605f0be73ace9e4cb48c6bb42be01704f5458719b54ff';
+export const LEGACY_DEFAULT_POSE_SHA =
+  '55f0c9cf471102b018b605f0be73ace9e4cb48c6bb42be01704f5458719b54ff';

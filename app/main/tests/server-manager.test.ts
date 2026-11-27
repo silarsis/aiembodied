@@ -11,9 +11,17 @@ describe('ServerManager', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
     const missing = path.join(dir, 'nope');
     const powershell = vi.fn(async () => 'stopped:llm\r\ncontainer:aiembodied-memory-db\r\n');
-    const manager = new ServerManager({ logger, pidDirectories: [dir, missing], platform: 'win32', powershell });
+    const manager = new ServerManager({
+      logger,
+      pidDirectories: [dir, missing],
+      platform: 'win32',
+      powershell,
+    });
 
-    await expect(manager.stopAll()).resolves.toEqual(['stopped:llm', 'container:aiembodied-memory-db']);
+    await expect(manager.stopAll()).resolves.toEqual([
+      'stopped:llm',
+      'container:aiembodied-memory-db',
+    ]);
     await manager.shutdown();
     await manager.hibernate();
     expect(powershell).toHaveBeenCalledTimes(3);
@@ -27,7 +35,13 @@ describe('ServerManager', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
     const powershell = vi.fn(async () => 'stopped:speech\r\n');
     let controller = true;
-    const manager = new ServerManager({ logger, pidDirectories: [dir], platform: 'win32', powershell, controllerInUse: () => controller });
+    const manager = new ServerManager({
+      logger,
+      pidDirectories: [dir],
+      platform: 'win32',
+      powershell,
+      controllerInUse: () => controller,
+    });
     await manager.shutdown();
     const [command] = powershell.mock.calls[0] as unknown as [string];
     expect(command).toContain("@('llm', 'coder-llm') -contains $file.BaseName");
@@ -54,22 +68,39 @@ describe('ServerManager', () => {
     await manager.shutdown();
     const [command] = powershell.mock.calls[0] as unknown as [string];
     // vision isn't on the controller, so the app still stops the one it started.
-    expect(command).toContain("@('llm', 'coder-llm', 'motion', 'comfyui') -contains $file.BaseName");
+    expect(command).toContain(
+      "@('llm', 'coder-llm', 'motion', 'comfyui') -contains $file.BaseName",
+    );
     runs.motion = false;
     runs.comfyui = false;
     await manager.shutdown();
-    expect((powershell.mock.calls[1] as unknown as [string])[0]).toContain("@('llm', 'coder-llm') -contains $file.BaseName");
+    expect((powershell.mock.calls[1] as unknown as [string])[0]).toContain(
+      "@('llm', 'coder-llm') -contains $file.BaseName",
+    );
     // Without the controller nothing is skipped.
-    const alone = new ServerManager({ logger, pidDirectories: [dir], platform: 'win32', powershell, controllerManages: () => false });
+    const alone = new ServerManager({
+      logger,
+      pidDirectories: [dir],
+      platform: 'win32',
+      powershell,
+      controllerManages: () => false,
+    });
     await alone.shutdown();
-    expect((powershell.mock.calls[2] as unknown as [string])[0]).not.toContain('-contains $file.BaseName');
+    expect((powershell.mock.calls[2] as unknown as [string])[0]).not.toContain(
+      '-contains $file.BaseName',
+    );
   });
 
   it('runs one stop at a time when quit and suspend overlap', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
     let finish: (value: string) => void = () => undefined;
     const powershell = vi.fn(() => new Promise<string>((resolve) => (finish = resolve)));
-    const manager = new ServerManager({ logger, pidDirectories: [dir], platform: 'win32', powershell });
+    const manager = new ServerManager({
+      logger,
+      pidDirectories: [dir],
+      platform: 'win32',
+      powershell,
+    });
     const first = manager.shutdown();
     const second = manager.suspend();
     finish('stopped:speech');
@@ -80,8 +111,18 @@ describe('ServerManager', () => {
   it('does nothing off Windows, or when no folder exists', async () => {
     const powershell = vi.fn(async () => '');
     const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
-    await new ServerManager({ logger, pidDirectories: [dir], platform: 'linux', powershell }).stopAll();
-    await new ServerManager({ logger, pidDirectories: [path.join(dir, 'gone')], platform: 'win32', powershell }).stopAll();
+    await new ServerManager({
+      logger,
+      pidDirectories: [dir],
+      platform: 'linux',
+      powershell,
+    }).stopAll();
+    await new ServerManager({
+      logger,
+      pidDirectories: [path.join(dir, 'gone')],
+      platform: 'win32',
+      powershell,
+    }).stopAll();
     expect(powershell).not.toHaveBeenCalled();
   });
 
@@ -91,9 +132,16 @@ describe('ServerManager', () => {
     const powershell = vi.fn(async () => {
       throw new Error('timed out');
     });
-    const manager = new ServerManager({ logger, pidDirectories: [dir], platform: 'win32', powershell });
+    const manager = new ServerManager({
+      logger,
+      pidDirectories: [dir],
+      platform: 'win32',
+      powershell,
+    });
     await expect(manager.shutdown()).resolves.toBeUndefined();
-    expect(logger.warn).toHaveBeenCalledWith('ServerManager: stopping local servers failed', { message: 'timed out' });
+    expect(logger.warn).toHaveBeenCalledWith('ServerManager: stopping local servers failed', {
+      message: 'timed out',
+    });
   });
 
   it('only kills a pid that started before its pid file, and stops the service containers', () => {

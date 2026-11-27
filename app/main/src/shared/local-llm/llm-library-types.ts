@@ -1,7 +1,6 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 import type { LocalLlmSettings } from './llm-settings-types.js';
 
-
 export interface LocalLlmModel {
   /** <repo>:<quant id>. */
   id: string;
@@ -17,7 +16,6 @@ export interface LocalLlmModel {
   downloadedAt: number;
 }
 
-
 export interface LocalLlmLibraryFile {
   /** The model llama-server runs. None: the start script's own default (Qwen Flash-Next). */
   selected?: string;
@@ -28,7 +26,6 @@ export interface LocalLlmLibraryFile {
   contextPerSlot?: number;
 }
 
-
 /** What the page lists: the downloaded models, the one in use, and where they are kept. */
 export interface LocalLlmList extends LocalLlmLibraryFile {
   folder: string;
@@ -36,9 +33,8 @@ export interface LocalLlmList extends LocalLlmLibraryFile {
   settings: LocalLlmSettings;
 }
 
-
-export type LlmDownloadState = 'queued' | 'downloading' | 'verifying' | 'done' | 'failed' | 'cancelled';
-
+export type LlmDownloadState =
+  'queued' | 'downloading' | 'verifying' | 'done' | 'failed' | 'cancelled';
 
 export interface LlmDownload {
   id: string;

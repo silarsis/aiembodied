@@ -86,7 +86,11 @@ export function smallestRotation(
  * Keeps only the rotation of `offset` about `axis` (a hinge cannot swing sideways). Writes to `out`;
  * `out` may be `offset`.
  */
-export function projectToHinge(offset: THREE.Quaternion, axis: THREE.Vector3, out: THREE.Quaternion): THREE.Quaternion {
+export function projectToHinge(
+  offset: THREE.Quaternion,
+  axis: THREE.Vector3,
+  out: THREE.Quaternion,
+): THREE.Quaternion {
   return out.setFromAxisAngle(axis, hingeAngle(offset, axis));
 }
 
@@ -114,7 +118,12 @@ export function clampHinge(
 }
 
 /** Limits the angle of `total` from rest (identity) to `max`, widened to `animatedAngle`; shrinks it along its own axis. */
-export function clampCone(total: THREE.Quaternion, max: number, animatedAngle: number, out: THREE.Quaternion): THREE.Quaternion {
+export function clampCone(
+  total: THREE.Quaternion,
+  max: number,
+  animatedAngle: number,
+  out: THREE.Quaternion,
+): THREE.Quaternion {
   const limit = Math.max(max, animatedAngle);
   const w = Math.min(1, Math.abs(total.w));
   const angle = 2 * Math.acos(w);
@@ -170,7 +179,13 @@ export function solveTwoBone(
 }
 
 /** Moves `current` towards `target` with an exponential ease of time constant `tau` seconds. */
-export function easeTowards(current: number, target: number, deltaSeconds: number, tau: number, epsilon = WEIGHT_EPSILON): number {
+export function easeTowards(
+  current: number,
+  target: number,
+  deltaSeconds: number,
+  tau: number,
+  epsilon = WEIGHT_EPSILON,
+): number {
   const next = current + (target - current) * (1 - Math.exp(-Math.max(0, deltaSeconds) / tau));
   return Math.abs(target - next) < epsilon ? target : next;
 }
@@ -185,7 +200,13 @@ export interface Spring {
  * Critically damped spring step towards `target`: reaches it in about `smoothTime` seconds with no
  * overshoot (the usual "smooth damp"). Snaps once both distance and speed are negligible.
  */
-export function stepSpring(spring: Spring, target: number, deltaSeconds: number, smoothTime: number, epsilon = 0.0005): void {
+export function stepSpring(
+  spring: Spring,
+  target: number,
+  deltaSeconds: number,
+  smoothTime: number,
+  epsilon = 0.0005,
+): void {
   const dt = Math.max(0, deltaSeconds);
   if (dt === 0) return;
   const omega = 2 / Math.max(1e-4, smoothTime);
@@ -272,7 +293,8 @@ export function headExcessCorrection(
   seen?: HeadAngles,
 ): boolean {
   TMP_EULER.setFromQuaternion(combined, 'YXZ');
-  const reset = Math.abs(TMP_EULER.y) > HEAD_IMPLAUSIBLE_YAW || Math.abs(TMP_EULER.x) > HEAD_IMPLAUSIBLE_PITCH;
+  const reset =
+    Math.abs(TMP_EULER.y) > HEAD_IMPLAUSIBLE_YAW || Math.abs(TMP_EULER.x) > HEAD_IMPLAUSIBLE_PITCH;
   if (seen) {
     seen.yaw = TMP_EULER.y;
     seen.pitch = TMP_EULER.x;
@@ -298,7 +320,11 @@ export function headExcessCorrection(
  * Unlike slerp from identity it does not pick the short way itself, which would flip the direction frame to
  * frame when a correction sits near 180 degrees; the caller keeps the sign consistent instead.
  */
-export function scaleRotation(q: THREE.Quaternion, t: number, out: THREE.Quaternion): THREE.Quaternion {
+export function scaleRotation(
+  q: THREE.Quaternion,
+  t: number,
+  out: THREE.Quaternion,
+): THREE.Quaternion {
   const w = Math.max(-1, Math.min(1, q.w));
   const s = Math.sqrt(1 - w * w);
   if (s < 1e-9) return out.identity();

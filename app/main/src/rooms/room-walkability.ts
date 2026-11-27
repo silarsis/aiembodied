@@ -13,13 +13,23 @@ export const REACH_RADIUS = 0.9;
 const FLAT_HEIGHT = 0.06;
 
 export function footprintOf(object: Pick<RoomObject, 'position' | 'rotationY' | 'size'>): Rect {
-  return rectOf(object.position[0], object.position[2], object.size[0], object.size[2], object.rotationY ?? 0);
+  return rectOf(
+    object.position[0],
+    object.position[2],
+    object.size[0],
+    object.size[2],
+    object.rotationY ?? 0,
+  );
 }
 
 /** Objects standing on the floor that block walking (not rugs, not props that physics moves). */
 export function floorObstacles(room: RoomFile): RoomObject[] {
   return room.objects.filter(
-    (o) => (o.collider ?? 'box') === 'box' && !o.dynamic && o.position[1] < 0.05 && o.size[1] >= FLAT_HEIGHT,
+    (o) =>
+      (o.collider ?? 'box') === 'box' &&
+      !o.dynamic &&
+      o.position[1] < 0.05 &&
+      o.size[1] >= FLAT_HEIGHT,
   );
 }
 
@@ -41,12 +51,17 @@ export function buildWalkability(room: RoomFile): Walkability {
   const z0 = -depth / 2;
   const obstacles = floorObstacles(room).map(footprintOf);
   const blocked = new Uint8Array(cols * rows);
-  const centre = (c: number, r: number): [number, number] => [x0 + (c + 0.5) * CELL, z0 + (r + 0.5) * CELL];
+  const centre = (c: number, r: number): [number, number] => [
+    x0 + (c + 0.5) * CELL,
+    z0 + (r + 0.5) * CELL,
+  ];
   for (let r = 0; r < rows; r += 1)
     for (let c = 0; c < cols; c += 1) {
       const [x, z] = centre(c, r);
-      let isBlocked = Math.abs(x) > width / 2 - WALL_CLEARANCE || Math.abs(z) > depth / 2 - WALL_CLEARANCE;
-      for (let i = 0; !isBlocked && i < obstacles.length; i += 1) isBlocked = distanceToRect(obstacles[i], x, z) < FURNITURE_CLEARANCE;
+      let isBlocked =
+        Math.abs(x) > width / 2 - WALL_CLEARANCE || Math.abs(z) > depth / 2 - WALL_CLEARANCE;
+      for (let i = 0; !isBlocked && i < obstacles.length; i += 1)
+        isBlocked = distanceToRect(obstacles[i], x, z) < FURNITURE_CLEARANCE;
       if (isBlocked) blocked[r * cols + c] = 1;
     }
   const cellAt = (x: number, z: number): [number, number] => [
@@ -73,7 +88,12 @@ export function buildWalkability(room: RoomFile): Walkability {
       const index = stack.pop() as number;
       const c = index % cols;
       const r = Math.floor(index / cols);
-      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const [dc, dr] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
         const nc = c + dc;
         const nr = r + dr;
         if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
@@ -84,7 +104,13 @@ export function buildWalkability(room: RoomFile): Walkability {
       }
     }
   }
-  const nearAny = (x: number, z: number, window: number, radius: number, distance: (cx: number, cz: number) => number): boolean => {
+  const nearAny = (
+    x: number,
+    z: number,
+    window: number,
+    radius: number,
+    distance: (cx: number, cz: number) => number,
+  ): boolean => {
     const [c0, r0] = cellAt(x - window, z - window);
     const [c1, r1] = cellAt(x + window, z + window);
     for (let r = r0; r <= r1; r += 1)
@@ -104,7 +130,8 @@ export function buildWalkability(room: RoomFile): Walkability {
       const [c, r] = cellAt(x, z);
       return seen[r * cols + c] === 1;
     },
-    reachableNear: (x, z, radius) => nearAny(x, z, radius + CELL, radius, (cx, cz) => Math.hypot(cx - x, cz - z)),
+    reachableNear: (x, z, radius) =>
+      nearAny(x, z, radius + CELL, radius, (cx, cz) => Math.hypot(cx - x, cz - z)),
     reachableNearRect: (rect, radius) => {
       const window = Math.hypot(rect.hx, rect.hz) + radius + CELL;
       return nearAny(rect.cx, rect.cz, window, radius, (cx, cz) => distanceToRect(rect, cx, cz));
@@ -120,7 +147,11 @@ function baseOf(room: RoomFile, object: RoomObject): RoomObject {
     if (other === object || other.position[1] >= object.position[1] - 0.01) continue;
     const rect = footprintOf(other);
     if (distanceToRect(rect, object.position[0], object.position[2]) > 0.01) continue;
-    if (!best || other.position[1] + (other.tags?.surface?.height ?? other.size[1]) > best.position[1]) best = other;
+    if (
+      !best ||
+      other.position[1] + (other.tags?.surface?.height ?? other.size[1]) > best.position[1]
+    )
+      best = other;
   }
   return best ? baseOf(room, best) : object;
 }

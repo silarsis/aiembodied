@@ -49,7 +49,9 @@ export function useImageModels(api: AvatarBridge | undefined, visible: boolean) 
     // Choosing a model can start its pose-control download; show that straight away.
     await refresh();
   };
-  const selectedPose = selection.models.find((model) => model.id === selection.selectedModelId)?.poseControl;
+  const selectedPose = selection.models.find(
+    (model) => model.id === selection.selectedModelId,
+  )?.poseControl;
   // Follow a pose-control download until it lands.
   useEffect(() => {
     if (!visible || selectedPose !== 'installing') return;

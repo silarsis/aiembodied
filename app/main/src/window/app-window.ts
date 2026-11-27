@@ -6,7 +6,11 @@
  * - A satellite is a normal window that remembers where it was, and F11 toggles full screen.
  */
 import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron';
-import { RuntimeResourceNotFoundError, resolvePreloadScriptPath, resolveRendererEntryPoint } from '../runtime-paths.js';
+import {
+  RuntimeResourceNotFoundError,
+  resolvePreloadScriptPath,
+  resolveRendererEntryPoint,
+} from '../runtime-paths.js';
 import type { SatelliteSettingsStore, WindowBounds } from '../satellite/settings.js';
 
 export interface AppWindowOptions {
@@ -87,7 +91,10 @@ export function createAppWindow(options: AppWindowOptions): BrowserWindow {
   // Harden renderer: disallow new windows and external navigation.
   try {
     const wc: unknown = window.webContents as unknown;
-    const anyWc = wc as { setWindowOpenHandler?: (handler: () => { action: 'deny' | 'allow' }) => void; on?: (event: string, listener: (...args: unknown[]) => void) => void };
+    const anyWc = wc as {
+      setWindowOpenHandler?: (handler: () => { action: 'deny' | 'allow' }) => void;
+      on?: (event: string, listener: (...args: unknown[]) => void) => void;
+    };
     if (typeof anyWc.setWindowOpenHandler === 'function') {
       anyWc.setWindowOpenHandler(() => {
         logger.warn('Blocked attempt to open a new window from renderer.');

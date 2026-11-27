@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HfLookup } from '../../../main/src/shared/local-llm/huggingface-types.js';
-import type { LlmDownload, LocalLlmList } from '../../../main/src/shared/local-llm/llm-library-types.js';
+import type {
+  LlmDownload,
+  LocalLlmList,
+} from '../../../main/src/shared/local-llm/llm-library-types.js';
 import type { ModelRoutingView } from '../../../main/src/shared/config/config-manager-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { formatBytes } from './model-downloads.js';
@@ -18,7 +21,17 @@ function tokens(count: number): string {
  * On the Thinking page: paste a Hugging Face link or name, pick a size, download it, and (by
  * default) switch Thinking to it, which restarts this PC's llama-server with that model.
  */
-export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true }: { api: ModelsBridge; busy: boolean; onView(view: ModelRoutingView): void; local?: boolean }) {
+export function ThinkingDownloads({
+  api,
+  busy: parentBusy,
+  onView,
+  local = true,
+}: {
+  api: ModelsBridge;
+  busy: boolean;
+  onView(view: ModelRoutingView): void;
+  local?: boolean;
+}) {
   const [ref, setRef] = useState('');
   const [lookup, setLookup] = useState<HfLookup | null>(null);
   const [quant, setQuant] = useState('');
@@ -35,7 +48,9 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
 
   const refresh = useCallback(async () => {
     const [all, list] = await Promise.all([
-      api.hfDownloads ? api.hfDownloads().catch(() => [] as LlmDownload[]) : Promise.resolve([] as LlmDownload[]),
+      api.hfDownloads
+        ? api.hfDownloads().catch(() => [] as LlmDownload[])
+        : Promise.resolve([] as LlmDownload[]),
       api.localLlms ? api.localLlms().catch(() => null) : Promise.resolve(null),
     ]);
     setDownloads(all);
@@ -43,7 +58,8 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
     // A download that switched Thinking over changed the routes too.
     let switched = false;
     for (const entry of all) {
-      const settled = !ACTIVE.has(entry.state) && (entry.state !== 'done' || !entry.use || entry.result);
+      const settled =
+        !ACTIVE.has(entry.state) && (entry.state !== 'done' || !entry.use || entry.result);
       if (settled && !finished.current.has(entry.id)) {
         finished.current.add(entry.id);
         if (entry.state === 'done' && entry.use) switched = true;
@@ -57,7 +73,9 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
   }, [refresh]);
 
   // Keep polling while a download runs, and until a finished one has put its model to use.
-  const active = downloads.some((entry) => ACTIVE.has(entry.state) || (entry.state === 'done' && entry.use && !entry.result));
+  const active = downloads.some(
+    (entry) => ACTIVE.has(entry.state) || (entry.state === 'done' && entry.use && !entry.result),
+  );
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(() => void refresh(), 1500);
@@ -86,7 +104,9 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
     setBusy(true);
     setError(null);
     try {
-      await (remote ? api.hfDownload(lookup.repo, quant, false, target) : api.hfDownload(lookup.repo, quant, use));
+      await (remote
+        ? api.hfDownload(lookup.repo, quant, false, target)
+        : api.hfDownload(lookup.repo, quant, use));
       setLookup(null);
       setRef('');
       await refresh();
@@ -121,7 +141,10 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
     setError(null);
     setNotice(null);
     try {
-      const result = await api.useLocalLlm(library.selected ?? null, { ...library.settings, ...change });
+      const result = await api.useLocalLlm(library.selected ?? null, {
+        ...library.settings,
+        ...change,
+      });
       setLibrary(result.library);
       onView(result.models);
       setNotice(result.message);
@@ -153,7 +176,8 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
     <div className="modelsDialog__list modelsDialog__downloads">
       <span className="modelsDialog__group">Download a thinking model from Hugging Face</span>
       <p className="kiosk__helper">
-        Runs on this PC’s llama-server. Paste a link or repo name (GGUF repos such as unsloth/Qwen3-8B-GGUF), or type words to search.
+        Runs on this PC’s llama-server. Paste a link or repo name (GGUF repos such as
+        unsloth/Qwen3-8B-GGUF), or type words to search.
       </p>
       <form
         className="modelsDialog__fields"
@@ -188,7 +212,11 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
       {notice ? <p className="kiosk__helper">{notice}</p> : null}
       {lookup && lookup.suggestions.length ? (
         <div className="modelsDialog__plan" aria-label="Hugging Face GGUF models">
-          {lookup.note ? <small className="kiosk__helper">{lookup.note}</small> : <span>Pick one:</span>}
+          {lookup.note ? (
+            <small className="kiosk__helper">{lookup.note}</small>
+          ) : (
+            <span>Pick one:</span>
+          )}
           <div className="modelsDialog__chips">
             {lookup.suggestions.map((entry) => (
               <button
@@ -213,7 +241,11 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
           <b>{lookup.repo}</b>
           <label className="modelsDialog__inline">
             Size{' '}
-            <select value={quant} onChange={(event) => setQuant(event.target.value)} disabled={disabled}>
+            <select
+              value={quant}
+              onChange={(event) => setQuant(event.target.value)}
+              disabled={disabled}
+            >
               {lookup.quants.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.label} · {formatBytes(entry.sizeBytes)}
@@ -223,20 +255,41 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
             </select>
           </label>
           <small className="kiosk__helper">
-            Smaller sizes load faster and use less memory; Q4_K_M is a good balance. Running it takes a little more memory than the file size.
-            {lookup.contextLength ? ` Made for up to ${lookup.contextLength.toLocaleString()} tokens of context.` : ''}
+            Smaller sizes load faster and use less memory; Q4_K_M is a good balance. Running it
+            takes a little more memory than the file size.
+            {lookup.contextLength
+              ? ` Made for up to ${lookup.contextLength.toLocaleString()} tokens of context.`
+              : ''}
           </small>
           {lookup.note ? <small className="kiosk__helper">{lookup.note}</small> : null}
-          <DownloadTo hosts={downloadHosts} value={target} onChange={setTarget} disabled={disabled} id="models-hf-download-to" />
+          <DownloadTo
+            hosts={downloadHosts}
+            value={target}
+            onChange={setTarget}
+            disabled={disabled}
+            id="models-hf-download-to"
+          />
           {remote ? (
-            <small className="kiosk__helper">It is downloaded there by the model controller. Thinking keeps using this PC’s model.</small>
+            <small className="kiosk__helper">
+              It is downloaded there by the model controller. Thinking keeps using this PC’s model.
+            </small>
           ) : null}
           <label className="modelsDialog__check">
-            <input type="checkbox" checked={use && !remote} disabled={disabled || remote} onChange={(event) => setUse(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={use && !remote}
+              disabled={disabled || remote}
+              onChange={(event) => setUse(event.target.checked)}
+            />
             Use it for Thinking when it’s downloaded (restarts llama-server)
           </label>
           <span className="modelsDialog__actions">
-            <button type="button" className="modelsDialog__primary" onClick={() => void start()} disabled={disabled || !quant}>
+            <button
+              type="button"
+              className="modelsDialog__primary"
+              onClick={() => void start()}
+              disabled={disabled || !quant}
+            >
               Download{chosen ? ` ${formatBytes(chosen.sizeBytes)}` : ''}
             </button>
           </span>
@@ -249,9 +302,20 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
           </span>
           {ACTIVE.has(entry.state) ? (
             <>
-              <progress max={entry.total || undefined} value={entry.received} aria-label={`Downloading ${entry.repo} ${entry.label}`} />
-              <small>{entry.state === 'verifying' ? 'Checking the file…' : `${formatBytes(entry.received)} of ${formatBytes(entry.total)}`}</small>
-              <button type="button" onClick={() => void api.hfCancel?.(entry.id).then(() => refresh())}>
+              <progress
+                max={entry.total || undefined}
+                value={entry.received}
+                aria-label={`Downloading ${entry.repo} ${entry.label}`}
+              />
+              <small>
+                {entry.state === 'verifying'
+                  ? 'Checking the file…'
+                  : `${formatBytes(entry.received)} of ${formatBytes(entry.total)}`}
+              </small>
+              <button
+                type="button"
+                onClick={() => void api.hfCancel?.(entry.id).then(() => refresh())}
+              >
                 Cancel
               </button>
             </>
@@ -286,7 +350,14 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
           {library.models.map((model) => (
             <div key={model.id} className="modelsDialog__download">
               <span>
-                <b>{model.repo}</b> <small>{model.quant.split('/').at(-1)?.replace(/\.gguf$/i, '')} · {formatBytes(model.sizeBytes)}</small>
+                <b>{model.repo}</b>{' '}
+                <small>
+                  {model.quant
+                    .split('/')
+                    .at(-1)
+                    ?.replace(/\.gguf$/i, '')}{' '}
+                  · {formatBytes(model.sizeBytes)}
+                </small>
               </span>
               {library.selected === model.id ? (
                 <small>In use</small>
@@ -311,32 +382,56 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
                   onChange={(event) => void saveSettings({ slots: Number(event.target.value) })}
                   disabled={disabled}
                 >
-                  {[...new Set([...SLOT_CHOICES, library.settings.slots])].sort((a, b) => a - b).map((count) => (
-                    <option key={count} value={count}>
-                      {count}
-                    </option>
-                  ))}
+                  {[...new Set([...SLOT_CHOICES, library.settings.slots])]
+                    .sort((a, b) => a - b)
+                    .map((count) => (
+                      <option key={count} value={count}>
+                        {count}
+                      </option>
+                    ))}
                 </select>
               </label>
-              <small className="kiosk__helper">One per avatar talking; each keeps its own cache.</small>
+              <small className="kiosk__helper">
+                One per avatar talking; each keeps its own cache.
+              </small>
               <label className="modelsDialog__inline">
                 Context per conversation{' '}
                 <select
                   value={library.settings.contextPerSlot}
-                  onChange={(event) => void saveSettings({ contextPerSlot: Number(event.target.value) })}
+                  onChange={(event) =>
+                    void saveSettings({ contextPerSlot: Number(event.target.value) })
+                  }
                   disabled={disabled}
                 >
-                  {[...new Set([...CONTEXT_CHOICES, library.settings.contextPerSlot])].sort((a, b) => a - b).map((count) => (
-                    <option key={count} value={count} disabled={count !== library.settings.contextPerSlot && count > (selectedModel?.contextLength ?? Infinity)}>
-                      {tokens(count)}
-                      {selectedModel?.contextLength && count > selectedModel.contextLength ? ' (more than this model supports)' : ''}
-                    </option>
-                  ))}
+                  {[...new Set([...CONTEXT_CHOICES, library.settings.contextPerSlot])]
+                    .sort((a, b) => a - b)
+                    .map((count) => (
+                      <option
+                        key={count}
+                        value={count}
+                        disabled={
+                          count !== library.settings.contextPerSlot &&
+                          count > (selectedModel?.contextLength ?? Infinity)
+                        }
+                      >
+                        {tokens(count)}
+                        {selectedModel?.contextLength && count > selectedModel.contextLength
+                          ? ' (more than this model supports)'
+                          : ''}
+                      </option>
+                    ))}
                 </select>
               </label>
               <small className="kiosk__helper">
-                llama-server reserves {tokens(library.settings.slots * Math.min(library.settings.contextPerSlot, selectedModel?.contextLength ?? Infinity))} tokens of context in all.
-                Changing either restarts it.
+                llama-server reserves{' '}
+                {tokens(
+                  library.settings.slots *
+                    Math.min(
+                      library.settings.contextPerSlot,
+                      selectedModel?.contextLength ?? Infinity,
+                    ),
+                )}{' '}
+                tokens of context in all. Changing either restarts it.
               </small>
             </div>
           ) : null}

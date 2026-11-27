@@ -23,7 +23,10 @@ export interface AvatarsBridge {
   /** Make an avatar; its id is a slug of the name. */
   add(input: { name: string; vrmModelId?: string | null; prompt?: string }): Promise<AvatarProfile>;
   /** `prompt: ''` clears the prompt. */
-  update(id: string, changes: { name?: string; vrmModelId?: string | null; prompt?: string }): Promise<AvatarProfile>;
+  update(
+    id: string,
+    changes: { name?: string; vrmModelId?: string | null; prompt?: string },
+  ): Promise<AvatarProfile>;
   /** Echo and the last avatar cannot be removed. */
   remove(id: string): Promise<void>;
   /**

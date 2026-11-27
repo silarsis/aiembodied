@@ -44,7 +44,10 @@ export class RoomService {
     const file = this.fileFor(id);
     if (!file || !existsSync(file)) throw new Error('This room is not available.');
     const room = validateRoomFile(JSON.parse(await readFile(file, 'utf8')) as unknown);
-    const loaded = id.startsWith(SAVED_PREFIX) && !id.startsWith(BUILTIN_PREFIX) ? await this.withoutMissingModels(room, path.dirname(file)) : room;
+    const loaded =
+      id.startsWith(SAVED_PREFIX) && !id.startsWith(BUILTIN_PREFIX)
+        ? await this.withoutMissingModels(room, path.dirname(file))
+        : room;
     return { ...loaded, id };
   }
 
@@ -111,18 +114,31 @@ export class RoomService {
       });
     } catch (error) {
       if (builtIn) throw error;
-      console.warn(`Skipping saved room ${id}: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `Skipping saved room ${id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }
 
-async function readLayoutObjects(roomFolder: string): Promise<Map<string, { category: ObjectCategory; color: string | null }>> {
+async function readLayoutObjects(
+  roomFolder: string,
+): Promise<Map<string, { category: ObjectCategory; color: string | null }>> {
   const result = new Map<string, { category: ObjectCategory; color: string | null }>();
   try {
-    const layout = JSON.parse(await readFile(path.join(roomFolder, 'layout.json'), 'utf8')) as { objects?: Array<Record<string, unknown>> };
+    const layout = JSON.parse(await readFile(path.join(roomFolder, 'layout.json'), 'utf8')) as {
+      objects?: Array<Record<string, unknown>>;
+    };
     for (const object of layout.objects ?? []) {
-      if (typeof object.id !== 'string' || !(OBJECT_CATEGORIES as readonly unknown[]).includes(object.category)) continue;
-      result.set(object.id, { category: object.category as ObjectCategory, color: typeof object.color === 'string' ? object.color : null });
+      if (
+        typeof object.id !== 'string' ||
+        !(OBJECT_CATEGORIES as readonly unknown[]).includes(object.category)
+      )
+        continue;
+      result.set(object.id, {
+        category: object.category as ObjectCategory,
+        color: typeof object.color === 'string' ? object.color : null,
+      });
     }
   } catch {
     /* No layout.json (or damaged): plain boxes. */

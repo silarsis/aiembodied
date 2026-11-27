@@ -19,9 +19,12 @@ export function registerMCPHandlers(mcpManager: MCPManager, toolRegistry: ToolRe
     return toServerSummary(await mcpManager.addServer(config));
   });
 
-  ipcMain.handle('mcp:update-server', async (_, id: string, updates: Partial<MCPServerConfigInput>) => {
-    return toServerSummary(await mcpManager.updateServer(id, updates));
-  });
+  ipcMain.handle(
+    'mcp:update-server',
+    async (_, id: string, updates: Partial<MCPServerConfigInput>) => {
+      return toServerSummary(await mcpManager.updateServer(id, updates));
+    },
+  );
 
   // Ready-made servers. The renderer calls sign-in itself after adding one that needs it.
   ipcMain.handle('mcp:list-presets', async () => {
@@ -67,7 +70,12 @@ export function registerMCPHandlers(mcpManager: MCPManager, toolRegistry: ToolRe
     async (
       _,
       toolId: string,
-      prefs: { enabled?: boolean; confirmationLevel?: string; customDescription?: string; readOnly?: boolean | null },
+      prefs: {
+        enabled?: boolean;
+        confirmationLevel?: string;
+        customDescription?: string;
+        readOnly?: boolean | null;
+      },
     ) => {
       await mcpManager.updateToolPreferences(toolId, prefs);
     },

@@ -2,18 +2,44 @@ import { describe, expect, it, vi } from 'vitest';
 import { validateLayout, normaliseCategory, LayoutError } from '../src/rooms/room-layout.js';
 import { buildLayoutPrompt } from '../src/rooms/room-layout-prompt.js';
 import { extractJson, generateRoomLayout } from '../src/rooms/room-layout-llm.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+} from '../src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { resolveColor } from '../src/rooms/room-palette.js';
 import type { ChatClient } from '../src/local-voice/voice-engines.js';
 
 const good = {
   name: 'Study',
-  shell: { width: 12, depth: 4, height: 2.8, floor: 'oak', walls: 'cream', windows: [{ wall: 'north', width: 1.5 }], door: { wall: 'east' } },
+  shell: {
+    width: 12,
+    depth: 4,
+    height: 2.8,
+    floor: 'oak',
+    walls: 'cream',
+    windows: [{ wall: 'north', width: 1.5 }],
+    door: { wall: 'east' },
+  },
   lighting: 'Warm evening light',
   objects: [
-    { id: 'Desk', name: 'desk', search: 'desk', category: 'table', size: [1.4, 0.75, 0.7], place: { against: 'north', near: null, on: null, facing: null, corner: false }, surface: true },
-    { id: 'lamp', name: 'lamp', category: 'lamp', size: [0.3, 0.5, 0.3], place: { on: 'desk', near: 'ghost' } },
+    {
+      id: 'Desk',
+      name: 'desk',
+      search: 'desk',
+      category: 'table',
+      size: [1.4, 0.75, 0.7],
+      place: { against: 'north', near: null, on: null, facing: null, corner: false },
+      surface: true,
+    },
+    {
+      id: 'lamp',
+      name: 'lamp',
+      category: 'lamp',
+      size: [0.3, 0.5, 0.3],
+      place: { on: 'desk', near: 'ghost' },
+    },
   ],
 };
 
@@ -27,7 +53,14 @@ describe('validateLayout', () => {
     expect(layout.objects[1].search).toBe('lamp');
   });
   it('limits to 14 objects', () => {
-    const many = { ...good, objects: Array.from({ length: 20 }, (_, i) => ({ name: `box ${i}`, category: 'prop', size: [0.2, 0.2, 0.2] })) };
+    const many = {
+      ...good,
+      objects: Array.from({ length: 20 }, (_, i) => ({
+        name: `box ${i}`,
+        category: 'prop',
+        size: [0.2, 0.2, 0.2],
+      })),
+    };
     expect(validateLayout(many).objects).toHaveLength(14);
   });
   it.each([
@@ -35,7 +68,11 @@ describe('validateLayout', () => {
     ['no shell', { objects: good.objects }, /shell/],
     ['no objects', { ...good, objects: [] }, /objects/],
     ['bad size', { ...good, objects: [{ name: 'x', category: 'prop', size: [1, 1] }] }, /size/],
-    ['only unusable objects', { ...good, objects: [{ category: 'prop', size: [1, 1, 1] }, 'junk'] }, /objects\[0\]\.name/],
+    [
+      'only unusable objects',
+      { ...good, objects: [{ category: 'prop', size: [1, 1, 1] }, 'junk'] },
+      /objects\[0\]\.name/,
+    ],
   ])('rejects %s', (_name, input, message) => {
     expect(() => validateLayout(input)).toThrow(LayoutError);
     expect(() => validateLayout(input)).toThrow(message);
@@ -62,7 +99,10 @@ describe('free-form categories', () => {
     expect(normaliseCategory(word, name)).toEqual({ category, label: word.toLowerCase() });
   });
   it('falls back to the name, then to prop', () => {
-    expect(normaliseCategory('thingamajig', 'reading lamp')).toEqual({ category: 'lamp', label: 'thingamajig' });
+    expect(normaliseCategory('thingamajig', 'reading lamp')).toEqual({
+      category: 'lamp',
+      label: 'thingamajig',
+    });
     expect(normaliseCategory(undefined, 'coffee table')).toEqual({ category: 'table' });
     expect(normaliseCategory(42, 'box')).toEqual({ category: 'prop' });
   });
@@ -110,8 +150,23 @@ describe('lenient validation', () => {
     const layout = validateLayout(
       {
         ...good,
-        shell: { ...good.shell, windows: [{ wall: 'up', width: 1 }, { wall: 'south', width: 'wide' }], door: { wall: 'up' } },
-        objects: [{ name: 'shelf', category: 'storage', size: [1, 2, 0.4], place: { against: 'ceiling' }, seat_height: 'n/a' }],
+        shell: {
+          ...good.shell,
+          windows: [
+            { wall: 'up', width: 1 },
+            { wall: 'south', width: 'wide' },
+          ],
+          door: { wall: 'up' },
+        },
+        objects: [
+          {
+            name: 'shelf',
+            category: 'storage',
+            size: [1, 2, 0.4],
+            place: { against: 'ceiling' },
+            seat_height: 'n/a',
+          },
+        ],
       },
       notes,
     );
@@ -125,7 +180,8 @@ describe('lenient validation', () => {
 
 describe('seat size clamp', () => {
   const read = (entry: object) =>
-    validateLayout({ ...good, objects: [{ category: 'seat', size: [1, 0.9, 1], ...entry }] }).objects[0];
+    validateLayout({ ...good, objects: [{ category: 'seat', size: [1, 0.9, 1], ...entry }] })
+      .objects[0];
   it('limits armchair width and depth and the seat height, keeping the back height', () => {
     const chair = read({ name: 'armchair', size: [1.8, 1.2, 1.6], seat_height: 0.7 });
     expect(chair.size).toEqual([1, 1.2, 0.95]);
@@ -138,7 +194,10 @@ describe('seat size clamp', () => {
   });
   it('leaves an absent seat height absent and other categories alone', () => {
     expect(read({ name: 'stool' }).seatHeight).toBeNull();
-    const bed = validateLayout({ ...good, objects: [{ name: 'bed', category: 'bed', size: [2, 0.6, 2.2], seat_height: 0.6 }] }).objects[0];
+    const bed = validateLayout({
+      ...good,
+      objects: [{ name: 'bed', category: 'bed', size: [2, 0.6, 2.2], seat_height: 0.6 }],
+    }).objects[0];
     expect(bed.size).toEqual([2, 0.6, 2.2]);
     expect(bed.seatHeight).toBe(0.6);
   });
@@ -150,7 +209,15 @@ describe('seat size clamp', () => {
 describe('prompt and palette', () => {
   it('lists the categories, the lighting presets, the limit and a complete example', () => {
     const { system, user } = buildLayoutPrompt('  a messy attic ');
-    for (const word of ['seat', 'appliance', 'warm evening', 'at most 14', '"coffee_table"', 'seat_height']) expect(system).toContain(word);
+    for (const word of [
+      'seat',
+      'appliance',
+      'warm evening',
+      'at most 14',
+      '"coffee_table"',
+      'seat_height',
+    ])
+      expect(system).toContain(word);
     expect(user).toBe('Design this room: a messy attic');
     const example = system.slice(system.indexOf('{"name"'));
     expect(() => validateLayout(JSON.parse(example))).not.toThrow();
@@ -174,7 +241,9 @@ describe('extractJson', () => {
 
 function client(replies: Array<string | Error>, calls: unknown[][] = []): ChatClient {
   return {
-    baseUrl: 'x', model: 'm', flavor: 'llama-server',
+    baseUrl: 'x',
+    model: 'm',
+    flavor: 'llama-server',
     isAvailable: async () => true,
     async *streamChat(messages) {
       calls.push(messages);
@@ -188,21 +257,36 @@ function client(replies: Array<string | Error>, calls: unknown[][] = []): ChatCl
 describe('generateRoomLayout', () => {
   it('returns the validated layout from one request', async () => {
     const calls: unknown[][] = [];
-    const layout = await generateRoomLayout('study', { routing: undefined as never, keyFor: () => undefined, makeClients: () => [client([JSON.stringify(good)], calls)] });
+    const layout = await generateRoomLayout('study', {
+      routing: undefined as never,
+      keyFor: () => undefined,
+      makeClients: () => [client([JSON.stringify(good)], calls)],
+    });
     expect(layout.name).toBe('Study');
     expect(calls).toHaveLength(1);
   });
   it('retries once with the validation error, then succeeds', async () => {
     const calls: Array<Array<{ role: string; content: string }>> = [];
     const c = client(['{"name":"x"}', JSON.stringify(good)], calls as unknown[][]);
-    const layout = await generateRoomLayout('study', { routing: undefined as never, keyFor: () => undefined, makeClients: () => [c] });
+    const layout = await generateRoomLayout('study', {
+      routing: undefined as never,
+      keyFor: () => undefined,
+      makeClients: () => [c],
+    });
     expect(layout.objects).toHaveLength(2);
     expect(calls).toHaveLength(2);
     expect(calls[1].at(-1)?.content).toMatch(/could not be used: "shell"/);
   });
   it('fails clearly after the retry', async () => {
     const c = client(['nope', 'still nope']);
-    await expect(generateRoomLayout('study', { routing: undefined as never, keyFor: () => undefined, makeClients: () => [c], logger: { warn: vi.fn() } })).rejects.toThrow(/did not return a usable layout/);
+    await expect(
+      generateRoomLayout('study', {
+        routing: undefined as never,
+        keyFor: () => undefined,
+        makeClients: () => [c],
+        logger: { warn: vi.fn() },
+      }),
+    ).rejects.toThrow(/did not return a usable layout/);
   });
   it('falls back to a plain request when JSON mode is rejected', async () => {
     const modes: boolean[] = [];
@@ -211,27 +295,58 @@ describe('generateRoomLayout', () => {
       keyFor: () => undefined,
       makeClients: (json) => {
         modes.push(json);
-        return [client([json ? new Error('Local LLM request failed: HTTP 400 response_format') : JSON.stringify(good)])];
+        return [
+          client([
+            json
+              ? new Error('Local LLM request failed: HTTP 400 response_format')
+              : JSON.stringify(good),
+          ]),
+        ];
       },
     });
     expect(layout.name).toBe('Study');
     expect(modes).toEqual([true, false]);
   });
   it('sends response_format and the layout settings through the real client', async () => {
-    const routing = resolveModelRouting(builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
-      servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
-      routes: { scenelayout: { server: 'gpu', model: 'big' } },
-    });
-    const fetchFn = vi.fn(async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(good) } }] })}\n\ndata: [DONE]\n\n`, { status: 200 })) as unknown as typeof fetch;
+    const routing = resolveModelRouting(
+      builtInServers({
+        providers: DEFAULT_PROVIDER_SETTINGS,
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      }),
+      defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+      {
+        servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
+        routes: { scenelayout: { server: 'gpu', model: 'big' } },
+      },
+    );
+    const fetchFn = vi.fn(
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(good) } }] })}\n\ndata: [DONE]\n\n`,
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
     await generateRoomLayout('study', { routing, keyFor: () => undefined, fetchFn });
     const body = JSON.parse(String(vi.mocked(fetchFn).mock.calls[0][1]?.body));
-    expect(body).toMatchObject({ model: 'big', temperature: 0.4, max_tokens: 2500, response_format: { type: 'json_object' } });
+    expect(body).toMatchObject({
+      model: 'big',
+      temperature: 0.4,
+      max_tokens: 2500,
+      response_format: { type: 'json_object' },
+    });
   });
   it('follows Thinking by default', () => {
-    const routing = resolveModelRouting(builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
-      servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
-      routes: { llm: { server: 'gpu', model: 'qwen', backups: [{ server: 'openai' }] } },
-    });
+    const routing = resolveModelRouting(
+      builtInServers({
+        providers: DEFAULT_PROVIDER_SETTINGS,
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      }),
+      defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+      {
+        servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
+        routes: { llm: { server: 'gpu', model: 'qwen', backups: [{ server: 'openai' }] } },
+      },
+    );
     expect(routing.routes.scenelayout).toEqual(routing.routes.llm);
   });
 });

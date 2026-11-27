@@ -1,9 +1,6 @@
 import * as THREE from 'three';
 import { VRM } from '@pixiv/three-vrm';
-import {
-  VRMAnimation,
-  createVRMAnimationClip as buildVRMClip,
-} from '@pixiv/three-vrm-animation';
+import { VRMAnimation, createVRMAnimationClip as buildVRMClip } from '@pixiv/three-vrm-animation';
 import { VRMExpressionPresetName } from '@pixiv/three-vrm';
 
 export type VrmHumanoidBoneName = Parameters<
@@ -72,7 +69,10 @@ export interface VrmAnimationClipConfig {
   duration?: number;
 }
 
-export function createVrmAnimationClip(vrm: VRM, config: VrmAnimationClipConfig): THREE.AnimationClip | null {
+export function createVrmAnimationClip(
+  vrm: VRM,
+  config: VrmAnimationClipConfig,
+): THREE.AnimationClip | null {
   const animation = new VRMAnimation();
   animation.duration = config.duration ?? 0;
 
@@ -108,7 +108,11 @@ export function createVrmAnimationClip(vrm: VRM, config: VrmAnimationClipConfig)
   return clip;
 }
 
-export function createClipFromVrma(vrm: VRM, vrma: VRMAnimation, name?: string): THREE.AnimationClip {
+export function createClipFromVrma(
+  vrm: VRM,
+  vrma: VRMAnimation,
+  name?: string,
+): THREE.AnimationClip {
   const clip = buildVRMClip(vrma, vrm);
   if (name) {
     clip.name = name;

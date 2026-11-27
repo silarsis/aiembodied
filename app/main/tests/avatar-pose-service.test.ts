@@ -39,7 +39,15 @@ describe('AvatarPoseService', () => {
     const { store, directory } = await createStore();
     const service = new AvatarPoseService({ store, posesDirectory: directory });
     const first = service.listPoses();
-    expect(first.map((pose) => pose.name)).toEqual(['Relaxed neutral', 'Happiness', 'Sadness', 'Anger', 'Fear', 'Disgust', 'Surprise']);
+    expect(first.map((pose) => pose.name)).toEqual([
+      'Relaxed neutral',
+      'Happiness',
+      'Sadness',
+      'Anger',
+      'Fear',
+      'Disgust',
+      'Surprise',
+    ]);
     expect(first.every((pose) => pose.builtIn)).toBe(true);
     expect(new AvatarPoseService({ store, posesDirectory: directory }).listPoses()).toEqual(first);
     expect(store.listVrmPoses()).toEqual([]);
@@ -54,8 +62,18 @@ describe('AvatarPoseService', () => {
   it('hides only the exact obsolete automatic default and retains customized poses', async () => {
     const { store, directory } = await createStore();
     const service = new AvatarPoseService({ store, posesDirectory: directory });
-    store.createVrmPose({ id: 'old-default', name: 'default', createdAt: 0, filePath: 'old.pose.json', fileSha: LEGACY_DEFAULT_POSE_SHA });
-    const custom = await service.uploadPose({ name: 'default', fileName: 'custom.pose.json', data: '{}' });
+    store.createVrmPose({
+      id: 'old-default',
+      name: 'default',
+      createdAt: 0,
+      filePath: 'old.pose.json',
+      fileSha: LEGACY_DEFAULT_POSE_SHA,
+    });
+    const custom = await service.uploadPose({
+      name: 'default',
+      fileName: 'custom.pose.json',
+      data: '{}',
+    });
     expect(service.listPoses().map((pose) => pose.id)).not.toContain('old-default');
     expect(service.listPoses().map((pose) => pose.id)).toContain(custom.pose.id);
     expect(store.getVrmPose('old-default')).not.toBeNull();

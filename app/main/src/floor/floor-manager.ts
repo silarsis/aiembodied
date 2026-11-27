@@ -22,12 +22,19 @@ function escapeRegExp(text: string): string {
 function findName(text: string, name: string): number {
   const trimmed = name.trim();
   if (!trimmed) return -1;
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(trimmed)}(?![\\p{L}\\p{N}_])`, 'iu');
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}_])${escapeRegExp(trimmed)}(?![\\p{L}\\p{N}_])`,
+    'iu',
+  );
   return pattern.exec(text)?.index ?? -1;
 }
 
 /** Ids of scene avatars whose names appear in the text, in the order named. */
-function namedIn(text: string, candidates: string[], nameOf: (avatarId: string) => string): string[] {
+function namedIn(
+  text: string,
+  candidates: string[],
+  nameOf: (avatarId: string) => string,
+): string[] {
   return candidates
     .map((avatarId) => ({ avatarId, at: findName(text, nameOf(avatarId)) }))
     .filter((entry) => entry.at >= 0)
@@ -135,7 +142,10 @@ export type IntentFunction = (input: IntentInput, signal: AbortSignal) => Promis
 export type QuickIntentResult = IntentResult & { confidence: number };
 
 /** Reads one of Kevin's lines on the fine-tuned quick model. Rejecting means no answer. */
-export type QuickIntentFunction = (input: IntentInput, signal: AbortSignal) => Promise<QuickIntentResult>;
+export type QuickIntentFunction = (
+  input: IntentInput,
+  signal: AbortSignal,
+) => Promise<QuickIntentResult>;
 
 /** What a routing step decided, before it is committed to the manager's state. */
 interface PersonPlan {
@@ -165,7 +175,11 @@ export interface FloorLine {
 }
 
 /** Asks the avatars how much each wants to answer. Rejecting means no bids. */
-export type BidFunction = (candidates: BidCandidate[], recentLines: FloorLine[], signal: AbortSignal) => Promise<FloorBid[]>;
+export type BidFunction = (
+  candidates: BidCandidate[],
+  recentLines: FloorLine[],
+  signal: AbortSignal,
+) => Promise<FloorBid[]>;
 
 /** What the addressee check is asked: who is this line aimed at? */
 export interface AddresseeInput {
@@ -186,7 +200,10 @@ export interface AddresseeResult {
 }
 
 /** Decides who a line is aimed at. Rejecting means no answer. */
-export type AddresseeFunction = (input: AddresseeInput, signal: AbortSignal) => Promise<AddresseeResult>;
+export type AddresseeFunction = (
+  input: AddresseeInput,
+  signal: AbortSignal,
+) => Promise<AddresseeResult>;
 
 export interface FloorManagerOptions {
   /** The scene in use. Default: every avatar in `avatarIds()`, the first one hosting. */
@@ -259,7 +276,11 @@ export class FloorManager {
   scene(): Scene {
     if (this.options.scene) return this.options.scene();
     const avatarIds = this.options.avatarIds?.() ?? [];
-    return { id: DEFAULT_SCENE_ID, avatarIds, hostId: avatarIds.includes('echo') ? 'echo' : (avatarIds[0] ?? 'echo') };
+    return {
+      id: DEFAULT_SCENE_ID,
+      avatarIds,
+      hostId: avatarIds.includes('echo') ? 'echo' : (avatarIds[0] ?? 'echo'),
+    };
   }
 
   /** More than one avatar is in the scene, so the floor has anything to decide. */
@@ -269,17 +290,25 @@ export class FloorManager {
 
   /** Who holds the speaking slot and who waits, for tests and the journal. */
   state(): { speaking: string | null; queue: string[]; talking: boolean; partner: string | null } {
-    return { speaking: this.speaking, queue: [...this.queue], talking: this.talk !== null, partner: this.partner?.avatarId ?? null };
+    return {
+      speaking: this.speaking,
+      queue: [...this.queue],
+      talking: this.talk !== null,
+      partner: this.partner?.avatarId ?? null,
+    };
   }
 
   async route(utterance: FloorUtterance): Promise<FloorDecision> {
     this.remember(utterance);
-    return utterance.from === PERSON_SPEAKER ? this.routePerson(utterance) : this.routeAvatar(utterance);
+    return utterance.from === PERSON_SPEAKER
+      ? this.routePerson(utterance)
+      : this.routeAvatar(utterance);
   }
 
   private remember(utterance: FloorUtterance): void {
     this.recent.push({ from: utterance.from, text: utterance.text });
-    if (this.recent.length > RECENT_LINES_LIMIT) this.recent = this.recent.slice(-RECENT_LINES_LIMIT);
+    if (this.recent.length > RECENT_LINES_LIMIT)
+      this.recent = this.recent.slice(-RECENT_LINES_LIMIT);
   }
 
   private async routePerson(utterance: FloorUtterance): Promise<FloorDecision> {
@@ -292,11 +321,15 @@ export class FloorManager {
     this.pendingIntent?.abort();
     this.pendingIntent = null;
     const seq = ++this.personSeq;
-    const finish = (plan: PersonPlan, decidedBy: NonNullable<FloorDecision['decidedBy']>): FloorDecision => {
+    const finish = (
+      plan: PersonPlan,
+      decidedBy: NonNullable<FloorDecision['decidedBy']>,
+    ): FloorDecision => {
       trace.push(...plan.trace);
       if (plan.talk !== undefined) this.talk = plan.talk;
       if (plan.relay) this.relay = { ...plan.relay };
-      if (plan.speakers[0]) this.partner = { avatarId: plan.speakers[0].avatarId, at: utterance.at };
+      if (plan.speakers[0])
+        this.partner = { avatarId: plan.speakers[0].avatarId, at: utterance.at };
       return {
         speakers: plan.speakers,
         channel: 'aloud',
@@ -312,10 +345,18 @@ export class FloorManager {
     }
     const away = scene.awayIds ?? [];
     if (scene.avatarIds.length === 1 && away.length === 0) {
-      return finish({ speakers: [{ avatarId: scene.avatarIds[0], reason: 'host' }], trace: [`person: one avatar in scene -> ${scene.avatarIds[0]}`] }, 'default');
+      return finish(
+        {
+          speakers: [{ avatarId: scene.avatarIds[0], reason: 'host' }],
+          trace: [`person: one avatar in scene -> ${scene.avatarIds[0]}`],
+        },
+        'default',
+      );
     }
-    const describe = (result: IntentResult): string => `${result.addressed} ${result.wants}${result.other ? ` ${result.other}` : ''}`;
-    const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+    const describe = (result: IntentResult): string =>
+      `${result.addressed} ${result.wants}${result.other ? ` ${result.other}` : ''}`;
+    const reason = (error: unknown): string =>
+      error instanceof Error ? error.message : String(error);
     // Step 1: the fine-tuned quick model.
     let quickLow: QuickIntentResult | null = null;
     if (away.length > 0) {
@@ -323,16 +364,26 @@ export class FloorManager {
     } else if (this.options.quickIntent) {
       const started = Date.now();
       try {
-        const result = await this.ask(this.options.quickIntent, utterance, scene, this.quickIntentTimeoutMs, 'Quick intent');
+        const result = await this.ask(
+          this.options.quickIntent,
+          utterance,
+          scene,
+          this.quickIntentTimeoutMs,
+          'Quick intent',
+        );
         if (seq !== this.personSeq) return this.superseded(trace);
         const ms = Date.now() - started;
         const confidence = Number.isFinite(result.confidence) ? result.confidence : 0;
         if (confidence >= this.quickIntentThreshold) {
-          trace.push(`person: quick intent decided -> ${describe(result)} (confidence ${confidence.toFixed(2)}, ${ms} ms)`);
+          trace.push(
+            `person: quick intent decided -> ${describe(result)} (confidence ${confidence.toFixed(2)}, ${ms} ms)`,
+          );
           return finish(this.planFromIntent(result, utterance, scene), 'quick');
         }
         quickLow = { ...result, confidence };
-        trace.push(`person: quick intent unsure -> ${describe(result)} (confidence ${confidence.toFixed(2)} < ${this.quickIntentThreshold}, ${ms} ms)`);
+        trace.push(
+          `person: quick intent unsure -> ${describe(result)} (confidence ${confidence.toFixed(2)} < ${this.quickIntentThreshold}, ${ms} ms)`,
+        );
       } catch (error) {
         if (seq !== this.personSeq) return this.superseded(trace);
         trace.push(`person: quick intent failed (${reason(error)})`);
@@ -344,9 +395,18 @@ export class FloorManager {
     if (this.options.intent) {
       const started = Date.now();
       try {
-        const result = await this.ask(this.options.intent, utterance, scene, this.intentTimeoutMs, 'Intent model', away.length > 0);
+        const result = await this.ask(
+          this.options.intent,
+          utterance,
+          scene,
+          this.intentTimeoutMs,
+          'Intent model',
+          away.length > 0,
+        );
         if (seq !== this.personSeq) return this.superseded(trace);
-        trace.push(`person: chat model decided -> ${describe(result)} (${Date.now() - started} ms)`);
+        trace.push(
+          `person: chat model decided -> ${describe(result)} (${Date.now() - started} ms)`,
+        );
         return finish(this.planFromIntent(result, utterance, scene), 'model');
       } catch (error) {
         if (seq !== this.personSeq) return this.superseded(trace);
@@ -357,13 +417,21 @@ export class FloorManager {
     }
     // Step 3: the quick model's unsure answer beats a blind default.
     if (quickLow) {
-      trace.push(`person: using the unsure quick answer -> ${describe(quickLow)} (confidence ${quickLow.confidence.toFixed(2)})`);
+      trace.push(
+        `person: using the unsure quick answer -> ${describe(quickLow)} (confidence ${quickLow.confidence.toFixed(2)})`,
+      );
       return finish(this.planFromIntent(quickLow, utterance, scene), 'quick-low');
     }
     // Step 4: no text analysis; the recent partner, else the host.
-    const fallback = this.fallbackSpeaker(scene, utterance.at, null) ?? { avatarId: scene.hostId, reason: 'host' as const };
+    const fallback = this.fallbackSpeaker(scene, utterance.at, null) ?? {
+      avatarId: scene.hostId,
+      reason: 'host' as const,
+    };
     trace.push(`person: default -> ${fallback.avatarId} (${fallback.reason})`);
-    return finish({ speakers: [{ avatarId: fallback.avatarId, reason: fallback.reason }], trace: [] }, 'default');
+    return finish(
+      { speakers: [{ avatarId: fallback.avatarId, reason: fallback.reason }], trace: [] },
+      'default',
+    );
   }
 
   private superseded(trace: string[]): FloorDecision {
@@ -372,7 +440,14 @@ export class FloorManager {
   }
 
   /** One call to an intent function, bounded by `timeoutMs` and dropped when Kevin speaks again. */
-  private async ask<R extends IntentResult>(intent: (input: IntentInput, signal: AbortSignal) => Promise<R>, utterance: FloorUtterance, scene: Scene, timeoutMs: number, label: string, withAway = false): Promise<R> {
+  private async ask<R extends IntentResult>(
+    intent: (input: IntentInput, signal: AbortSignal) => Promise<R>,
+    utterance: FloorUtterance,
+    scene: Scene,
+    timeoutMs: number,
+    label: string,
+    withAway = false,
+  ): Promise<R> {
     const controller = new AbortController();
     this.pendingIntent = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]);
@@ -398,7 +473,9 @@ export class FloorManager {
       const roster = withAway ? [...scene.avatarIds, ...(scene.awayIds ?? [])] : scene.avatarIds;
       const valid =
         result &&
-        (result.addressed === 'everyone' || result.addressed === 'unclear' || roster.includes(result.addressed)) &&
+        (result.addressed === 'everyone' ||
+          result.addressed === 'unclear' ||
+          roster.includes(result.addressed)) &&
         (result.wants === 'answer' || result.wants === 'converse' || result.wants === 'relay') &&
         (result.other === null || roster.includes(result.other));
       if (!valid) throw new Error(`${label} gave an answer that was not usable`);
@@ -424,32 +501,54 @@ export class FloorManager {
   /** The last partner when it is in the scene and spoke with Kevin within the window, else null. */
   private freshPartner(scene: Scene, at: number): string | null {
     const partner = this.partner;
-    return partner && scene.avatarIds.includes(partner.avatarId) && at - partner.at <= this.partnerWindowMs ? partner.avatarId : null;
+    return partner &&
+      scene.avatarIds.includes(partner.avatarId) &&
+      at - partner.at <= this.partnerWindowMs
+      ? partner.avatarId
+      : null;
   }
 
   /** Who speaks when the line says nobody: the last partner, else the host, else the first avatar; never `exclude`. */
-  private fallbackSpeaker(scene: Scene, at: number, exclude: string | null): { avatarId: string; reason: SpeakerReason } | null {
+  private fallbackSpeaker(
+    scene: Scene,
+    at: number,
+    exclude: string | null,
+  ): { avatarId: string; reason: SpeakerReason } | null {
     const partner = this.freshPartner(scene, at);
     if (partner && partner !== exclude) return { avatarId: partner, reason: 'last-partner' };
-    if (scene.avatarIds.includes(scene.hostId) && scene.hostId !== exclude) return { avatarId: scene.hostId, reason: 'host' };
+    if (scene.avatarIds.includes(scene.hostId) && scene.hostId !== exclude)
+      return { avatarId: scene.hostId, reason: 'host' };
     const other = scene.avatarIds.find((id) => id !== exclude);
     return other ? { avatarId: other, reason: 'host' } : null;
   }
 
   /** Someone to start a conversation with `target`: `preferred` (the avatar Kevin spoke to) if it is not the target, else the fallback. */
-  private starterFor(target: string, preferred: string | null, scene: Scene, at: number): { starter: string; reason: SpeakerReason } {
-    if (preferred && preferred !== target && scene.avatarIds.includes(preferred)) return { starter: preferred, reason: 'addressed' };
+  private starterFor(
+    target: string,
+    preferred: string | null,
+    scene: Scene,
+    at: number,
+  ): { starter: string; reason: SpeakerReason } {
+    if (preferred && preferred !== target && scene.avatarIds.includes(preferred))
+      return { starter: preferred, reason: 'addressed' };
     const fallback = this.fallbackSpeaker(scene, at, target);
     return { starter: fallback?.avatarId ?? scene.hostId, reason: fallback?.reason ?? 'host' };
   }
 
-  private conversePlan(target: string, preferred: string | null, scene: Scene, at: number): PersonPlan {
+  private conversePlan(
+    target: string,
+    preferred: string | null,
+    scene: Scene,
+    at: number,
+  ): PersonPlan {
     const { starter, reason } = this.starterFor(target, preferred, scene, at);
     return {
       speakers: [{ avatarId: starter, reason }],
       converse: { starter, target },
       talk: { pair: [starter, target] },
-      trace: [`person: asked ${starter} to have a conversation with ${target} (${reason}) -> ${starter} starts, ${starter} and ${target} alternate, out loud`],
+      trace: [
+        `person: asked ${starter} to have a conversation with ${target} (${reason}) -> ${starter} starts, ${starter} and ${target} alternate, out loud`,
+      ],
     };
   }
 
@@ -462,35 +561,70 @@ export class FloorManager {
   }
 
   /** The decision the intent model's answer stands for. Answers that do not hang together count as a plain answer by the addressed avatar. */
-  private planFromIntent(result: IntentResult, utterance: FloorUtterance, scene: Scene): PersonPlan {
+  private planFromIntent(
+    result: IntentResult,
+    utterance: FloorUtterance,
+    scene: Scene,
+  ): PersonPlan {
     const at = utterance.at;
     const other = result.other && scene.avatarIds.includes(result.other) ? result.other : null;
     // The avatar addressed may be away (it is called over); `other` and "everyone" only ever mean avatars that are here.
-    const concrete = result.addressed !== 'everyone' && result.addressed !== 'unclear' ? result.addressed : null;
+    const concrete =
+      result.addressed !== 'everyone' && result.addressed !== 'unclear' ? result.addressed : null;
     const consistent = result.wants === 'answer' || (other !== null && other !== concrete);
-    if (result.wants === 'converse' && other && consistent) return this.conversePlan(other, concrete, scene, at);
+    if (result.wants === 'converse' && other && consistent)
+      return this.conversePlan(other, concrete, scene, at);
     if (result.wants === 'relay' && other && consistent) {
       const from = concrete ?? this.fallbackSpeaker(scene, at, other)?.avatarId;
-      if (from) return this.relayPlan(from, other, concrete ? 'addressed' : (this.fallbackSpeaker(scene, at, other)?.reason ?? 'host'));
+      if (from)
+        return this.relayPlan(
+          from,
+          other,
+          concrete ? 'addressed' : (this.fallbackSpeaker(scene, at, other)?.reason ?? 'host'),
+        );
     }
-    if (result.wants === 'converse' && !other && (result.addressed === 'everyone' || (concrete && scene.avatarIds.includes(concrete) && scene.avatarIds.length === 2))) {
+    if (
+      result.wants === 'converse' &&
+      !other &&
+      (result.addressed === 'everyone' ||
+        (concrete && scene.avatarIds.includes(concrete) && scene.avatarIds.length === 2))
+    ) {
       // "You two, talk to each other" / "Echo, have a chat": a conversation with no one named, so the avatars talk among themselves.
-      const partner = this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId;
+      const partner =
+        this.partner && scene.avatarIds.includes(this.partner.avatarId)
+          ? this.partner.avatarId
+          : scene.hostId;
       const first = concrete ?? partner;
-      const second = scene.avatarIds.length === 2 ? scene.avatarIds.find((id) => id !== first) : undefined;
+      const second =
+        scene.avatarIds.length === 2 ? scene.avatarIds.find((id) => id !== first) : undefined;
       return {
         speakers: [{ avatarId: first, reason: concrete ? 'addressed' : 'host' }],
         ...(second ? { converse: { starter: first, target: second } } : {}),
         talk: { pair: second ? [first, second] : null },
-        trace: [`person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`],
+        trace: [
+          `person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`,
+        ],
       };
     }
     if (result.addressed === 'everyone' && (result.wants === 'answer' || !consistent)) {
-      return { speakers: scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })), trace: ['person: addressed everyone -> all avatars in scene order'] };
+      return {
+        speakers: scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })),
+        trace: ['person: addressed everyone -> all avatars in scene order'],
+      };
     }
-    if (concrete) return { speakers: [{ avatarId: concrete, reason: 'addressed' }], trace: [`person: addressed by the intent model -> ${concrete}`] };
-    const fallback = this.fallbackSpeaker(scene, at, result.wants === 'answer' ? other : null) ?? { avatarId: scene.hostId, reason: 'host' as const };
-    return { speakers: [{ avatarId: fallback.avatarId, reason: fallback.reason }], trace: [`person: the intent model named no one -> ${fallback.avatarId} (${fallback.reason})`] };
+    if (concrete)
+      return {
+        speakers: [{ avatarId: concrete, reason: 'addressed' }],
+        trace: [`person: addressed by the intent model -> ${concrete}`],
+      };
+    const fallback = this.fallbackSpeaker(scene, at, result.wants === 'answer' ? other : null) ?? {
+      avatarId: scene.hostId,
+      reason: 'host' as const,
+    };
+    return {
+      speakers: [{ avatarId: fallback.avatarId, reason: fallback.reason }],
+      trace: [`person: the intent model named no one -> ${fallback.avatarId} (${fallback.reason})`],
+    };
   }
 
   private namedIn(text: string, candidates: string[]): string[] {
@@ -501,10 +635,16 @@ export class FloorManager {
     const scene = this.scene();
     const senderOf = utterance.from.slice('avatar:'.length);
     // A chat Kevin asked for covers its pair (or everyone, when no pair was fixed); a third avatar only overhears.
-    const talk = this.talk && (!this.talk.pair || this.talk.pair.includes(senderOf)) ? this.talk : null;
+    const talk =
+      this.talk && (!this.talk.pair || this.talk.pair.includes(senderOf)) ? this.talk : null;
     const channel: FloorChannel = talk || this.options.hearChatter?.() ? 'aloud' : 'back';
     const trace: string[] = [];
-    const none = (extra: Partial<FloorDecision> = {}): FloorDecision => ({ speakers: [], channel, trace, ...extra });
+    const none = (extra: Partial<FloorDecision> = {}): FloorDecision => ({
+      speakers: [],
+      channel,
+      trace,
+      ...extra,
+    });
     const senderId = utterance.from.slice('avatar:'.length);
     if (!scene.avatarIds.includes(senderId)) {
       trace.push(`avatar: ${senderId} is not in the scene`);
@@ -521,9 +661,18 @@ export class FloorManager {
       trace.push(`avatar: chatter time limit reached (${Math.round(elapsed / 1000)} s)`);
       return none({ budget: { kind: 'time', ms: elapsed } });
     }
-    const take = (avatarId: string, reason: SpeakerReason, aloud: FloorChannel = channel): FloorDecision => {
+    const take = (
+      avatarId: string,
+      reason: SpeakerReason,
+      aloud: FloorChannel = channel,
+    ): FloorDecision => {
       this.chatterStartedAt ??= utterance.at;
-      return { speakers: [{ avatarId, reason }], channel: aloud, trace, ...(talk ? { talk: true } : {}) };
+      return {
+        speakers: [{ avatarId, reason }],
+        channel: aloud,
+        trace,
+        ...(talk ? { talk: true } : {}),
+      };
     };
     if (this.relay && this.relay.from === senderId && others.includes(this.relay.to)) {
       // Kevin asked for this, so he hears it even when chatter is off.
@@ -556,7 +705,13 @@ export class FloorManager {
     if (!relayWaiting) {
       // No name, no relay, no chat Kevin asked for: ask who the line is aimed at ("lenha, what are you up to?").
       const picked = await this.askAddressee(
-        { speaker: utterance.from, text: utterance.text, recent: this.recentBefore(), candidates: this.candidatesOf(others), includePerson: true },
+        {
+          speaker: utterance.from,
+          text: utterance.text,
+          recent: this.recentBefore(),
+          candidates: this.candidatesOf(others),
+          includePerson: true,
+        },
         trace,
         'avatar',
       );
@@ -578,12 +733,20 @@ export class FloorManager {
     const order = new Map(scene.avatarIds.map((avatarId, index) => [avatarId, index] as const));
     const best = bids
       .filter((bid) => order.has(bid.avatarId) && bid.avatarId !== senderId)
-      .sort((a, b) => b.want - a.want || (order.get(a.avatarId) ?? 0) - (order.get(b.avatarId) ?? 0))[0];
+      .sort(
+        (a, b) => b.want - a.want || (order.get(a.avatarId) ?? 0) - (order.get(b.avatarId) ?? 0),
+      )[0];
     if (!best || best.want < this.bidThreshold) {
-      trace.push(best ? `avatar: best bid ${best.avatarId} ${best.want.toFixed(2)} is below ${this.bidThreshold}` : 'avatar: no bids -> silence');
+      trace.push(
+        best
+          ? `avatar: best bid ${best.avatarId} ${best.want.toFixed(2)} is below ${this.bidThreshold}`
+          : 'avatar: no bids -> silence',
+      );
       return none();
     }
-    trace.push(`avatar: ${best.avatarId} wins with ${best.want.toFixed(2)}${best.reason ? ` (${best.reason})` : ''}`);
+    trace.push(
+      `avatar: ${best.avatarId} wins with ${best.want.toFixed(2)}${best.reason ? ` (${best.reason})` : ''}`,
+    );
     return take(best.avatarId, 'bid');
   }
 
@@ -600,14 +763,21 @@ export class FloorManager {
    * Ask the addressee check, if there is one. Returns the confident answer ('person', 'all' or an
    * avatar id), or null when there is no check, it failed or timed out, or it was not sure enough.
    */
-  private async askAddressee(input: AddresseeInput, trace: string[], label: 'person' | 'avatar'): Promise<string | null> {
+  private async askAddressee(
+    input: AddresseeInput,
+    trace: string[],
+    label: 'person' | 'avatar',
+  ): Promise<string | null> {
     const ask = this.options.addressee;
     if (!ask) return null;
     const signal = AbortSignal.timeout(this.addresseeTimeoutMs);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Addressee check timed out')), this.addresseeTimeoutMs);
+        timer = setTimeout(
+          () => reject(new Error('Addressee check timed out')),
+          this.addresseeTimeoutMs,
+        );
         timer.unref?.();
       });
       const run = ask(input, signal);
@@ -615,12 +785,16 @@ export class FloorManager {
       const result = await Promise.race([run, timeout]);
       const confidence = Number.isFinite(result?.confidence) ? result.confidence : 0;
       if (!result || result.avatarId === null || confidence < this.addresseeThreshold) {
-        trace.push(`${label}: addressee check not sure${result?.avatarId ? ` (${result.avatarId} ${confidence.toFixed(2)})` : ''}`);
+        trace.push(
+          `${label}: addressee check not sure${result?.avatarId ? ` (${result.avatarId} ${confidence.toFixed(2)})` : ''}`,
+        );
         return null;
       }
       return result.avatarId;
     } catch (error) {
-      trace.push(`${label}: addressee check failed (${error instanceof Error ? error.message : String(error)})`);
+      trace.push(
+        `${label}: addressee check failed (${error instanceof Error ? error.message : String(error)})`,
+      );
       return null;
     } finally {
       if (timer) clearTimeout(timer);
@@ -653,7 +827,9 @@ export class FloorManager {
         reason: typeof entry.reason === 'string' ? entry.reason : '',
       }));
     } catch (error) {
-      trace.push(`avatar: bidding failed (${error instanceof Error ? error.message : String(error)})`);
+      trace.push(
+        `avatar: bidding failed (${error instanceof Error ? error.message : String(error)})`,
+      );
       return [];
     } finally {
       if (timer) clearTimeout(timer);

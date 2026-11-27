@@ -5,7 +5,9 @@ import { builtInServers, defaultRoutes } from '../../main/src/shared/config/mode
 import type { AvatarModelSummary } from '../src/avatar/types.js';
 
 vi.mock('../src/realtime/local-voice-client.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/realtime/local-voice-client.js')>('../src/realtime/local-voice-client.js');
+  const actual = await vi.importActual<typeof import('../src/realtime/local-voice-client.js')>(
+    '../src/realtime/local-voice-client.js',
+  );
   class FakeLocalVoiceClient {
     constructor() {
       return new Proxy(this, {
@@ -32,23 +34,58 @@ class MockAudioContext {
   currentTime = 0;
   state = 'running';
   createMediaStreamSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
-  createGain = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 0, setTargetAtTime: vi.fn(), setValueAtTime: vi.fn() } }));
-  createMediaStreamDestination = vi.fn(() => ({ stream: new MockMediaStream(), connect: vi.fn(), disconnect: vi.fn() }));
-  createAnalyser = vi.fn(() => ({ fftSize: 2048, smoothingTimeConstant: 0, connect: vi.fn(), disconnect: vi.fn(), getFloatTimeDomainData: vi.fn() }));
+  createGain = vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    gain: { value: 0, setTargetAtTime: vi.fn(), setValueAtTime: vi.fn() },
+  }));
+  createMediaStreamDestination = vi.fn(() => ({
+    stream: new MockMediaStream(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }));
+  createAnalyser = vi.fn(() => ({
+    fftSize: 2048,
+    smoothingTimeConstant: 0,
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    getFloatTimeDomainData: vi.fn(),
+  }));
   resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
 }
 
-const model = (id: string): AvatarModelSummary => ({ id, name: id, createdAt: 1, version: '1.0', fileSha: id, thumbnailDataUrl: null, description: null });
+const model = (id: string): AvatarModelSummary => ({
+  id,
+  name: id,
+  createdAt: 1,
+  version: '1.0',
+  fileSha: id,
+  thumbnailDataUrl: null,
+  description: null,
+});
 
 const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
 const originalDialogClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');
 beforeAll(() => {
-  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value() { this.open = true; } });
-  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value() { this.open = false; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+    configurable: true,
+    value() {
+      this.open = true;
+    },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+    configurable: true,
+    value() {
+      this.open = false;
+    },
+  });
 });
 afterAll(() => {
-  for (const [name, descriptor] of [['showModal', originalShowModal], ['close', originalDialogClose]] as const) {
+  for (const [name, descriptor] of [
+    ['showModal', originalShowModal],
+    ['close', originalDialogClose],
+  ] as const) {
     if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
     else Reflect.deleteProperty(HTMLDialogElement.prototype, name);
   }
@@ -62,10 +99,15 @@ const voiceOptions = (selected: string | null, engine: string | null = 'kokoro')
   selected,
 });
 
-describe('Characters pop-up: each card holds its character\'s settings', () => {
+describe("Characters pop-up: each card holds its character's settings", () => {
   const originalAudioContext = window.AudioContext;
   const originalMediaDevices = navigator.mediaDevices;
-  const originalConsole = { error: console.error, warn: console.warn, info: console.info, debug: console.debug };
+  const originalConsole = {
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+    debug: console.debug,
+  };
 
   beforeEach(() => {
     (window as unknown as { AudioContext: unknown }).AudioContext = MockAudioContext;
@@ -98,12 +140,22 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     const avatars = {
       list: vi.fn(async () => profiles),
       add: vi.fn(),
-      update: vi.fn(async (id: string, changes: object) => ({ ...profiles.find((p) => p.id === id), ...changes })),
+      update: vi.fn(async (id: string, changes: object) => ({
+        ...profiles.find((p) => p.id === id),
+        ...changes,
+      })),
       remove: vi.fn(),
-      idlePersonas: vi.fn(async () => ({ sage: { personality: 'Be calm.', habits: '' }, luna: { personality: 'Luna', habits: '' } })),
+      idlePersonas: vi.fn(async () => ({
+        sage: { personality: 'Be calm.', habits: '' },
+        luna: { personality: 'Luna', habits: '' },
+      })),
     };
     const prompts: Record<string, string | null> = { undefined: 'Echo prompt', luna: null };
-    const habits: Record<string, string> = { undefined: 'Echo reads.', sage: 'Sage hums.', luna: 'Luna paints.' };
+    const habits: Record<string, string> = {
+      undefined: 'Echo reads.',
+      sage: 'Sage hums.',
+      luna: 'Luna paints.',
+    };
     const avatar = {
       listModels: vi.fn().mockResolvedValue([model('m1'), model('m2')]),
       getActiveModel: vi.fn().mockResolvedValue(model('m1')),
@@ -124,7 +176,13 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       realtimeVoice: 'shimmer',
       metrics: { enabled: false, host: '127.0.0.1', port: 9090, path: '/metrics' },
-      wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+      wakeWord: {
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
+        cooldownMs: 1500,
+        deviceIndex: undefined,
+      },
     };
     (window as unknown as { aiembodied: unknown }).aiembodied = {
       ping: () => 'pong',
@@ -138,19 +196,27 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
       avatar: new Proxy(avatar, {
         get: (target, key) => {
           if (key in target) return (target as Record<string | symbol, unknown>)[key];
-          return typeof key === 'string' && /^on[A-Z]/.test(key) ? () => () => undefined : vi.fn().mockResolvedValue([]);
+          return typeof key === 'string' && /^on[A-Z]/.test(key)
+            ? () => () => undefined
+            : vi.fn().mockResolvedValue([]);
         },
       }),
       localVoice: { getVoiceOptions, getStatus: vi.fn().mockRejectedValue(new Error('offline')) },
       models: {
         get: vi.fn(async () => ({
-          servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({ ...server, hasKey: false })),
+          servers: builtInServers({
+            providers: DEFAULT_PROVIDER_SETTINGS,
+            comfyUiBaseUrl: 'http://127.0.0.1:8188',
+          }).map((server) => ({ ...server, hasKey: false })),
           routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
         })),
         probe: vi.fn(async () => ({ status: 'up', models: {}, checkedAt: 0 })),
       },
       conversation: {
-        getHistory: vi.fn().mockResolvedValue({ currentSessionId: 's1', sessions: [{ id: 's1', startedAt: 1, title: null, messages: [] }] }),
+        getHistory: vi.fn().mockResolvedValue({
+          currentSessionId: 's1',
+          sessions: [{ id: 's1', startedAt: 1, title: null, messages: [] }],
+        }),
         appendMessage: vi.fn(),
         onSessionStarted: () => () => undefined,
         onMessageAppended: () => () => undefined,
@@ -168,8 +234,10 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     fireEvent.click(await screen.findByRole('button', { name: `Edit ${name}` }));
   }
 
-  it('Echo\'s card edits the active character\'s prompt, idle habits and voice, as the old sections did', async () => {
-    const getVoiceOptions = vi.fn(async (avatarId?: string) => voiceOptions(avatarId ? 'am_adam' : 'af_heart'));
+  it("Echo's card edits the active character's prompt, idle habits and voice, as the old sections did", async () => {
+    const getVoiceOptions = vi.fn(async (avatarId?: string) =>
+      voiceOptions(avatarId ? 'am_adam' : 'af_heart'),
+    );
     const { avatar } = boot(getVoiceOptions);
     render(<App />);
     await openCard('Echo');
@@ -189,15 +257,19 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     const voice = screen.getByLabelText('Voice of Echo') as HTMLSelectElement;
     await waitFor(() => expect(voice.value).toBe('af_heart'));
     fireEvent.change(voice, { target: { value: 'am_adam' } });
-    await waitFor(() => expect(avatar.setVoicePreference).toHaveBeenCalledWith('am_adam', 'kokoro'));
+    await waitFor(() =>
+      expect(avatar.setVoicePreference).toHaveBeenCalledWith('am_adam', 'kokoro'),
+    );
     expect(getVoiceOptions).toHaveBeenCalledWith();
     // The old Personality and Voice sections are gone from the lower part of the pop-up.
     expect(screen.queryByLabelText(/^Base prompt/)).toBeNull();
     expect(document.getElementById('character-voice')).toBeNull();
   });
 
-  it('a character sharing Echo\'s body keeps its own prompt (in its profile), idle habits and voice', async () => {
-    const getVoiceOptions = vi.fn(async (avatarId?: string) => voiceOptions(avatarId ? 'am_adam' : 'af_heart'));
+  it("a character sharing Echo's body keeps its own prompt (in its profile), idle habits and voice", async () => {
+    const getVoiceOptions = vi.fn(async (avatarId?: string) =>
+      voiceOptions(avatarId ? 'am_adam' : 'af_heart'),
+    );
     const { avatar, avatars } = boot(getVoiceOptions);
     render(<App />);
     await openCard('Sage');
@@ -206,7 +278,9 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     expect(prompt.value).toBe('Be calm.');
     fireEvent.change(prompt, { target: { value: 'Be gentle.' } });
     fireEvent.blur(prompt);
-    await waitFor(() => expect(avatars.update).toHaveBeenCalledWith('sage', { prompt: 'Be gentle.' }));
+    await waitFor(() =>
+      expect(avatars.update).toHaveBeenCalledWith('sage', { prompt: 'Be gentle.' }),
+    );
     expect(avatar.setPromptPreference).not.toHaveBeenCalled();
 
     const habits = screen.getByLabelText('Idle habits of Sage') as HTMLTextAreaElement;
@@ -217,13 +291,17 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     fireEvent.blur(habits);
     await waitFor(() => expect(avatar.setIdleHabits).toHaveBeenCalledWith('Sage naps.', 'sage'));
     // The idle director is told the new habits right away.
-    await waitFor(() => expect(avatars.idlePersonas.mock.calls.length).toBeGreaterThan(callsBefore));
+    await waitFor(() =>
+      expect(avatars.idlePersonas.mock.calls.length).toBeGreaterThan(callsBefore),
+    );
 
     const voice = screen.getByLabelText('Voice of Sage') as HTMLSelectElement;
     await waitFor(() => expect(voice.value).toBe('am_adam'));
     expect(getVoiceOptions).toHaveBeenCalledWith('sage');
     fireEvent.change(voice, { target: { value: 'af_heart' } });
-    await waitFor(() => expect(avatar.setVoicePreference).toHaveBeenCalledWith('af_heart', 'kokoro', 'sage'));
+    await waitFor(() =>
+      expect(avatar.setVoicePreference).toHaveBeenCalledWith('af_heart', 'kokoro', 'sage'),
+    );
   });
 
   it('a character with a body of its own saves its prompt under its avatar id and starts from the profile prompt', async () => {
@@ -236,7 +314,9 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     expect(avatar.getPromptPreference).toHaveBeenCalledWith('luna');
     fireEvent.change(prompt, { target: { value: 'Luna is shy.' } });
     fireEvent.blur(prompt);
-    await waitFor(() => expect(avatar.setPromptPreference).toHaveBeenCalledWith('Luna is shy.', 'luna'));
+    await waitFor(() =>
+      expect(avatar.setPromptPreference).toHaveBeenCalledWith('Luna is shy.', 'luna'),
+    );
     expect(avatars.update).not.toHaveBeenCalled();
   });
 
@@ -245,7 +325,9 @@ describe('Characters pop-up: each card holds its character\'s settings', () => {
     render(<App />);
     await openCard('Sage');
     const voice = (await screen.findByLabelText('Voice of Sage')) as HTMLSelectElement;
-    await waitFor(() => expect(screen.getAllByText(/Nothing is set to speak/).length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Nothing is set to speak/).length).toBeGreaterThan(0),
+    );
     expect(voice).toBeDisabled();
   });
 });

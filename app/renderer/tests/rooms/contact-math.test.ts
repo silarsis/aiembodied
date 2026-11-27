@@ -35,9 +35,13 @@ describe('smallestRotation', () => {
 
   it('is identity when the push is along the bone or there is nothing to do', () => {
     const q = new THREE.Quaternion(0.1, 0.2, 0.3, 0.9);
-    expect(smallestRotation(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 1, 0), 0.05, 0.4, q)).toBe(0);
+    expect(
+      smallestRotation(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 1, 0), 0.05, 0.4, q),
+    ).toBe(0);
     expect(q.angleTo(new THREE.Quaternion())).toBe(0);
-    expect(smallestRotation(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0), 0, 0.4, q)).toBe(0);
+    expect(
+      smallestRotation(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0), 0, 0.4, q),
+    ).toBe(0);
   });
 });
 
@@ -104,7 +108,15 @@ describe('solveTwoBone', () => {
   it('stretches straight towards an unreachable target', () => {
     const mid = new THREE.Vector3();
     const end = new THREE.Vector3();
-    const reached = solveTwoBone(root, new THREE.Vector3(0, -2, 0), new THREE.Vector3(0, 0, 1), 0.45, 0.45, mid, end);
+    const reached = solveTwoBone(
+      root,
+      new THREE.Vector3(0, -2, 0),
+      new THREE.Vector3(0, 0, 1),
+      0.45,
+      0.45,
+      mid,
+      end,
+    );
     expect(reached).toBe(false);
     expect(end.x).toBeCloseTo(0, 6);
     expect(end.y).toBeCloseTo(0.1, 5);
@@ -114,7 +126,15 @@ describe('solveTwoBone', () => {
   it('copes with a pole along the limb', () => {
     const mid = new THREE.Vector3();
     const end = new THREE.Vector3();
-    solveTwoBone(root, new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(0, -1, 0), 0.45, 0.45, mid, end);
+    solveTwoBone(
+      root,
+      new THREE.Vector3(0, 0.3, 0),
+      new THREE.Vector3(0, -1, 0),
+      0.45,
+      0.45,
+      mid,
+      end,
+    );
     expect(Number.isFinite(mid.x + mid.y + mid.z)).toBe(true);
     expect(mid.distanceTo(root)).toBeCloseTo(0.45, 6);
   });
@@ -180,7 +200,9 @@ describe('capDirectional', () => {
   });
 
   it('caps the flexion and the rest separately and may write in place', () => {
-    const q = new THREE.Quaternion().setFromAxisAngle(X, -deg(40)).multiply(new THREE.Quaternion().setFromAxisAngle(Z, deg(40)));
+    const q = new THREE.Quaternion()
+      .setFromAxisAngle(X, -deg(40))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(Z, deg(40)));
     expect(capDirectional(q, X, HIP_FLEXION_MAX_OFFSET, HIP_MAX_OFFSET, q)).toBe(true);
     expect(hingeAngle(q, X)).toBeLessThan(-deg(35));
     expect(rotationAngle(q)).toBeGreaterThan(deg(40));
@@ -189,7 +211,8 @@ describe('capDirectional', () => {
 
 describe('headExcessCorrection', () => {
   const limits = [deg(35), deg(25), deg(15)] as const;
-  const yawOf = (q: THREE.Quaternion) => (new THREE.Euler().setFromQuaternion(q, 'YXZ').y * 180) / Math.PI;
+  const yawOf = (q: THREE.Quaternion) =>
+    (new THREE.Euler().setFromQuaternion(q, 'YXZ').y * 180) / Math.PI;
 
   it('takes only the excess off a 58 degree yaw', () => {
     const head = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, deg(58), 0, 'YXZ'));

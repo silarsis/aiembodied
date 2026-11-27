@@ -9,6 +9,9 @@ export function tagEvent(event: LocalVoiceEvent, avatarId: string): LocalVoiceEv
   return { ...event, avatarId };
 }
 
-export function tagResult(result: LocalVoiceRespondResult, avatarId: string): LocalVoiceRespondResult {
+export function tagResult(
+  result: LocalVoiceRespondResult,
+  avatarId: string,
+): LocalVoiceRespondResult {
   return { ...result, avatarId };
 }

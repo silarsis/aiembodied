@@ -50,7 +50,10 @@ function storage(): Storage | null {
 
 function transport(): MotionTraceTransport | null {
   if (transportOverride !== undefined) return transportOverride;
-  const bridge = typeof window !== 'undefined' ? (window as unknown as { aiembodied?: { motionTrace?: MotionTraceTransport } }).aiembodied : undefined;
+  const bridge =
+    typeof window !== 'undefined'
+      ? (window as unknown as { aiembodied?: { motionTrace?: MotionTraceTransport } }).aiembodied
+      : undefined;
   return bridge?.motionTrace ?? null;
 }
 
@@ -130,7 +133,13 @@ export const trace: TraceFn = (avatar, kind, build) => {
   } catch (error) {
     data = { traceError: error instanceof Error ? error.message : String(error) };
   }
-  buffer.push({ ts: new Date().toISOString(), t: Math.round(performance.now() * 100) / 100, avatar, kind, ...data });
+  buffer.push({
+    ts: new Date().toISOString(),
+    t: Math.round(performance.now() * 100) / 100,
+    avatar,
+    kind,
+    ...data,
+  });
   if (buffer.length >= MAX_BATCH) flushMotionTrace();
   else if (!flushTimer) flushTimer = setTimeout(flushMotionTrace, FLUSH_MS);
 };

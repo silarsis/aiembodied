@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { GpuMemoryReader, localPort, summariseGpuReading, type RawGpuReading } from '../src/diagnostics/gpu-memory.js';
+import {
+  GpuMemoryReader,
+  localPort,
+  summariseGpuReading,
+  type RawGpuReading,
+} from '../src/diagnostics/gpu-memory.js';
 
 const GB = 1024 ** 3;
 const LUID = 'luid_0x00000000_0x0000d1a2';
@@ -58,14 +63,20 @@ describe('summariseGpuReading', () => {
       ['local-speech', 0, 500],
       ['local-comfy', 0, undefined],
     ]);
-    expect(snapshot.others).toEqual([{ pid: 300, name: 'UnslothStudio', dedicated: 10 * GB, shared: 0 }]);
+    expect(snapshot.others).toEqual([
+      { pid: 300, name: 'UnslothStudio', dedicated: 10 * GB, shared: 0 },
+    ]);
     expect(snapshot.unattributed.dedicated / GB).toBeCloseTo(4);
     expect(snapshot.unattributed.shared / GB).toBeCloseTo(2);
   });
 
   it('accepts single objects where PowerShell drops the array', () => {
     const snapshot = summariseGpuReading(
-      { counters: counter(`pid_7_${LUID}_phys_0`, 'Dedicated', 2), listen: { port: 1234, pid: 7 }, adapters: { name: 'GPU', memory: 8 * GB } },
+      {
+        counters: counter(`pid_7_${LUID}_phys_0`, 'Dedicated', 2),
+        listen: { port: 1234, pid: 7 },
+        adapters: { name: 'GPU', memory: 8 * GB },
+      },
       servers,
     );
     expect(snapshot.servers[0].dedicated).toBe(2 * GB);
@@ -75,7 +86,13 @@ describe('summariseGpuReading', () => {
 
   it('counts a process once when two servers share it', () => {
     const snapshot = summariseGpuReading(
-      { counters: [counter(`pid_7_${LUID}_phys_0`, 'Dedicated', 2)], listen: [{ port: 1234, pid: 7 }, { port: 1235, pid: 7 }] },
+      {
+        counters: [counter(`pid_7_${LUID}_phys_0`, 'Dedicated', 2)],
+        listen: [
+          { port: 1234, pid: 7 },
+          { port: 1235, pid: 7 },
+        ],
+      },
       servers,
     );
     expect(snapshot.servers[0].dedicated + snapshot.servers[1].dedicated).toBe(2 * GB);
@@ -89,14 +106,21 @@ describe('GpuMemoryReader', () => {
   });
 
   it('reports a failed read', async () => {
-    const snapshot = await new GpuMemoryReader({ run: () => Promise.reject(new Error('boom')) }).read(servers);
+    const snapshot = await new GpuMemoryReader({
+      run: () => Promise.reject(new Error('boom')),
+    }).read(servers);
     expect(snapshot.supported).toBe(false);
     expect(snapshot.reason).toContain('boom');
   });
 
   it('shares one read between overlapping calls', async () => {
     let calls = 0;
-    const reader = new GpuMemoryReader({ run: async () => { calls += 1; return JSON.stringify(reading); } });
+    const reader = new GpuMemoryReader({
+      run: async () => {
+        calls += 1;
+        return JSON.stringify(reading);
+      },
+    });
     const [a, b] = await Promise.all([reader.read(servers), reader.read(servers)]);
     expect(calls).toBe(1);
     expect(a).toBe(b);

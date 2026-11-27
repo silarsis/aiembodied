@@ -8,21 +8,40 @@ export interface AvatarAnimationTiming {
 }
 
 export interface VRMPoseExpressions {
-  presets?: Partial<Record<
-    | 'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral'
-    | 'blink' | 'blinkLeft' | 'blinkRight'
-    | 'lookUp' | 'lookDown' | 'lookLeft' | 'lookRight'
-    | 'aa' | 'ih' | 'ou' | 'ee' | 'oh',
-    number
-  >>;
+  presets?: Partial<
+    Record<
+      | 'happy'
+      | 'angry'
+      | 'sad'
+      | 'relaxed'
+      | 'surprised'
+      | 'neutral'
+      | 'blink'
+      | 'blinkLeft'
+      | 'blinkRight'
+      | 'lookUp'
+      | 'lookDown'
+      | 'lookLeft'
+      | 'lookRight'
+      | 'aa'
+      | 'ih'
+      | 'ou'
+      | 'ee'
+      | 'oh',
+      number
+    >
+  >;
   custom?: Record<string, number>;
 }
 
 export interface VRMPoseData {
   // Can be either flat bone format (legacy) or nested with expressions
-  [boneName: string]: { rotation: number[]; position?: number[] | null }
+  [boneName: string]:
+    | { rotation: number[]; position?: number[] | null }
     | Record<string, { rotation: number[]; position?: number[] | null }>
-    | VRMPoseExpressions | string | undefined;
+    | VRMPoseExpressions
+    | string
+    | undefined;
   sourceVrmVersion?: '0' | '1';
   bones?: Record<string, { rotation: number[]; position?: number[] | null }>;
   expressions?: VRMPoseExpressions;
@@ -76,7 +95,14 @@ export interface AvatarAnimationRequest {
 
 export type AvatarAnimationEvent =
   | { type: 'enqueue'; request: AvatarAnimationRequest }
-  | { type: 'applyPose'; pose: VRMPoseData; source?: string; transitionDuration?: number; transitionConfig?: PoseTransitionConfig; avatarId?: string }
+  | {
+      type: 'applyPose';
+      pose: VRMPoseData;
+      source?: string;
+      transitionDuration?: number;
+      transitionConfig?: PoseTransitionConfig;
+      avatarId?: string;
+    }
   | { type: 'response'; avatarId?: string };
 
 type AnimationListener = (event: AvatarAnimationEvent) => void;
@@ -85,7 +111,13 @@ type Unsubscribe = () => void;
 
 export interface AvatarAnimationBus {
   enqueue(request: AvatarAnimationRequest): void;
-  applyPose(pose: VRMPoseData, source?: string, transitionDuration?: number, transitionConfig?: PoseTransitionConfig, avatarId?: string): void;
+  applyPose(
+    pose: VRMPoseData,
+    source?: string,
+    transitionDuration?: number,
+    transitionConfig?: PoseTransitionConfig,
+    avatarId?: string,
+  ): void;
   signalResponse(avatarId?: string): void;
   subscribe(listener: AnimationListener): Unsubscribe;
 }
@@ -97,8 +129,21 @@ class AnimationBus implements AvatarAnimationBus {
     this.emit({ type: 'enqueue', request });
   }
 
-  applyPose(pose: VRMPoseData, source?: string, transitionDuration?: number, transitionConfig?: PoseTransitionConfig, avatarId?: string) {
-    this.emit({ type: 'applyPose', pose, source, transitionDuration, transitionConfig, ...(avatarId !== undefined ? { avatarId } : {}) });
+  applyPose(
+    pose: VRMPoseData,
+    source?: string,
+    transitionDuration?: number,
+    transitionConfig?: PoseTransitionConfig,
+    avatarId?: string,
+  ) {
+    this.emit({
+      type: 'applyPose',
+      pose,
+      source,
+      transitionDuration,
+      transitionConfig,
+      ...(avatarId !== undefined ? { avatarId } : {}),
+    });
   }
 
   signalResponse(avatarId?: string) {
@@ -136,7 +181,9 @@ export function createAvatarAnimationBus(): AvatarAnimationBus {
 
 export function AnimationBusProvider({ children, bus }: AnimationBusProviderProps) {
   const resolvedBus = useMemo(() => bus ?? new AnimationBus(), [bus]);
-  return <AnimationBusContext.Provider value={resolvedBus}>{children}</AnimationBusContext.Provider>;
+  return (
+    <AnimationBusContext.Provider value={resolvedBus}>{children}</AnimationBusContext.Provider>
+  );
 }
 
 export function useAvatarAnimationBus(): AvatarAnimationBus | null {

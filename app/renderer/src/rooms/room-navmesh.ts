@@ -120,7 +120,9 @@ export class RoomNavMesh {
       detailSampleMaxError: 1,
     });
     if (!result.success || !result.navMesh) {
-      throw new Error(`Could not build a navigation mesh: ${'error' in result ? String(result.error) : 'unknown error'}`);
+      throw new Error(
+        `Could not build a navigation mesh: ${'error' in result ? String(result.error) : 'unknown error'}`,
+      );
     }
     return new RoomNavMesh(result.navMesh);
   }

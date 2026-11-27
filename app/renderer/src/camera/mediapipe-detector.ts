@@ -14,7 +14,10 @@ export const FACE_WASM_PATH = 'mediapipe/wasm';
 export const MIN_FACE_CONFIDENCE = 0.6;
 
 /** Where a bundled file lives, relative to the page (works from a file:// page in the packaged app and from the dev server). */
-export function assetUrl(path: string, base: string = typeof document === 'undefined' ? 'http://localhost/' : document.baseURI): string {
+export function assetUrl(
+  path: string,
+  base: string = typeof document === 'undefined' ? 'http://localhost/' : document.baseURI,
+): string {
   return new URL(path, base).href;
 }
 
@@ -26,7 +29,11 @@ export function readBytes(url: string): Promise<Uint8Array> {
     request.responseType = 'arraybuffer';
     request.onload = () => {
       // A file:// read reports status 0 on success.
-      if ((request.status === 0 || (request.status >= 200 && request.status < 300)) && request.response instanceof ArrayBuffer && request.response.byteLength > 0) {
+      if (
+        (request.status === 0 || (request.status >= 200 && request.status < 300)) &&
+        request.response instanceof ArrayBuffer &&
+        request.response.byteLength > 0
+      ) {
         resolve(new Uint8Array(request.response));
       } else {
         reject(new Error(`could not read ${url} (status ${request.status})`));
@@ -42,7 +49,9 @@ export async function createMediapipeDetector(): Promise<FaceDetectorLike> {
   try {
     model = await readBytes(assetUrl(FACE_MODEL_PATH));
   } catch (error) {
-    throw new Error(`the face model is missing (${error instanceof Error ? error.message : String(error)}); run "node scripts/fetch-face-model.mjs"`);
+    throw new Error(
+      `the face model is missing (${error instanceof Error ? error.message : String(error)}); run "node scripts/fetch-face-model.mjs"`,
+    );
   }
   const { FaceDetector, FilesetResolver } = await import('@mediapipe/tasks-vision');
   const fileset = await FilesetResolver.forVisionTasks(assetUrl(FACE_WASM_PATH));

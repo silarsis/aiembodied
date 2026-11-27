@@ -26,7 +26,9 @@ const hoistedMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@pixiv/three-vrm-animation', () => ({
-  VRMAnimationLoaderPlugin: hoistedMocks.vrmAnimationLoaderPluginMock.mockImplementation((parser) => ({ parser })),
+  VRMAnimationLoaderPlugin: hoistedMocks.vrmAnimationLoaderPluginMock.mockImplementation(
+    (parser) => ({ parser }),
+  ),
 }));
 
 const { vrmAnimationLoaderPluginMock } = hoistedMocks;
@@ -110,9 +112,9 @@ describe('AvatarAnimationService', () => {
     const { store, animationsDirectory } = await createEnvironment();
     const service = new AvatarAnimationService({ store, animationsDirectory });
 
-    await expect(
-      service.uploadAnimation({ fileName: 'idle.glb', data: 'AAAA' }),
-    ).rejects.toThrow(/must use the \.vrma extension/i);
+    await expect(service.uploadAnimation({ fileName: 'idle.glb', data: 'AAAA' })).rejects.toThrow(
+      /must use the \.vrma extension/i,
+    );
   });
 
   it('loads VRMA binaries as array buffers for known animations', async () => {

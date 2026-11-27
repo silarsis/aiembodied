@@ -10,7 +10,10 @@ import {
   type ChangeEvent,
   type CSSProperties,
 } from 'react';
-import type { ConversationBackend, RendererConfig } from '../../main/src/shared/config/config-manager-types.js';
+import type {
+  ConversationBackend,
+  RendererConfig,
+} from '../../main/src/shared/config/config-manager-types.js';
 import type { AudioDevicePreferences } from '../../main/src/shared/config/preferences-store-types.js';
 import type { ProviderSettingsPatch } from '../../main/src/shared/config/provider-settings.js';
 import { ControlButton, ControlsDrawer } from './settings/controls-drawer.js';
@@ -23,7 +26,11 @@ import type { UseId } from '../../main/src/shared/config/model-routing.js';
 import type { PushToTalkStatus } from '../../main/src/shared/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { opensTypedPrompt, TypedPrompt } from './talk/type-to-talk.js';
-import { VrmAvatarRenderer, type VrmRendererStatus, type VrmStageAvatar } from './avatar/vrm-avatar-renderer.js';
+import {
+  VrmAvatarRenderer,
+  type VrmRendererStatus,
+  type VrmStageAvatar,
+} from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { getAvatarRestSkeleton } from './avatar/rest-skeleton.js';
@@ -57,15 +64,27 @@ import { useFacePresence } from './camera/use-face-presence.js';
 import { CameraLiveDot } from './camera/camera-dot.js';
 import { cameraPresenceOn } from '../../main/src/shared/places/camera-setting.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
-import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState } from './realtime/realtime-client.js';
+import {
+  RealtimeClient,
+  type RealtimeClientCallbacks,
+  type RealtimeClientState,
+} from './realtime/realtime-client.js';
 import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/shared/metrics/types.js';
 import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
 import type { AvatarProfile } from '../../main/src/shared/avatars/bridge-types.js';
-import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/shared/local-voice/types.js';
+import type {
+  LocalVoiceStatus,
+  SpeakingVoiceOptions,
+} from '../../main/src/shared/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
-import { extractAvatarTags, extractMotionTags, toAnimationSlug, type MotionTag } from './avatar/animation-tags.js';
+import {
+  extractAvatarTags,
+  extractMotionTags,
+  toAnimationSlug,
+  type MotionTag,
+} from './avatar/animation-tags.js';
 import {
   ANIMATION_INSTRUCTION_PREFIX,
   buildAnimationInstructions,
@@ -75,9 +94,25 @@ import {
 import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
-import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotionTraceSetting, setSettleRetryEnabled } from './rooms/motion-trace.js';
-import { seatFromMove, tagToAction, type SceneAction, type TagContext } from './rooms/scene-actions.js';
-import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
+import {
+  getMotionTraceSetting,
+  initMotionTrace,
+  isSettleRetryEnabled,
+  setMotionTraceSetting,
+  setSettleRetryEnabled,
+} from './rooms/motion-trace.js';
+import {
+  seatFromMove,
+  tagToAction,
+  type SceneAction,
+  type TagContext,
+} from './rooms/scene-actions.js';
+import {
+  buildSceneInstructions,
+  describeAvatarWhere,
+  describeBody,
+  type OtherAvatarEntry,
+} from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { usePursuits } from './rooms/use-pursuits.js';
 import { handleStationUse } from './rooms/station-walks.js';
@@ -214,9 +249,12 @@ function stripAnimationInstructions(instructions: string): string {
 
 /** Plays an element through the chosen speakers (a satellite's own output device). */
 function applySink(element: HTMLAudioElement | null | undefined, deviceId: string): void {
-  const target = element as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null | undefined;
+  const target = element as
+    (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null | undefined;
   if (!target || typeof target.setSinkId !== 'function') return;
-  void target.setSinkId(deviceId).catch((error: unknown) => console.warn('Could not use that speaker', error));
+  void target
+    .setSinkId(deviceId)
+    .catch((error: unknown) => console.warn('Could not use that speaker', error));
 }
 
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
@@ -351,7 +389,7 @@ function collectBridgeDiagnostics(
     descriptorType,
     descriptorConfigurable: descriptor?.configurable ?? null,
     descriptorEnumerable: descriptor?.enumerable ?? null,
-    descriptorWritable: descriptorType === 'data' ? descriptor?.writable ?? null : null,
+    descriptorWritable: descriptorType === 'data' ? (descriptor?.writable ?? null) : null,
     availableWindowBridgeKeys: windowBridge ? Object.keys(windowBridge) : [],
     availableBridgeKeys: bridge ? Object.keys(bridge) : undefined,
     hasConfigBridge: typeof bridge?.config !== 'undefined',
@@ -392,7 +430,10 @@ function usePreloadBridge() {
   useEffect(() => {
     let disposed = false;
 
-    const applyBridge = (bridge: PreloadApi | undefined, contextMeta: Record<string, unknown> = {}) => {
+    const applyBridge = (
+      bridge: PreloadApi | undefined,
+      contextMeta: Record<string, unknown> = {},
+    ) => {
       if (disposed) {
         return;
       }
@@ -485,9 +526,17 @@ function usePreloadBridge() {
         if (shouldLogAttempt(attempt)) {
           const duration = pollStartRef.current ? Date.now() - pollStartRef.current : 0;
           const reason = !bridge ? 'API not exposed' : 'bridge not ready';
-          logRendererBridge('warn', `Preload API unavailable (${reason}); renderer still polling for bridge exposure.`, {
-            ...collectBridgeDiagnostics(bridge, { attempt, pollingDurationMs: duration, bridgeReady: bridge?.__bridgeReady }),
-          });
+          logRendererBridge(
+            'warn',
+            `Preload API unavailable (${reason}); renderer still polling for bridge exposure.`,
+            {
+              ...collectBridgeDiagnostics(bridge, {
+                attempt,
+                pollingDurationMs: duration,
+                bridgeReady: bridge?.__bridgeReady,
+              }),
+            },
+          );
         }
         applyBridge(undefined, { attempt });
         return false;
@@ -605,12 +654,7 @@ function useIdleCursor(enabled: boolean) {
       timeout = setTimeout(markIdle, CURSOR_IDLE_TIMEOUT_MS);
     };
 
-    const events: Array<keyof WindowEventMap> = [
-      'mousemove',
-      'mousedown',
-      'keydown',
-      'touchstart',
-    ];
+    const events: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'touchstart'];
 
     events.forEach((event) => window.addEventListener(event, handleActivity, { passive: true }));
     scheduleIdle();
@@ -671,7 +715,11 @@ function TranscriptOverlay({
         return (
           <li key={entry.id} className={`transcript__item transcript__item--${entry.speaker}`}>
             <div className="transcript__meta">
-              <span className="transcript__speaker">{entry.speaker === 'assistant' && entry.avatarId ? (avatarNames?.[entry.avatarId] ?? entry.avatarId) : entry.speaker}</span>
+              <span className="transcript__speaker">
+                {entry.speaker === 'assistant' && entry.avatarId
+                  ? (avatarNames?.[entry.avatarId] ?? entry.avatarId)
+                  : entry.speaker}
+              </span>
               <span className="transcript__time">{label}</span>
             </div>
             <p className="transcript__text">{entry.text}</p>
@@ -706,11 +754,18 @@ export default function App() {
   // Where each avatar is (main keeps the truth). Without the bridge everybody is on screen.
   const placesSnapshot = usePlaces(resolveApi()?.places);
   const presence = useMemo(
-    () => stagePresence(placesSnapshot, ['echo', ...avatarProfiles.map((profile) => profile.id).filter((id) => id !== 'echo')]),
+    () =>
+      stagePresence(placesSnapshot, [
+        'echo',
+        ...avatarProfiles.map((profile) => profile.id).filter((id) => id !== 'echo'),
+      ]),
     [placesSnapshot, avatarProfiles],
   );
   const [vrmModels, setVrmModels] = useState<AvatarModelSummary[]>([]);
-  const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>(() => ({ phase: 'off', since: Date.now() }));
+  const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>(() => ({
+    phase: 'off',
+    since: Date.now(),
+  }));
   const [wakeScore, setWakeScore] = useState<WakeScore | null>(null);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [wakeState, setWakeState] = useState<'idle' | 'awake'>('idle');
@@ -730,7 +785,9 @@ export default function App() {
   const [liveMotionReady, setLiveMotionReady] = useState(false);
   const [motionStatus, setMotionStatus] = useState<AvatarMotionStatus | null>(null);
   // undefined: not checked yet; null: the check itself failed.
-  const [voiceServiceStatus, setVoiceServiceStatus] = useState<LocalVoiceStatus | null | undefined>(undefined);
+  const [voiceServiceStatus, setVoiceServiceStatus] = useState<LocalVoiceStatus | null | undefined>(
+    undefined,
+  );
 
   // Quit handler
   const handleQuit = useCallback(() => {
@@ -888,7 +945,13 @@ export default function App() {
     const named = (label: string) => (owner ? `${owner}: ${label}` : label);
     if (activity.type === 'start') {
       setToolCalls((calls) =>
-        addToolCall(calls, { id: activity.id, kind: 'move', label: named(activity.label), status: 'pending', startedAt: now }),
+        addToolCall(calls, {
+          id: activity.id,
+          kind: 'move',
+          label: named(activity.label),
+          status: 'pending',
+          startedAt: now,
+        }),
       );
     } else if (activity.type === 'done') {
       setToolCalls((calls) => finishToolCall(calls, activity.id, 'done', now, activity.detail));
@@ -909,9 +972,14 @@ export default function App() {
       );
     }
   }, []);
-  useEffect(() => sceneActions.onActivity((activity) => applySceneActivity(activity)), [sceneActions, applySceneActivity]);
+  useEffect(
+    () => sceneActions.onActivity((activity) => applySceneActivity(activity)),
+    [sceneActions, applySceneActivity],
+  );
   const avatarProfilesRef = useRef<Array<{ id: string; name: string }>>([]);
-  useEffect(() => { avatarProfilesRef.current = avatarProfiles; }, [avatarProfiles]);
+  useEffect(() => {
+    avatarProfilesRef.current = avatarProfiles;
+  }, [avatarProfiles]);
   // An avatar that was removed takes its executor, filters and streams with it.
   useEffect(() => {
     const present = new Set(avatarProfiles.map((profile) => profile.id));
@@ -922,7 +990,10 @@ export default function App() {
   useEffect(
     () =>
       rigs.onOtherActivity((avatarId, activity) =>
-        applySceneActivity(activity, avatarProfilesRef.current.find((profile) => profile.id === avatarId)?.name ?? avatarId),
+        applySceneActivity(
+          activity,
+          avatarProfilesRef.current.find((profile) => profile.id === avatarId)?.name ?? avatarId,
+        ),
       ),
     [rigs, applySceneActivity],
   );
@@ -934,18 +1005,22 @@ export default function App() {
   const stopCameraRef = useRef<() => Promise<void>>(async () => undefined);
   // The gate says which device to stop: the mic's audio graph, the camera, or both. Each is stopped right away,
   // before any render, and only then does the gate hear that capture stopped.
-  const stopCapture = useCallback(
-    async (scope: { audio: boolean; camera: boolean }) => {
-      const results = await Promise.allSettled([scope.audio ? stopCaptureRef.current() : undefined, scope.camera ? stopCameraRef.current() : undefined]);
-      for (const result of results) if (result.status === 'rejected') console.warn('Could not stop capture', result.reason);
-    },
-    [],
-  );
+  const stopCapture = useCallback(async (scope: { audio: boolean; camera: boolean }) => {
+    const results = await Promise.allSettled([
+      scope.audio ? stopCaptureRef.current() : undefined,
+      scope.camera ? stopCameraRef.current() : undefined,
+    ]);
+    for (const result of results)
+      if (result.status === 'rejected') console.warn('Could not stop capture', result.reason);
+  }, []);
   const deviceGate = useDeviceGate(isSatellite ? resolveApi()?.deviceGate : undefined, stopCapture);
-  const isListeningEnabled = isSatellite ? deviceGate?.micAllowed === true && !satelliteHandOff : listeningState;
+  const isListeningEnabled = isSatellite
+    ? deviceGate?.micAllowed === true && !satelliteHandOff
+    : listeningState;
   const setListeningEnabled = useCallback(
     (next: boolean | ((previous: boolean) => boolean)) => {
-      if (isSatellite) setSatelliteHandOff((previous) => !(typeof next === 'function' ? next(!previous) : next));
+      if (isSatellite)
+        setSatelliteHandOff((previous) => !(typeof next === 'function' ? next(!previous) : next));
       else setListeningState(next);
     },
     [isSatellite],
@@ -956,7 +1031,17 @@ export default function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
   /** Which settings pop-up is open (the avatar studio and models pop-ups have their own state). */
-  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'furniture' | 'devices' | 'places' | 'tools' | 'memory' | 'status' | null>(null);
+  const [panel, setPanel] = useState<
+    | 'character'
+    | 'backgrounds'
+    | 'furniture'
+    | 'devices'
+    | 'places'
+    | 'tools'
+    | 'memory'
+    | 'status'
+    | null
+  >(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const closePanel = useCallback(() => setPanel(null), []);
   const openModels = useCallback((use?: UseId) => {
@@ -964,12 +1049,27 @@ export default function App() {
     setModelsOpen(true);
   }, []);
   const activeBridge = resolveApi();
-  const wakeListening = useWakeWordListening(activeBridge?.wakeWord, isListeningEnabled && !loadingConfig);
+  const wakeListening = useWakeWordListening(
+    activeBridge?.wakeWord,
+    isListeningEnabled && !loadingConfig,
+  );
   const acceptsWakeRef = useRef(false);
-  useEffect(() => { acceptsWakeRef.current = isListeningEnabled && !loadingConfig; }, [isListeningEnabled, loadingConfig]);
+  useEffect(() => {
+    acceptsWakeRef.current = isListeningEnabled && !loadingConfig;
+  }, [isListeningEnabled, loadingConfig]);
   // A satellite shows the room of its own place, not the stage bija has active.
-  const satellitePlace = isSatellite && placesSnapshot ? placesSnapshot.places.find((place) => place.id === placesSnapshot.localPlaceId) : undefined;
-  const backgrounds = useBackgrounds(activeBridge?.backgrounds, isSatellite ? (satellitePlace ? (satellitePlace.room ?? DEFAULT_DESKTOP_ROOM) : null) : undefined);
+  const satellitePlace =
+    isSatellite && placesSnapshot
+      ? placesSnapshot.places.find((place) => place.id === placesSnapshot.localPlaceId)
+      : undefined;
+  const backgrounds = useBackgrounds(
+    activeBridge?.backgrounds,
+    isSatellite
+      ? satellitePlace
+        ? (satellitePlace.room ?? DEFAULT_DESKTOP_ROOM)
+        : null
+      : undefined,
+  );
   const [showWalkableArea, setShowWalkableArea] = useState(false);
   // Debug switches kept in localStorage (rooms/motion-trace.ts): the verbose motion log and the post-sit settle retries.
   const [motionTraceOn, setMotionTraceOn] = useState(() => getMotionTraceSetting());
@@ -1013,7 +1113,6 @@ export default function App() {
     };
   }, [resolveApi]);
 
-
   // Load available poses so the assistant can name them in replies
   useEffect(() => {
     const bridge = resolveApi();
@@ -1044,8 +1143,6 @@ export default function App() {
       cancelled = true;
     };
   }, [resolveApi]);
-
-
 
   const pushLatency = useCallback(
     (snapshot: LatencySnapshot) => {
@@ -1107,15 +1204,11 @@ export default function App() {
     };
   }, [resolveApi]);
 
-  const handleVrmStatusChange = useCallback(
-    (status: VrmRendererStatus) => {
-      if (status.status === 'error') {
-        console.warn('VRM renderer error:', status.message);
-      }
-    },
-    [],
-  );
-
+  const handleVrmStatusChange = useCallback((status: VrmRendererStatus) => {
+    if (status.status === 'error') {
+      console.warn('VRM renderer error:', status.message);
+    }
+  }, []);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -1137,7 +1230,12 @@ export default function App() {
         speaker,
         text: message.content,
         timestamp: message.ts,
-        ...(speaker === 'assistant' && message.speaker && message.speaker !== 'echo' && message.speaker !== 'user' ? { avatarId: message.speaker } : {}),
+        ...(speaker === 'assistant' &&
+        message.speaker &&
+        message.speaker !== 'echo' &&
+        message.speaker !== 'user'
+          ? { avatarId: message.speaker }
+          : {}),
       });
       seen.add(message.id);
     }
@@ -1165,10 +1263,15 @@ export default function App() {
       /** Who said an assistant line; absent or echo means Echo. */
       avatarId?: string;
     }) => {
-      const speakerAvatar = speaker === 'assistant' && avatarId && avatarId !== 'echo' ? avatarId : undefined;
+      const speakerAvatar =
+        speaker === 'assistant' && avatarId && avatarId !== 'echo' ? avatarId : undefined;
       // Realtime turns never pass through local-voice:respond, so presence learns of them here.
       if (speaker === 'user' || speaker === 'assistant') {
-        void Promise.resolve((api ?? getPreloadApi())?.presence?.update(speaker === 'user' ? { userSpokeAt: timestamp } : { assistantSpokeAt: timestamp })).catch(() => undefined);
+        void Promise.resolve(
+          (api ?? getPreloadApi())?.presence?.update(
+            speaker === 'user' ? { userSpokeAt: timestamp } : { assistantSpokeAt: timestamp },
+          ),
+        ).catch(() => undefined);
       }
       const canPersist = Boolean(persist && api?.conversation && activeSessionIdRef.current);
       let entryId = `${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1195,7 +1298,16 @@ export default function App() {
 
       setTranscriptEntries((previous) => {
         const filtered = previous.filter((entry) => entry.id !== entryId);
-        const next = [...filtered, { id: entryId, speaker, text, timestamp, ...(speakerAvatar ? { avatarId: speakerAvatar } : {}) }];
+        const next = [
+          ...filtered,
+          {
+            id: entryId,
+            speaker,
+            text,
+            timestamp,
+            ...(speakerAvatar ? { avatarId: speakerAvatar } : {}),
+          },
+        ];
         next.sort((a, b) => a.timestamp - b.timestamp);
         return next.slice(-MAX_TRANSCRIPT_ENTRIES);
       });
@@ -1209,7 +1321,7 @@ export default function App() {
   const [selectedOutput, setSelectedOutput] = useState('');
   const selectedOutputRef = useRef('');
   const DEFAULT_PROMPT =
-    'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.';
+    "You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren't afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don't put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.";
   const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [testResponse, setTestResponse] = useState<string | null>(null);
@@ -1306,7 +1418,9 @@ export default function App() {
   const wakePhrase = config?.wakeWord?.keywordLabel;
   // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
   const realtimeModel =
-    config?.realtimeModel && !config.realtimeModel.startsWith('gpt-4o-realtime-preview') ? config.realtimeModel : undefined;
+    config?.realtimeModel && !config.realtimeModel.startsWith('gpt-4o-realtime-preview')
+      ? config.realtimeModel
+      : undefined;
   // Only the local backend has models of its own to report on.
   const modelStatuses = useMemo(
     () =>
@@ -1324,16 +1438,33 @@ export default function App() {
     if (isLocalBackend) {
       return voiceActivity;
     }
-    const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
+    const phase =
+      realtimeState.status === 'connected'
+        ? 'listening'
+        : realtimeState.status === 'error'
+          ? 'error'
+          : 'off';
     return { phase, detail: realtimeState.error, since: voiceActivity.since };
   }, [isLocalBackend, voiceActivity, realtimeState]);
-  const { reportFace } = usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
+  const { reportFace } = usePresenceReporter(activeBridge?.presence, activeBridge?.camera, {
+    listening: isListeningEnabled,
+    voicePhase: displayedActivity.phase,
+  });
   // Camera presence ("a face was seen", nothing else). On a satellite the privacy gate decides; on bija the camera runs
   // only while an avatar is here and Kevin turned it on for this PC (off by default).
   const { deviceId: cameraDeviceId, setDeviceId: setCameraDeviceId, cameras } = useCameraDevices();
-  const localPlace = placesSnapshot?.places.find((place) => place.id === placesSnapshot.localPlaceId);
-  const cameraWanted = isSatellite ? deviceGate?.camera === 'live' : cameraPresenceOn(localPlace) && presence.present.length > 0;
-  const facePresence = useFacePresence({ enabled: cameraWanted && !loadingConfig, deviceId: cameraDeviceId, camera: activeBridge?.camera, onFaceSeen: reportFace });
+  const localPlace = placesSnapshot?.places.find(
+    (place) => place.id === placesSnapshot.localPlaceId,
+  );
+  const cameraWanted = isSatellite
+    ? deviceGate?.camera === 'live'
+    : cameraPresenceOn(localPlace) && presence.present.length > 0;
+  const facePresence = useFacePresence({
+    enabled: cameraWanted && !loadingConfig,
+    deviceId: cameraDeviceId,
+    camera: activeBridge?.camera,
+    onFaceSeen: reportFace,
+  });
   useEffect(() => {
     stopCameraRef.current = facePresence.stopNow;
   }, [facePresence.stopNow]);
@@ -1342,7 +1473,9 @@ export default function App() {
   // The other avatars' personality and idle habits, as saved for them (Echo's are above). Read again
   // when the list changes and after any save in the Characters pop-up.
   const [personaRevision, setPersonaRevision] = useState(0);
-  const [stagePersonas, setStagePersonas] = useState<Record<string, { personality: string; habits: string }>>({});
+  const [stagePersonas, setStagePersonas] = useState<
+    Record<string, { personality: string; habits: string }>
+  >({});
   useEffect(() => {
     const avatarsApi = resolveApi()?.avatars;
     if (!avatarsApi?.idlePersonas || avatarProfiles.length < 2) return undefined;
@@ -1352,7 +1485,7 @@ export default function App() {
       .then((personas) => {
         if (!cancelled) setStagePersonas(personas);
       })
-      .catch((error: unknown) => console.warn('Could not read the avatars\' idle habits', error));
+      .catch((error: unknown) => console.warn("Could not read the avatars' idle habits", error));
     return () => {
       cancelled = true;
     };
@@ -1360,7 +1493,12 @@ export default function App() {
   // What Echo's card in the Characters pop-up edits: the same prompt, idle habits and voice state the
   // session instructions, the idle persona and the voice preference are built from.
   const echoControls: CharacterSettingsControls = {
-    prompt: { value: basePrompt, onChange: setBasePrompt, onBlur: () => void handlePromptBlur(), disabled: loadingConfig },
+    prompt: {
+      value: basePrompt,
+      onChange: setBasePrompt,
+      onBlur: () => void handlePromptBlur(),
+      disabled: loadingConfig,
+    },
     habits: {
       value: idleHabits.habits,
       onChange: idleHabits.setHabits,
@@ -1369,16 +1507,35 @@ export default function App() {
       disabled: loadingConfig || !idleHabits.available,
     },
     voice: isLocalBackend
-      ? { kind: 'engine', options: speakingVoices, onChange: handleSpeakingVoiceChange, disabled: loadingConfig }
-      : { kind: 'list', voices: availableVoices, value: selectedVoice, onChange: setSelectedVoice, disabled: loadingConfig },
+      ? {
+          kind: 'engine',
+          options: speakingVoices,
+          onChange: handleSpeakingVoiceChange,
+          disabled: loadingConfig,
+        }
+      : {
+          kind: 'list',
+          voices: availableVoices,
+          value: selectedVoice,
+          onChange: setSelectedVoice,
+          disabled: loadingConfig,
+        },
   };
   const getVoiceOptionsFor = useCallback(
-    (avatarId?: string) => getPreloadApi()?.localVoice?.getVoiceOptions?.(avatarId) ?? Promise.reject(new Error('The voices are unavailable.')),
+    (avatarId?: string) =>
+      getPreloadApi()?.localVoice?.getVoiceOptions?.(avatarId) ??
+      Promise.reject(new Error('The voices are unavailable.')),
     [],
   );
   // Stable, so the Reading list of a character is read once, not on every render.
   const pursuitsBridge = activeBridge?.pursuits;
-  const loadReadingNotes = useMemo(() => (pursuitsBridge ? (avatarId: string, limit: number) => pursuitsBridge.notes(avatarId, limit) : undefined), [pursuitsBridge]);
+  const loadReadingNotes = useMemo(
+    () =>
+      pursuitsBridge
+        ? (avatarId: string, limit: number) => pursuitsBridge.notes(avatarId, limit)
+        : undefined,
+    [pursuitsBridge],
+  );
   const characterSettings: CharacterSettingsContext = {
     avatarApi: activeBridge?.avatar,
     getVoiceOptions: getVoiceOptionsFor,
@@ -1393,7 +1550,11 @@ export default function App() {
   useEffect(() => {
     speakingRef.current = { echo: visemeFrame, others: visemeFrames };
   }, [visemeFrame, visemeFrames]);
-  const pursuits = usePursuits(activeBridge?.pursuits, backgrounds.activeRoom?.id ?? null, activeBridge?.agents);
+  const pursuits = usePursuits(
+    activeBridge?.pursuits,
+    backgrounds.activeRoom?.id ?? null,
+    activeBridge?.agents,
+  );
   const { idleNote } = useIdleDirector({
     executor: sceneActions,
     // Characters may go and read at a station of this room on their own (main runs the session).
@@ -1404,7 +1565,9 @@ export default function App() {
     avatars: () =>
       stageNames.map((profile) => {
         const isEcho = profile.id === 'echo';
-        const frame = isEcho ? speakingRef.current.echo : (speakingRef.current.others[profile.id] ?? null);
+        const frame = isEcho
+          ? speakingRef.current.echo
+          : (speakingRef.current.others[profile.id] ?? null);
         const persona = stagePersonas[profile.id];
         return {
           id: profile.id,
@@ -1420,7 +1583,11 @@ export default function App() {
     room: backgrounds.activeRoom,
     settings: backgrounds.idleSettings,
     motionReady: liveMotionReady,
-    persona: { name: activeVrmModel?.name ?? '', personality: basePrompt, habits: idleHabits.habits },
+    persona: {
+      name: activeVrmModel?.name ?? '',
+      personality: basePrompt,
+      habits: idleHabits.habits,
+    },
     phase: voiceActivity.phase,
     pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
     run: (text, avatarId) => animationTextHandlerRef.current(text, avatarId, 'idle'),
@@ -1430,7 +1597,10 @@ export default function App() {
       if (!bridge?.canWander || !placesSnapshot || placesSnapshot.places.length < 2) return null;
       return bridge
         .snapshot()
-        .then((snapshot) => ({ snapshot, nameOf: (id: string) => avatarProfiles.find((profile) => profile.id === id)?.name ?? id }))
+        .then((snapshot) => ({
+          snapshot,
+          nameOf: (id: string) => avatarProfiles.find((profile) => profile.id === id)?.name ?? id,
+        }))
         .catch(() => null);
     },
     canWander: async (avatarId, place, speaking) => {
@@ -1446,14 +1616,18 @@ export default function App() {
   const stageNames = useMemo(() => {
     if (avatarProfiles.length < 2) return [];
     const here = avatarProfiles.filter((profile) => presence.present.includes(profile.id));
-    return [...here.filter((profile) => profile.id === 'echo'), ...here.filter((profile) => profile.id !== 'echo').slice(0, 2)];
+    return [
+      ...here.filter((profile) => profile.id === 'echo'),
+      ...here.filter((profile) => profile.id !== 'echo').slice(0, 2),
+    ];
   }, [avatarProfiles, presence.present]);
   // Bumped when any avatar's action ends, so the scene text says where the others are now (not every frame).
   const [sceneTick, setSceneTick] = useState(0);
   useEffect(() => {
     const bump = (activity: SceneActivity) => {
       // 'skipped' is how a failed reach is recorded (after the last repair's 'done'), so the body text changes too.
-      if (activity.type === 'done' || activity.type === 'failed' || activity.type === 'skipped') setSceneTick((tick) => tick + 1);
+      if (activity.type === 'done' || activity.type === 'failed' || activity.type === 'skipped')
+        setSceneTick((tick) => tick + 1);
     };
     const offEcho = sceneActions.onActivity(bump);
     const offOthers = rigs.onOtherActivity((_avatarId, activity) => bump(activity));
@@ -1497,21 +1671,44 @@ export default function App() {
       const state = executor.getState();
       const world = executor.world();
       const body = describeBody(room, state, world, executor.recentFailures());
-      const where = describeAvatarWhere(room, { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null });
-      const held = state.held ? (room?.objects.find((object) => object.id === state.held?.objectId)?.name ?? null) : null;
-      return buildSceneInstructions(room, liveMotionReady, { idleNote, others: othersFor('echo'), body, where, held });
+      const where = describeAvatarWhere(room, {
+        position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null,
+      });
+      const held = state.held
+        ? (room?.objects.find((object) => object.id === state.held?.objectId)?.name ?? null)
+        : null;
+      return buildSceneInstructions(room, liveMotionReady, {
+        idleNote,
+        others: othersFor('echo'),
+        body,
+        where,
+        held,
+      });
     },
     // sceneTick: where the others are changes when an action ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [backgrounds.activeRoom, liveMotionReady, idleNote, othersFor, sceneTick],
   );
-  const sessionInstructions = useMemo(
-    () => {
-      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
-      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady, sceneInstructions);
-    },
-    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady, sceneInstructions],
-  );
+  const sessionInstructions = useMemo(() => {
+    const poseSlugs = availablePoses
+      .map((p) => toAnimationSlug(p.name))
+      .filter((s) => s.length > 0);
+    return buildSessionInstructions(
+      basePrompt,
+      availableAnimationSlugs,
+      poseSlugs,
+      activeVrmModel,
+      liveMotionReady,
+      sceneInstructions,
+    );
+  }, [
+    basePrompt,
+    availableAnimationSlugs,
+    availablePoses,
+    activeVrmModel,
+    liveMotionReady,
+    sceneInstructions,
+  ]);
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),
     [availableAnimationSlugs],
@@ -1520,11 +1717,15 @@ export default function App() {
     () => new Set(availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0)),
     [availablePoses],
   );
-  const animationTextHandlerRef = useRef<(text: string, avatarId?: string, origin?: 'idle') => void>(() => undefined);
+  const animationTextHandlerRef = useRef<
+    (text: string, avatarId?: string, origin?: 'idle') => void
+  >(() => undefined);
   const moveRequestFilterRef = useRef(new MoveRequestFilter());
   const sceneActionFilterRef = useRef(new MoveRequestFilter());
   const activeRoomRef = useRef(backgrounds.activeRoom);
-  useEffect(() => { activeRoomRef.current = backgrounds.activeRoom; }, [backgrounds.activeRoom]);
+  useEffect(() => {
+    activeRoomRef.current = backgrounds.activeRoom;
+  }, [backgrounds.activeRoom]);
   // An avatar's {room:} tag, once it has walked to the door (or finished speaking): ask main to move it.
   const moveAvatarToPlace = useCallback(
     (avatarId: string, place: string, origin?: 'idle') => {
@@ -1533,7 +1734,10 @@ export default function App() {
       bridge
         .move(avatarId, place, origin === 'idle' ? 'wandered' : 'chose to')
         .then((result) => {
-          if (!result.ok) console.warn(`[places] ${avatarId} cannot go to "${place}": ${result.reason ?? 'no reason given'}`);
+          if (!result.ok)
+            console.warn(
+              `[places] ${avatarId} cannot go to "${place}": ${result.reason ?? 'no reason given'}`,
+            );
         })
         .catch((error: unknown) => console.warn('[places] the move failed', error));
     },
@@ -1549,7 +1753,10 @@ export default function App() {
       const streamMotion = resolveApi()?.avatar?.streamMotion;
       // {room:<place>}: the avatar leaves for another place. Each tag is acted on once per reply (the same repeat filter as the scene tags).
       const roomFilter = speaker ? rigs.sceneFilterFor(speaker) : sceneActionFilterRef.current;
-      const roomTags = extractMotionTags(content).filter((tag): tag is Extract<MotionTag, { type: 'room' }> => tag.type === 'room' && roomFilter.shouldStart(JSON.stringify(tag)));
+      const roomTags = extractMotionTags(content).filter(
+        (tag): tag is Extract<MotionTag, { type: 'room' }> =>
+          tag.type === 'room' && roomFilter.shouldStart(JSON.stringify(tag)),
+      );
       const freshRoomTags = new Set(roomTags.map((tag) => JSON.stringify(tag)));
       const walkedOut = new Set<string>();
       // One loop for every speaker: scene tags go to that avatar's executor, {move:} gestures wait their turn in a
@@ -1559,7 +1766,9 @@ export default function App() {
         const executor = speaker ? rigs.get(speaker).executor : sceneActions;
         const moveFilter = speaker ? rigs.filterFor(speaker) : moveRequestFilterRef.current;
         const sceneFilter = speaker ? rigs.sceneFilterFor(speaker) : sceneActionFilterRef.current;
-        const speakerName = speaker ? (avatarProfiles.find((profile) => profile.id === speaker)?.name ?? speaker) : '';
+        const speakerName = speaker
+          ? (avatarProfiles.find((profile) => profile.id === speaker)?.name ?? speaker)
+          : '';
         // In a room the tags run in the order written; a {move:} waits for the scene actions before it.
         const pendingActions: SceneAction[] = [];
         const flushActions = () => {
@@ -1574,7 +1783,10 @@ export default function App() {
             const seat = rigs.get(id).executor.getState().seat?.objectId;
             if (seat) takenSeats.add(seat);
           }
-          return { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null, takenSeats };
+          return {
+            position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null,
+            takenSeats,
+          };
         };
         for (const tag of extractMotionTags(content)) {
           if (tag.type === 'room') {
@@ -1583,7 +1795,9 @@ export default function App() {
             walkedOut.add(JSON.stringify(tag));
             pendingActions.push({ kind: 'exit' });
             flushActions();
-            executor.submitAfter(`leave for ${tag.place}`, () => moveAvatarToPlace(speaker ?? 'echo', tag.place, origin));
+            executor.submitAfter(`leave for ${tag.place}`, () =>
+              moveAvatarToPlace(speaker ?? 'echo', tag.place, origin),
+            );
             continue;
           }
           if (tag.type !== 'move') {
@@ -1620,15 +1834,34 @@ export default function App() {
               }),
             );
             try {
-              const result = await streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton(speaker ?? 'echo') ?? undefined });
-              const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
+              const result = await streamMotion({
+                streamId,
+                prompt: move.text,
+                avatarRest: getAvatarRestSkeleton(speaker ?? 'echo') ?? undefined,
+              });
+              const firstChunk =
+                result.firstChunkMs === null
+                  ? ''
+                  : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
               setToolCalls((calls) =>
-                finishToolCall(calls, streamId, 'done', Date.now(), `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`),
+                finishToolCall(
+                  calls,
+                  streamId,
+                  'done',
+                  Date.now(),
+                  `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`,
+                ),
               );
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
-              console.error('[App] Live motion generation failed', { ...(speaker ? { avatar: speaker } : {}), prompt: move.text, error: message });
-              setToolCalls((calls) => finishToolCall(calls, streamId, 'failed', Date.now(), message));
+              console.error('[App] Live motion generation failed', {
+                ...(speaker ? { avatar: speaker } : {}),
+                prompt: move.text,
+                error: message,
+              });
+              setToolCalls((calls) =>
+                finishToolCall(calls, streamId, 'failed', Date.now(), message),
+              );
             } finally {
               // Chunks arrive as events before the request resolves; keep the id a moment for stragglers.
               if (speaker) setTimeout(() => rigs.endStream(streamId), 5000);
@@ -1646,7 +1879,10 @@ export default function App() {
       // In 2D (or with no live motion) there is no door to walk to: the avatar leaves once its speech is over.
       for (const tag of roomTags) {
         if (walkedOut.has(JSON.stringify(tag))) continue;
-        window.setTimeout(() => moveAvatarToPlace(speaker ?? 'echo', tag.place, origin), estimateSpeechMs(content));
+        window.setTimeout(
+          () => moveAvatarToPlace(speaker ?? 'echo', tag.place, origin),
+          estimateSpeechMs(content),
+        );
       }
       const tags = extractAvatarTags(content, {
         allowedAnimationSlugs: availableAnimationSlugSet,
@@ -1663,27 +1899,46 @@ export default function App() {
           const pose = availablePoses.find((p) => toAnimationSlug(p.name) === tag.slug);
           if (pose) {
             setToolCalls((calls) =>
-              addToolCall(calls, { id: callId, kind: 'pose', label: tag.slug, status: 'pending', startedAt }),
+              addToolCall(calls, {
+                id: callId,
+                kind: 'pose',
+                label: tag.slug,
+                status: 'pending',
+                startedAt,
+              }),
             );
             const bridge = resolveApi();
-            bridge?.avatar?.loadPose(pose.id).then((poseData) => {
-              if (poseData && typeof poseData === 'object') {
-                const pose = poseData as Record<string, { rotation: number[]; position?: number[] }>;
-                if (speaker) {
-                  animationBus.applyPose(pose, 'realtime-text', undefined, undefined, speaker);
-                } else {
-                  animationBus.applyPose(pose, 'realtime-text');
+            bridge?.avatar
+              ?.loadPose(pose.id)
+              .then((poseData) => {
+                if (poseData && typeof poseData === 'object') {
+                  const pose = poseData as Record<
+                    string,
+                    { rotation: number[]; position?: number[] }
+                  >;
+                  if (speaker) {
+                    animationBus.applyPose(pose, 'realtime-text', undefined, undefined, speaker);
+                  } else {
+                    animationBus.applyPose(pose, 'realtime-text');
+                  }
                 }
-              }
-              setToolCalls((calls) => finishToolCall(calls, callId, 'done', Date.now()));
-            }).catch((error) => {
-              console.error('[App] Failed to load pose from LLM tag', error);
-              const message = error instanceof Error ? error.message : String(error);
-              setToolCalls((calls) => finishToolCall(calls, callId, 'failed', Date.now(), message));
-            });
+                setToolCalls((calls) => finishToolCall(calls, callId, 'done', Date.now()));
+              })
+              .catch((error) => {
+                console.error('[App] Failed to load pose from LLM tag', error);
+                const message = error instanceof Error ? error.message : String(error);
+                setToolCalls((calls) =>
+                  finishToolCall(calls, callId, 'failed', Date.now(), message),
+                );
+              });
           }
         } else {
-          animationBus.enqueue({ slug: tag.slug, intent: 'play', source: 'realtime-text', ...(speaker ? { avatarId: speaker } : {}) });
+          animationBus.enqueue({
+            slug: tag.slug,
+            intent: 'play',
+            source: 'realtime-text',
+            ...(speaker ? { avatarId: speaker } : {}),
+          });
           setToolCalls((calls) =>
             addToolCall(calls, {
               id: callId,
@@ -1698,7 +1953,19 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, moveAvatarToPlace, resolveApi, rigs, sceneActions, stageNames],
+    [
+      animationBus,
+      availableAnimationSlugSet,
+      availablePoseSlugSet,
+      availablePoses,
+      avatarProfiles,
+      liveMotionReady,
+      moveAvatarToPlace,
+      resolveApi,
+      rigs,
+      sceneActions,
+      stageNames,
+    ],
   );
 
   useEffect(() => {
@@ -1708,7 +1975,9 @@ export default function App() {
   // Stations: main says an avatar is using a tool that lives at an object in the room. Walk it there and act the
   // activity; main holds the spoken answer until `arrived` (rooms/station-walks.ts). The latest values are read from refs.
   const presentIdsRef = useRef(presence.present);
-  useEffect(() => { presentIdsRef.current = presence.present; }, [presence.present]);
+  useEffect(() => {
+    presentIdsRef.current = presence.present;
+  }, [presence.present]);
   useEffect(() => {
     const stations = resolveApi()?.stations;
     if (!stations?.onUse) return undefined;
@@ -1720,10 +1989,15 @@ export default function App() {
         gesture: (text, avatarId) => {
           // A station gesture may repeat the last one on purpose (reading again): let the repeat filter pass it.
           const move = text.replace(/^\{move:/i, '').replace(/\}$/, '');
-          (avatarId === 'echo' ? moveRequestFilterRef.current : rigs.filterFor(avatarId)).forget(move);
+          (avatarId === 'echo' ? moveRequestFilterRef.current : rigs.filterFor(avatarId)).forget(
+            move,
+          );
           animationTextHandlerRef.current(text, avatarId);
         },
-        arrived: (useId) => void stations.arrived(useId).catch((error: unknown) => console.warn('[stations] could not report arrival', error)),
+        arrived: (useId) =>
+          void stations
+            .arrived(useId)
+            .catch((error: unknown) => console.warn('[stations] could not report arrival', error)),
       }),
     );
   }, [resolveApi, rigs]);
@@ -1731,7 +2005,9 @@ export default function App() {
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
   /** A lip-sync driver and a speaker element per avatar other than echo, created when its audio output appears. */
-  const avatarVoicesRef = useRef(new Map<string, { driver: VisemeDriver; audio: HTMLAudioElement | null }>());
+  const avatarVoicesRef = useRef(
+    new Map<string, { driver: VisemeDriver; audio: HTMLAudioElement | null }>(),
+  );
   const disposeAvatarVoice = useCallback((avatarId: string) => {
     const voice = avatarVoicesRef.current.get(avatarId);
     if (!voice) {
@@ -1750,7 +2026,9 @@ export default function App() {
     }
     setVisemeFrames({});
   }, [disposeAvatarVoice]);
-  const avatarStreamHandlerRef = useRef<(avatarId: string, stream: MediaStream) => void>(() => undefined);
+  const avatarStreamHandlerRef = useRef<(avatarId: string, stream: MediaStream) => void>(
+    () => undefined,
+  );
   avatarStreamHandlerRef.current = (avatarId, stream) => {
     disposeAvatarVoice(avatarId);
     const driver = new VisemeDriver({
@@ -1827,7 +2105,10 @@ export default function App() {
     };
 
     const recordFirstAudio = () => {
-      const snapshot = latencyTrackerRef.current.recordFirstAudio(Date.now(), activeSessionIdRef.current);
+      const snapshot = latencyTrackerRef.current.recordFirstAudio(
+        Date.now(),
+        activeSessionIdRef.current,
+      );
       if (snapshot) {
         setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
         pushLatency(snapshot);
@@ -1846,7 +2127,9 @@ export default function App() {
           onTurnTiming: (timing) => {
             if (!isSatellite) return;
             setLastTurnTiming(timing);
-            void getPreloadApi()?.satellite?.reportTurn?.(timing)?.catch(() => undefined);
+            void getPreloadApi()
+              ?.satellite?.reportTurn?.(timing)
+              ?.catch(() => undefined);
           },
           onTextContent: (content, avatarId) => {
             animationTextHandlerRef.current?.(content, avatarId);
@@ -1870,10 +2153,20 @@ export default function App() {
               ?.conversation?.announce?.({ note, reply, ts })
               .catch((error: unknown) => console.error('Failed to persist announcement', error));
             if (note) {
-              void recordTranscriptEntryRef.current({ speaker: 'system', text: note, timestamp: ts, persist: false });
+              void recordTranscriptEntryRef.current({
+                speaker: 'system',
+                text: note,
+                timestamp: ts,
+                persist: false,
+              });
             }
             if (reply) {
-              void recordTranscriptEntryRef.current({ speaker: 'assistant', text: reply, timestamp: ts + 1, persist: false });
+              void recordTranscriptEntryRef.current({
+                speaker: 'assistant',
+                text: reply,
+                timestamp: ts + 1,
+                persist: false,
+              });
             }
           },
           onActivity: setVoiceActivity,
@@ -1881,10 +2174,24 @@ export default function App() {
             const id = `${call.requestId}:${call.callId}`;
             if (call.status === 'started') {
               setToolCalls((calls) =>
-                addToolCall(calls, { id, kind: call.name, label: call.label, status: 'pending', startedAt: Date.now() }),
+                addToolCall(calls, {
+                  id,
+                  kind: call.name,
+                  label: call.label,
+                  status: 'pending',
+                  startedAt: Date.now(),
+                }),
               );
             } else {
-              setToolCalls((calls) => finishToolCall(calls, id, call.status === 'done' ? 'done' : 'failed', Date.now(), call.detail));
+              setToolCalls((calls) =>
+                finishToolCall(
+                  calls,
+                  id,
+                  call.status === 'done' ? 'done' : 'failed',
+                  Date.now(),
+                  call.detail,
+                ),
+              );
             }
           },
           onLog,
@@ -1919,14 +2226,24 @@ export default function App() {
         onLog,
       },
     });
-  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, isSatellite, wakePhrase, realtimeModel]);
+  }, [
+    hasRealtimeSupport,
+    pushLatency,
+    loadingConfig,
+    isLocalBackend,
+    isSatellite,
+    wakePhrase,
+    realtimeModel,
+  ]);
 
   // A satellite plays speech through its own chosen speakers: the client's element and every avatar's element.
   useEffect(() => {
     selectedOutputRef.current = selectedOutput;
     if (!isSatellite) return;
-    if (realtimeClient instanceof LocalVoiceClient) void realtimeClient.setOutputDeviceId(selectedOutput || undefined);
-    for (const voice of avatarVoicesRef.current.values()) if (selectedOutput) applySink(voice.audio, selectedOutput);
+    if (realtimeClient instanceof LocalVoiceClient)
+      void realtimeClient.setOutputDeviceId(selectedOutput || undefined);
+    for (const voice of avatarVoicesRef.current.values())
+      if (selectedOutput) applySink(voice.audio, selectedOutput);
   }, [isSatellite, selectedOutput, realtimeClient]);
 
   // Urgent updates are announced even when the conversation is not running.
@@ -1963,24 +2280,50 @@ export default function App() {
         return;
       }
 
-      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
-      const instructions = buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady, sceneInstructions);
+      const poseSlugs = availablePoses
+        .map((p) => toAnimationSlug(p.name))
+        .filter((s) => s.length > 0);
+      const instructions = buildSessionInstructions(
+        basePrompt,
+        availableAnimationSlugs,
+        poseSlugs,
+        activeVrmModel,
+        liveMotionReady,
+        sceneInstructions,
+      );
 
       // Spoken aloud in the configured voice: through the avatar (with lip-sync) while the
       // conversation is running, otherwise straight to the chosen speakers.
       const client = realtimeClient instanceof LocalVoiceClient ? realtimeClient : null;
       const result =
         (await client?.preview(testPrompt, instructions)) ??
-        (await playPreviewReply(bridge, { text: testPrompt, instructions }, { outputDeviceId: selectedOutput || null }));
+        (await playPreviewReply(
+          bridge,
+          { text: testPrompt, instructions },
+          { outputDeviceId: selectedOutput || null },
+        ));
 
-      setTestResponse(result.text || (result.cancelled ? 'Test response was interrupted.' : 'No reply was generated.'));
+      setTestResponse(
+        result.text ||
+          (result.cancelled ? 'Test response was interrupted.' : 'No reply was generated.'),
+      );
     } catch (err) {
       console.error('Test response failed:', err);
       setTestResponse('Error generating response. Check logs.');
     } finally {
       setIsTesting(false);
     }
-  }, [isLocalBackend, basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady, sceneInstructions, realtimeClient, selectedOutput]);
+  }, [
+    isLocalBackend,
+    basePrompt,
+    availableAnimationSlugs,
+    availablePoses,
+    activeVrmModel,
+    liveMotionReady,
+    sceneInstructions,
+    realtimeClient,
+    selectedOutput,
+  ]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {
@@ -2002,7 +2345,8 @@ export default function App() {
           return null;
         }
         setRealtimeToken(response.value);
-        realtimeTokenExpiresAtRef.current = typeof response.expiresAt === 'number' ? response.expiresAt : null;
+        realtimeTokenExpiresAtRef.current =
+          typeof response.expiresAt === 'number' ? response.expiresAt : null;
         realtimeTokenRefreshRef.current = false;
         setRealtimeTokenError(null);
         console.info('[RealtimeClient] Minted ephemeral token.', { reason });
@@ -2011,7 +2355,8 @@ export default function App() {
         if (requestId !== realtimeTokenRequestRef.current) {
           return null;
         }
-        const message = error instanceof Error ? error.message : 'Failed to mint realtime session token.';
+        const message =
+          error instanceof Error ? error.message : 'Failed to mint realtime session token.';
         setRealtimeToken(null);
         setRealtimeTokenError(message);
         console.error('[RealtimeClient] Failed to mint ephemeral token.', { reason, message });
@@ -2139,11 +2484,15 @@ export default function App() {
         if (cancelled) {
           return;
         }
-        setAvatarProfiles((previous) => (JSON.stringify(previous) === JSON.stringify(list) ? previous : list));
+        setAvatarProfiles((previous) =>
+          JSON.stringify(previous) === JSON.stringify(list) ? previous : list,
+        );
         if (list.length > 1 || forceModels) {
           const models = await resolveApi()?.avatar?.listModels?.();
           if (!cancelled && models) {
-            setVrmModels((previous) => (JSON.stringify(previous) === JSON.stringify(models) ? previous : models));
+            setVrmModels((previous) =>
+              JSON.stringify(previous) === JSON.stringify(models) ? previous : models,
+            );
           }
         }
         if (list.length > 1) {
@@ -2177,15 +2526,26 @@ export default function App() {
       return undefined;
     }
     // On stage: the avatars here, those walking in (their body loads out of sight), and Echo, whose body stays loaded.
-    const onStage = avatarProfiles.filter((profile) => profile.id === 'echo' || presence.present.includes(profile.id) || presence.incoming.includes(profile.id));
+    const onStage = avatarProfiles.filter(
+      (profile) =>
+        profile.id === 'echo' ||
+        presence.present.includes(profile.id) ||
+        presence.incoming.includes(profile.id),
+    );
     return onStage.map((profile) => {
-      const own = profile.vrmModelId ? vrmModels.find((candidate) => candidate.id === profile.vrmModelId) : undefined;
+      const own = profile.vrmModelId
+        ? vrmModels.find((candidate) => candidate.id === profile.vrmModelId)
+        : undefined;
       const isEcho = profile.id === 'echo';
       return {
         id: profile.id,
         name: profile.name,
         // Echo follows the active model; a shared or unknown body is Echo's model, loaded once per actor.
-        model: isEcho ? activeVrmModel : profile.vrmModelId === activeVrmModel?.id ? activeVrmModel : (own ?? activeVrmModel),
+        model: isEcho
+          ? activeVrmModel
+          : profile.vrmModelId === activeVrmModel?.id
+            ? activeVrmModel
+            : (own ?? activeVrmModel),
         frame: isEcho ? visemeFrame : (visemeFrames[profile.id] ?? null),
       };
     });
@@ -2208,7 +2568,8 @@ export default function App() {
   useEffect(() => {
     // A body that left the stage is unloaded; it has to load again the next time.
     const onStage = new Set(stageAvatars?.map((entry) => entry.id) ?? ['echo']);
-    for (const id of [...readyBodiesRef.current]) if (id !== 'echo' && !onStage.has(id)) readyBodiesRef.current.delete(id);
+    for (const id of [...readyBodiesRef.current])
+      if (id !== 'echo' && !onStage.has(id)) readyBodiesRef.current.delete(id);
   }, [stageAvatars]);
   const arrivalSentRef = useRef(new Set<string>());
   useEffect(() => {
@@ -2220,10 +2581,14 @@ export default function App() {
       if (sent.has(id)) continue;
       // Nothing to load for an avatar without a body; otherwise wait for the renderer to say the body is ready.
       const entry = stageAvatars?.find((candidate) => candidate.id === id);
-      const bodyless = stageAvatars ? entry?.model == null : id === 'echo' && activeVrmModel == null;
+      const bodyless = stageAvatars
+        ? entry?.model == null
+        : id === 'echo' && activeVrmModel == null;
       if (!readyBodiesRef.current.has(id) && !bodyless) continue;
       sent.add(id);
-      bridge.arrived(id).catch((error: unknown) => console.warn('[places] could not report an arrival', error));
+      bridge
+        .arrived(id)
+        .catch((error: unknown) => console.warn('[places] could not report an arrival', error));
     }
   }, [presence.incoming, readyVersion, stageAvatars, activeVrmModel, resolveApi]);
   // Once it is let in, the avatar walks from the door to its spot (3D rooms with live motion; in 2D it is simply there).
@@ -2245,7 +2610,10 @@ export default function App() {
       bridge
         .move(avatarId, here, 'called')
         .then((result) => {
-          if (!result.ok) console.warn(`[places] could not call ${avatarId}: ${result.reason ?? 'no reason given'}`);
+          if (!result.ok)
+            console.warn(
+              `[places] could not call ${avatarId}: ${result.reason ?? 'no reason given'}`,
+            );
         })
         .catch((error: unknown) => console.warn('[places] the call failed', error));
     },
@@ -2259,7 +2627,9 @@ export default function App() {
   // They share Echo's lists when they wear her body; an avatar with a body of its own only gets {move:}.
   const avatarTagInstructions = useMemo(() => {
     if (avatarProfiles.length < 2) return null;
-    const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+    const poseSlugs = availablePoses
+      .map((p) => toAnimationSlug(p.name))
+      .filter((s) => s.length > 0);
     // The scene text has no idle note; each avatar on stage also hears who else is in the room.
     const room = backgrounds.activeRoom;
     const scene = buildSceneInstructions(room, liveMotionReady);
@@ -2269,17 +2639,22 @@ export default function App() {
         .map((profile) => {
           const executor = rigs.get(profile.id).executor;
           return [
-          profile.id,
-          (() => {
-            const state = executor.getState();
-            const world = executor.world();
-            return buildSceneInstructions(room, liveMotionReady, {
-              others: othersFor(profile.id),
-              body: describeBody(room, state, world, executor.recentFailures()),
-              where: describeAvatarWhere(room, { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null }),
-              held: state.held ? (room?.objects.find((object) => object.id === state.held?.objectId)?.name ?? null) : null,
-            });
-          })(),
+            profile.id,
+            (() => {
+              const state = executor.getState();
+              const world = executor.world();
+              return buildSceneInstructions(room, liveMotionReady, {
+                others: othersFor(profile.id),
+                body: describeBody(room, state, world, executor.recentFailures()),
+                where: describeAvatarWhere(room, {
+                  position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null,
+                }),
+                held: state.held
+                  ? (room?.objects.find((object) => object.id === state.held?.objectId)?.name ??
+                    null)
+                  : null,
+              });
+            })(),
           ];
         }),
     );
@@ -2290,11 +2665,22 @@ export default function App() {
     };
     // sceneTick: where the others are changes when an action ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avatarProfiles.length, availableAnimationSlugs, availablePoses, liveMotionReady, backgrounds.activeRoom, stageNames, othersFor, sceneTick]);
+  }, [
+    avatarProfiles.length,
+    availableAnimationSlugs,
+    availablePoses,
+    liveMotionReady,
+    backgrounds.activeRoom,
+    stageNames,
+    othersFor,
+    sceneTick,
+  ]);
   useEffect(() => {
     if (!avatarTagInstructions) return;
     const setTagInstructions = resolveApi()?.avatars?.setTagInstructions;
-    void setTagInstructions?.(avatarTagInstructions)?.catch?.((error: unknown) => console.warn('Failed to send avatar tag instructions.', error));
+    void setTagInstructions?.(avatarTagInstructions)?.catch?.((error: unknown) =>
+      console.warn('Failed to send avatar tag instructions.', error),
+    );
   }, [avatarTagInstructions, resolveApi]);
 
   useEffect(() => {
@@ -2302,9 +2688,13 @@ export default function App() {
     if (!bridge) {
       setConfigError('Renderer preload API is unavailable.');
       setLoadingConfig(false);
-      logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.', {
-        ...collectBridgeDiagnostics(undefined, { effect: 'load-config' }),
-      });
+      logRendererBridge(
+        'error',
+        'Configuration bridge unavailable while loading renderer config.',
+        {
+          ...collectBridgeDiagnostics(undefined, { effect: 'load-config' }),
+        },
+      );
       return;
     }
 
@@ -2331,7 +2721,8 @@ export default function App() {
         });
       })
       .catch((error) => {
-        const message = error instanceof Error ? error.message : 'Failed to load renderer configuration.';
+        const message =
+          error instanceof Error ? error.message : 'Failed to load renderer configuration.';
         setConfigError(message);
         logRendererBridge('error', 'Failed to load renderer configuration from main process.', {
           message,
@@ -2405,7 +2796,10 @@ export default function App() {
       messageIdsRef.current.add(message.id);
       setTranscriptEntries((previous) => {
         const filtered = previous.filter((entry) => entry.id !== message.id);
-        const next = [...filtered, { id: message.id, speaker, text: message.content, timestamp: message.ts }];
+        const next = [
+          ...filtered,
+          { id: message.id, speaker, text: message.content, timestamp: message.ts },
+        ];
         next.sort((a, b) => a.timestamp - b.timestamp);
         return next.slice(-MAX_TRANSCRIPT_ENTRIES);
       });
@@ -2419,17 +2813,26 @@ export default function App() {
   }, [api, resolveApi, applySessionHistory]);
 
   useEffect(() => {
-    setSelectedInput((previous) => (previous === configInputDeviceId ? previous : configInputDeviceId));
-    setSelectedOutput((previous) => (previous === configOutputDeviceId ? previous : configOutputDeviceId));
+    setSelectedInput((previous) =>
+      previous === configInputDeviceId ? previous : configInputDeviceId,
+    );
+    setSelectedOutput((previous) =>
+      previous === configOutputDeviceId ? previous : configOutputDeviceId,
+    );
   }, [configInputDeviceId, configOutputDeviceId]);
 
-  const audioGraph = useAudioGraphState(selectedInput || undefined, isListeningEnabled && !loadingConfig && !wakeListening.error);
+  const audioGraph = useAudioGraphState(
+    selectedInput || undefined,
+    isListeningEnabled && !loadingConfig && !wakeListening.error,
+  );
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
   useEffect(() => {
     stopCaptureRef.current = audioGraph.stopNow;
   }, [audioGraph.stopNow]);
   const voicePhaseRef = useRef(voiceActivity.phase);
-  useEffect(() => { voicePhaseRef.current = voiceActivity.phase; }, [voiceActivity.phase]);
+  useEffect(() => {
+    voicePhaseRef.current = voiceActivity.phase;
+  }, [voiceActivity.phase]);
 
   useEffect(() => {
     const payload: SessionConfigUpdate = {
@@ -2437,7 +2840,11 @@ export default function App() {
       instructions: sessionInstructions || undefined,
       turnDetection: useServerVad ? 'server_vad' : 'none',
       vad: useServerVad
-        ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
+        ? {
+            threshold: vadThreshold,
+            silenceDurationMs: vadSilenceMs,
+            minSpeechDurationMs: vadMinSpeechMs,
+          }
         : undefined,
     };
 
@@ -2481,7 +2888,10 @@ export default function App() {
     if (!wasActive && audioGraph.isActive) {
       // The user started speaking (not the avatar's own voice coming back): drop what it still had queued to do.
       if (voicePhaseRef.current !== 'responding') interruptMovement();
-      const snapshot = latencyTrackerRef.current.recordCapture(Date.now(), activeSessionIdRef.current);
+      const snapshot = latencyTrackerRef.current.recordCapture(
+        Date.now(),
+        activeSessionIdRef.current,
+      );
       if (snapshot) {
         setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
         pushLatency(snapshot);
@@ -2511,7 +2921,9 @@ export default function App() {
       return;
     }
 
-    const upstream = isSatellite ? (audioGraph.upstreamStream ?? silentInput) : audioGraph.upstreamStream;
+    const upstream = isSatellite
+      ? (audioGraph.upstreamStream ?? silentInput)
+      : audioGraph.upstreamStream;
     if (!(isSatellite || isListeningEnabled) || !upstream || !canConnectConversation) {
       void realtimeClient.disconnect();
       return;
@@ -2620,7 +3032,9 @@ export default function App() {
         setListeningEnabled(true);
         const connected = await new Promise<boolean>((resolve) => {
           const timer = setTimeout(() => {
-            connectedWaitersRef.current = connectedWaitersRef.current.filter((entry) => entry !== wake);
+            connectedWaitersRef.current = connectedWaitersRef.current.filter(
+              (entry) => entry !== wake,
+            );
             resolve(false);
           }, 20_000);
           const wake = () => {
@@ -2673,7 +3087,9 @@ export default function App() {
     }
 
     if (realtimeState.status === 'error' && previousRealtimeStatusRef.current !== 'error') {
-      const errorMessage = realtimeState.error ? `Realtime error — ${realtimeState.error}` : 'Realtime session error';
+      const errorMessage = realtimeState.error
+        ? `Realtime error — ${realtimeState.error}`
+        : 'Realtime session error';
       void recordTranscriptEntry({
         speaker: 'system',
         text: errorMessage,
@@ -2697,7 +3113,12 @@ export default function App() {
       if (client instanceof LocalVoiceClient) {
         client.notifyWake(event.timestamp);
       }
-      setWakeScore({ score: event.confidence, threshold: wakeThresholdRef.current, at: event.timestamp, detected: true });
+      setWakeScore({
+        score: event.confidence,
+        threshold: wakeThresholdRef.current,
+        at: event.timestamp,
+        detected: true,
+      });
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
         activeSessionIdRef.current = event.sessionId;
         setActiveSessionId(event.sessionId);
@@ -2728,7 +3149,12 @@ export default function App() {
         // A detection already shows this burst; its peak would only repeat it.
         previous?.detected && event.timestamp - previous.at < 2000
           ? { ...previous, score: Math.max(previous.score, event.confidence) }
-          : { score: event.confidence, threshold, at: event.timestamp, detected: event.confidence >= threshold },
+          : {
+              score: event.confidence,
+              threshold,
+              at: event.timestamp,
+              detected: event.confidence >= threshold,
+            },
       );
     });
 
@@ -2750,7 +3176,8 @@ export default function App() {
         const gate = deviceGate;
         if (!gate) return;
         if (!gate.occupied) {
-          const roomIsFine = gate.unlocked && gate.linkUp && gate.open && gate.noFullscreenApp && gate.notHeldOff;
+          const roomIsFine =
+            gate.unlocked && gate.linkUp && gate.open && gate.noFullscreenApp && gate.notHeldOff;
           if (!roomIsFine) {
             setCallingNote(`The mic is off: ${gate.summary || 'the room is not available'}.`);
             return;
@@ -2764,7 +3191,11 @@ export default function App() {
               else if (result.alreadyHere) setCallingNote(null);
               else setCallingNote(`Calling ${result.name}…`);
             })
-            .catch((error: unknown) => setCallingNote(`Could not call: ${error instanceof Error ? error.message : String(error)}`));
+            .catch((error: unknown) =>
+              setCallingNote(
+                `Could not call: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            );
           return;
         }
         if (!gate.micAllowed) {
@@ -2849,13 +3280,17 @@ export default function App() {
       const bridge = resolveApi();
       if (!bridge) {
         setSaveError('Cannot update audio preferences without preload bridge access.');
-        logRendererBridge('error', 'Configuration bridge unavailable during audio preference persistence.', {
-          ...collectBridgeDiagnostics(undefined, {
-            action: 'set-audio-preferences',
-            audioInputDeviceId: preferences.audioInputDeviceId ?? null,
-            audioOutputDeviceId: preferences.audioOutputDeviceId ?? null,
-          }),
-        });
+        logRendererBridge(
+          'error',
+          'Configuration bridge unavailable during audio preference persistence.',
+          {
+            ...collectBridgeDiagnostics(undefined, {
+              action: 'set-audio-preferences',
+              audioInputDeviceId: preferences.audioInputDeviceId ?? null,
+              audioOutputDeviceId: preferences.audioOutputDeviceId ?? null,
+            }),
+          },
+        );
         return;
       }
 
@@ -2866,7 +3301,8 @@ export default function App() {
         const nextConfig = await bridge.config.setAudioDevicePreferences(preferences);
         setConfig(nextConfig);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to persist audio device preferences.';
+        const message =
+          error instanceof Error ? error.message : 'Failed to persist audio device preferences.';
         setSaveError(message);
         throw error;
       } finally {
@@ -2934,7 +3370,11 @@ export default function App() {
           `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
         );
         console.info('Voice change reconnect initiated with');
-        if (realtimeClient instanceof RealtimeClient && audioGraph.upstreamStream && hasRealtimeApiKey) {
+        if (
+          realtimeClient instanceof RealtimeClient &&
+          audioGraph.upstreamStream &&
+          hasRealtimeApiKey
+        ) {
           await realtimeClient.disconnect();
           console.info(
             `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
@@ -2996,30 +3436,43 @@ export default function App() {
     [resolveApi],
   );
 
-  const handlePromptBlur = useCallback(
-    async () => {
-      try {
-        const avatarApi = resolveApi()?.avatar;
-        if (activeVrmModel?.id && avatarApi?.setPromptPreference) {
-          // Saved for this character only; the global prompt stays as the default for others.
-          await avatarApi.setPromptPreference(basePrompt);
-        } else {
-          await persistPreferences({
-            audioInputDeviceId: selectedInput || undefined,
-            audioOutputDeviceId: selectedOutput || undefined,
-            sessionInstructions: basePrompt || undefined,
-          });
-        }
-        realtimeClient?.updateSessionConfig({ instructions: sessionInstructions || undefined });
-      } catch (error) {
-        console.error('Failed to persist base prompt', error);
+  const handlePromptBlur = useCallback(async () => {
+    try {
+      const avatarApi = resolveApi()?.avatar;
+      if (activeVrmModel?.id && avatarApi?.setPromptPreference) {
+        // Saved for this character only; the global prompt stays as the default for others.
+        await avatarApi.setPromptPreference(basePrompt);
+      } else {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          sessionInstructions: basePrompt || undefined,
+        });
       }
-    },
-    [persistPreferences, resolveApi, activeVrmModel?.id, selectedInput, selectedOutput, basePrompt, realtimeClient, sessionInstructions],
-  );
+      realtimeClient?.updateSessionConfig({ instructions: sessionInstructions || undefined });
+    } catch (error) {
+      console.error('Failed to persist base prompt', error);
+    }
+  }, [
+    persistPreferences,
+    resolveApi,
+    activeVrmModel?.id,
+    selectedInput,
+    selectedOutput,
+    basePrompt,
+    realtimeClient,
+    sessionInstructions,
+  ]);
 
   const applyVadPrefs = useCallback(
-    async (next: Partial<{ useServer: boolean; threshold: number; silenceMs: number; minSpeechMs: number }>) => {
+    async (
+      next: Partial<{
+        useServer: boolean;
+        threshold: number;
+        silenceMs: number;
+        minSpeechMs: number;
+      }>,
+    ) => {
       const useServer = next.useServer ?? useServerVad;
       const threshold = next.threshold ?? vadThreshold;
       const silenceMs = next.silenceMs ?? vadSilenceMs;
@@ -3047,7 +3500,16 @@ export default function App() {
         console.error('Failed to persist VAD preferences', error);
       }
     },
-    [persistPreferences, selectedInput, selectedOutput, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs, realtimeClient],
+    [
+      persistPreferences,
+      selectedInput,
+      selectedOutput,
+      useServerVad,
+      vadThreshold,
+      vadSilenceMs,
+      vadMinSpeechMs,
+      realtimeClient,
+    ],
   );
 
   // Initialize voice/prompt/VAD from config
@@ -3064,9 +3526,17 @@ export default function App() {
       setUseServerVad(true);
     }
     if (typeof config?.vadThreshold === 'number') setVadThreshold(config.vadThreshold as number);
-    if (typeof config?.vadSilenceDurationMs === 'number') setVadSilenceMs(config.vadSilenceDurationMs as number);
-    if (typeof config?.vadMinSpeechDurationMs === 'number') setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
-  }, [config?.realtimeVoice, config?.vadTurnDetection, config?.vadThreshold, config?.vadSilenceDurationMs, config?.vadMinSpeechDurationMs]);
+    if (typeof config?.vadSilenceDurationMs === 'number')
+      setVadSilenceMs(config.vadSilenceDurationMs as number);
+    if (typeof config?.vadMinSpeechDurationMs === 'number')
+      setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
+  }, [
+    config?.realtimeVoice,
+    config?.vadTurnDetection,
+    config?.vadThreshold,
+    config?.vadSilenceDurationMs,
+    config?.vadMinSpeechDurationMs,
+  ]);
 
   // The personality prompt belongs to the active character. One that has none yet starts from the
   // global prompt (what every character used before prompts were per character).
@@ -3102,7 +3572,11 @@ export default function App() {
         instructions: sessionInstructions || undefined,
         turnDetection: useServerVad ? 'server_vad' : 'none',
         vad: useServerVad
-          ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
+          ? {
+              threshold: vadThreshold,
+              silenceDurationMs: vadSilenceMs,
+              minSpeechDurationMs: vadMinSpeechMs,
+            }
           : undefined,
       } as const;
       realtimeClient.updateSessionConfig(payload);
@@ -3193,7 +3667,10 @@ export default function App() {
     avatarApi.setVoicePreference(selectedVoice || '');
   }, [selectedVoice, activeVrmModel?.id, resolveApi]);
 
-  const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
+  const levelPercentage = useMemo(
+    () => Math.min(100, Math.round(audioGraph.level * 100)),
+    [audioGraph.level],
+  );
 
   const audioGraphStatusLabel = useMemo(() => {
     if (!isListeningEnabled && !loadingConfig) {
@@ -3204,7 +3681,11 @@ export default function App() {
       case 'starting':
         return 'Starting microphone capture…';
       case 'ready':
-        return audioGraph.isActive ? 'Listening' : loadingConfig ? 'Waiting for configuration…' : 'Idle';
+        return audioGraph.isActive
+          ? 'Listening'
+          : loadingConfig
+            ? 'Waiting for configuration…'
+            : 'Idle';
       case 'error':
         return audioGraph.error ?? 'Audio capture error';
       default:
@@ -3283,7 +3764,8 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const isToggleShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyT';
+      const isToggleShortcut =
+        (event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyT';
       if (isToggleShortcut) {
         event.preventDefault();
         toggleTranscriptVisibility();
@@ -3301,7 +3783,12 @@ export default function App() {
   }, [isTranscriptVisible]);
 
   const wakeStatusVariant = wakeState === 'awake' ? 'active' : 'idle';
-  const realtimeVariant = realtimeState.status === 'error' ? 'error' : realtimeState.status === 'connected' ? 'active' : 'idle';
+  const realtimeVariant =
+    realtimeState.status === 'error'
+      ? 'error'
+      : realtimeState.status === 'connected'
+        ? 'active'
+        : 'idle';
   const networkVariant = isOnline ? 'active' : 'error';
   const audioVariant =
     audioGraph.status === 'error'
@@ -3312,7 +3799,11 @@ export default function App() {
           ? 'active'
           : 'idle';
   const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
-  const deviceStatusLabel = deviceError ? `Error — ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'Scanning…';
+  const deviceStatusLabel = deviceError
+    ? `Error — ${deviceError}`
+    : inputs.length > 0
+      ? 'Devices ready'
+      : 'Scanning…';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
   const stageStyle: CSSProperties & Record<string, string | number> = {
@@ -3323,7 +3814,6 @@ export default function App() {
   const canOpenStudio = Boolean(
     activeBridge?.avatar?.generateAvatar && activeBridge.avatar.listAvatarGenerationJobs,
   );
-
 
   return (
     <AnimationBusProvider bus={animationBus}>
@@ -3344,16 +3834,37 @@ export default function App() {
             data-tap-to-talk={tapToTalk ? 'true' : 'false'}
           >
             <section className="kiosk__stage" aria-label="Avatar stage" style={stageStyle}>
-              {backgrounds.activeKind === '2d' && backgrounds.imageUrl ? <>
-                <img className="stageBackground" src={backgrounds.imageUrl} alt="" draggable={false} style={{ objectPosition: `50% ${(backgrounds.active?.groundY ?? 0.86) * 100}%` }} />
-                <div className="stageGroundShadow" aria-hidden="true" />
-              </> : null}
+              {backgrounds.activeKind === '2d' && backgrounds.imageUrl ? (
+                <>
+                  <img
+                    className="stageBackground"
+                    src={backgrounds.imageUrl}
+                    alt=""
+                    draggable={false}
+                    style={{
+                      objectPosition: `50% ${(backgrounds.active?.groundY ?? 0.86) * 100}%`,
+                    }}
+                  />
+                  <div className="stageGroundShadow" aria-hidden="true" />
+                </>
+              ) : null}
               <div
                 className="kiosk__avatar"
                 data-state={visemeSummary.status.toLowerCase()}
                 data-avatar-mode="vrm"
                 data-stage-mode={backgrounds.activeKind}
-                {...(stageAvatars && !backgrounds.activeRoom ? { 'data-avatar-count': Math.min(Math.max(1, stageAvatars.filter((entry) => presence.present.includes(entry.id)).length), 3) } : {})}
+                {...(stageAvatars && !backgrounds.activeRoom
+                  ? {
+                      'data-avatar-count': Math.min(
+                        Math.max(
+                          1,
+                          stageAvatars.filter((entry) => presence.present.includes(entry.id))
+                            .length,
+                        ),
+                        3,
+                      ),
+                    }
+                  : {})}
               >
                 <VrmAvatarRenderer
                   key={activeVrmModel?.id ?? 'vrm'}
@@ -3375,19 +3886,38 @@ export default function App() {
                 <ElsewhereChip
                   absent={presence.absent}
                   snapshot={placesSnapshot}
-                  nameOf={(avatarId) => avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId}
+                  nameOf={(avatarId) =>
+                    avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId
+                  }
                   onCall={callAvatar}
                 />
               ) : null}
             </section>
           </section>
-          {typedPromptOpen && !isSatellite ? <TypedPrompt onSend={sendPromptLine} onClose={closeTypedPrompt} /> : null}
-          {satellite ? <SatelliteBanner status={satellite.status} bridge={satellite.bridge} /> : null}
-          {satellite ? <DeviceDots gate={deviceGate} /> : <CameraLiveDot live={facePresence.live} />}
+          {typedPromptOpen && !isSatellite ? (
+            <TypedPrompt onSend={sendPromptLine} onClose={closeTypedPrompt} />
+          ) : null}
+          {satellite ? (
+            <SatelliteBanner status={satellite.status} bridge={satellite.bridge} />
+          ) : null}
+          {satellite ? (
+            <DeviceDots gate={deviceGate} />
+          ) : (
+            <CameraLiveDot live={facePresence.live} />
+          )}
           <div className="stageToolbar">
-            {wakeListening.error ? <p className="kiosk__error" role="alert">{wakeListening.error}</p> : null}
+            {wakeListening.error ? (
+              <p className="kiosk__error" role="alert">
+                {wakeListening.error}
+              </p>
+            ) : null}
             {isSatellite ? (
-              <TypedMessage onSend={sendTypedMessage} disabled={satellite.status.link !== 'online' || realtimeState.status !== 'connected'} />
+              <TypedMessage
+                onSend={sendTypedMessage}
+                disabled={
+                  satellite.status.link !== 'online' || realtimeState.status !== 'connected'
+                }
+              />
             ) : null}
             {isSatellite && callingNote ? (
               <p className="kiosk__helper" role="status" data-testid="calling-note">
@@ -3408,19 +3938,21 @@ export default function App() {
                 {wakeListening.error
                   ? 'Listening error'
                   : isSatellite && deviceGate?.micAllowed !== true
-                  ? `Mic off${deviceGate?.summary ? ` · ${deviceGate.summary}` : ''}`
-                  : isSatellite && satelliteHandOff
-                  ? 'Listening is off'
-                  : !isListeningEnabled
-                  ? wakeListening.phase === 'off' ? 'Listening is off' : 'Stopping listening…'
-                  : displayedActivity.phase === 'waiting'
-                    ? `Listening · say “${wakePhrase}”`
-                    : displayedActivity.phase === 'off'
-                      ? 'Starting…'
-                      : displayedActivity.phase === 'error'
-                        ? 'Something went wrong'
-                        : displayedActivity.phase.charAt(0).toUpperCase() +
-                          displayedActivity.phase.slice(1)}
+                    ? `Mic off${deviceGate?.summary ? ` · ${deviceGate.summary}` : ''}`
+                    : isSatellite && satelliteHandOff
+                      ? 'Listening is off'
+                      : !isListeningEnabled
+                        ? wakeListening.phase === 'off'
+                          ? 'Listening is off'
+                          : 'Stopping listening…'
+                        : displayedActivity.phase === 'waiting'
+                          ? `Listening · say “${wakePhrase}”`
+                          : displayedActivity.phase === 'off'
+                            ? 'Starting…'
+                            : displayedActivity.phase === 'error'
+                              ? 'Something went wrong'
+                              : displayedActivity.phase.charAt(0).toUpperCase() +
+                                displayedActivity.phase.slice(1)}
               </span>
             </button>
             <button
@@ -3437,304 +3969,382 @@ export default function App() {
           <ControlsDrawer open={drawerOpen} onOpenChange={setDrawerOpen}>
             {!isSatellite ? (
               <>
-            <ControlButton
-              id="character"
-              title="Characters"
-              summary={activeAvatarName}
-              keywords="avatar model vrm upload choose select personality base prompt"
-              onOpen={() => setPanel('character')}
-            />
-            <ControlButton
-              id="avatar"
-              title="Avatar"
-              summary="Create and edit avatars"
-              keywords="avatar studio generate create edit 3d image rig takes"
-              disabled={!canOpenStudio}
-              onOpen={() => setStudioOpen(true)}
-            />
-            <ControlButton
-              id="backgrounds"
-              title="Backgrounds"
-              summary={backgrounds.activeName}
-              keywords="scene background place environment scenery generate creation description garden lounge beach city mountain"
-              onOpen={() => setPanel('backgrounds')}
-            />
-            <ControlButton
-              id="furniture"
-              title="Furniture"
-              summary="Browse or generate"
-              keywords="furniture library room decor seating tables storage lighting appliances"
-              onOpen={() => setPanel('furniture')}
-            />
-            <ControlButton
-              id="models"
-              title="Models and servers"
-              summary={isLocalBackend ? 'Pipeline' : 'OpenAI Realtime'}
-              keywords="language model speech text voice provider kokoro motion server url conversation api keys engine comfyui"
-              disabled={!activeBridge?.models}
-              onOpen={() => openModels()}
-            />
-            <ControlButton
-              id="devices"
-              title="Devices and wake words"
-              summary={wakePhrase}
-              keywords="microphone speakers audio input output vad threshold wake word train push to talk shortcut tap"
-              onOpen={() => setPanel('devices')}
-            />
-            <ControlButton
-              id="places"
-              title="Places"
-              summary={placesSnapshot && placesSnapshot.places.length > 1 ? `${placesSnapshot.places.length} places` : 'This PC'}
-              keywords="places rooms desktop room pair satellite second pc tailscale next door lounge revoke"
-              disabled={!activeBridge?.places}
-              onOpen={() => setPanel('places')}
-            />
-            <ControlButton
-              id="tools"
-              title="Tools / MCP"
-              summary="Web search · MCP"
-              keywords="tools mcp servers search web home assistant"
-              onOpen={() => setPanel('tools')}
-            />
-            <ControlButton
-              id="memory"
-              title="Memory"
-              summary="Facts · conversations"
-              keywords="memory remember facts forget conversations history recall summaries search past"
-              disabled={!activeBridge?.memoryEngine}
-              onOpen={() => setPanel('memory')}
-            />
+                <ControlButton
+                  id="character"
+                  title="Characters"
+                  summary={activeAvatarName}
+                  keywords="avatar model vrm upload choose select personality base prompt"
+                  onOpen={() => setPanel('character')}
+                />
+                <ControlButton
+                  id="avatar"
+                  title="Avatar"
+                  summary="Create and edit avatars"
+                  keywords="avatar studio generate create edit 3d image rig takes"
+                  disabled={!canOpenStudio}
+                  onOpen={() => setStudioOpen(true)}
+                />
+                <ControlButton
+                  id="backgrounds"
+                  title="Backgrounds"
+                  summary={backgrounds.activeName}
+                  keywords="scene background place environment scenery generate creation description garden lounge beach city mountain"
+                  onOpen={() => setPanel('backgrounds')}
+                />
+                <ControlButton
+                  id="furniture"
+                  title="Furniture"
+                  summary="Browse or generate"
+                  keywords="furniture library room decor seating tables storage lighting appliances"
+                  onOpen={() => setPanel('furniture')}
+                />
+                <ControlButton
+                  id="models"
+                  title="Models and servers"
+                  summary={isLocalBackend ? 'Pipeline' : 'OpenAI Realtime'}
+                  keywords="language model speech text voice provider kokoro motion server url conversation api keys engine comfyui"
+                  disabled={!activeBridge?.models}
+                  onOpen={() => openModels()}
+                />
+                <ControlButton
+                  id="devices"
+                  title="Devices and wake words"
+                  summary={wakePhrase}
+                  keywords="microphone speakers audio input output vad threshold wake word train push to talk shortcut tap"
+                  onOpen={() => setPanel('devices')}
+                />
+                <ControlButton
+                  id="places"
+                  title="Places"
+                  summary={
+                    placesSnapshot && placesSnapshot.places.length > 1
+                      ? `${placesSnapshot.places.length} places`
+                      : 'This PC'
+                  }
+                  keywords="places rooms desktop room pair satellite second pc tailscale next door lounge revoke"
+                  disabled={!activeBridge?.places}
+                  onOpen={() => setPanel('places')}
+                />
+                <ControlButton
+                  id="tools"
+                  title="Tools / MCP"
+                  summary="Web search · MCP"
+                  keywords="tools mcp servers search web home assistant"
+                  onOpen={() => setPanel('tools')}
+                />
+                <ControlButton
+                  id="memory"
+                  title="Memory"
+                  summary="Facts · conversations"
+                  keywords="memory remember facts forget conversations history recall summaries search past"
+                  disabled={!activeBridge?.memoryEngine}
+                  onOpen={() => setPanel('memory')}
+                />
               </>
             ) : null}
             <ControlButton
               id="status"
               title="Status and diagnostics"
-              summary={satellite ? (satellite.status.link === 'online' ? 'Connected to bija' : 'Lost touch with bija') : isOnline ? 'Online' : 'Offline'}
+              summary={
+                satellite
+                  ? satellite.status.link === 'online'
+                    ? 'Connected to bija'
+                    : 'Lost touch with bija'
+                  : isOnline
+                    ? 'Online'
+                    : 'Offline'
+              }
               keywords="status diagnostics network audio preload wake score tool calls models latency listening transcript meter"
               onOpen={() => setPanel('status')}
             />
             {!isSatellite ? (
-            <ControlButton
-              id="quit"
-              title="Quit"
-              summary="Exit the application"
-              keywords="quit exit close application"
-              onOpen={handleQuit}
-            />
+              <ControlButton
+                id="quit"
+                title="Quit"
+                summary="Exit the application"
+                keywords="quit exit close application"
+                onOpen={handleQuit}
+              />
             ) : null}
           </ControlsDrawer>
 
           {!isSatellite ? (
             <>
-          <ProviderSettingsPanel
-            settings={config?.providers ?? null}
-            onSave={handleProviderSettingsSave}
-            pushToTalkStatus={pushToTalkStatus}
-            wakeWordBridge={resolveApi()?.wakeWord}
-            disabled={loadingConfig}
-            renderLayout={({ devices, actions }) => (
+              <ProviderSettingsPanel
+                settings={config?.providers ?? null}
+                onSave={handleProviderSettingsSave}
+                pushToTalkStatus={pushToTalkStatus}
+                wakeWordBridge={resolveApi()?.wakeWord}
+                disabled={loadingConfig}
+                renderLayout={({ devices, actions }) => (
+                  <PanelDialog
+                    id="devices"
+                    title="Devices and wake words"
+                    open={panel === 'devices'}
+                    onClose={closePanel}
+                  >
+                    <section className="kiosk__controls">
+                      <div className="control">
+                        <label htmlFor="input-device">Microphone</label>
+                        <select
+                          id="input-device"
+                          value={selectedInput}
+                          onChange={handleInputChange}
+                          disabled={isSaving || loadingConfig}
+                        >
+                          <option value="">System default</option>
+                          {inputs.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label || 'Microphone'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="control">
+                        <label htmlFor="output-device">Speakers</label>
+                        <select
+                          id="output-device"
+                          value={selectedOutput}
+                          onChange={handleOutputChange}
+                          disabled={isSaving || loadingConfig}
+                        >
+                          <option value="">System default</option>
+                          {outputs.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label || 'Speaker'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {!isSatellite ? (
+                        <div className="control">
+                          <label htmlFor="camera-device">Camera (for presence)</label>
+                          <select
+                            id="camera-device"
+                            value={cameraDeviceId}
+                            onChange={(event) => setCameraDeviceId(event.target.value)}
+                          >
+                            <option value="">System default</option>
+                            {cameras.map((device) => (
+                              <option key={device.deviceId} value={device.deviceId}>
+                                {device.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="kiosk__helper">
+                            The camera only notes that a face is there. Turn it on for this PC in
+                            Places.
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="control">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={useServerVad}
+                            onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
+                            disabled={loadingConfig}
+                          />
+                          Use server VAD
+                        </label>
+                        {useServerVad ? (
+                          <div className="vadControls">
+                            <label>
+                              Threshold
+                              <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={vadThreshold}
+                                onChange={(e) =>
+                                  applyVadPrefs({ threshold: Number(e.target.value) })
+                                }
+                              />
+                              <span>{vadThreshold.toFixed(2)}</span>
+                            </label>
+                            <label>
+                              Min speech (ms)
+                              <input
+                                type="number"
+                                min={0}
+                                max={10000}
+                                step={50}
+                                value={vadMinSpeechMs}
+                                onChange={(e) =>
+                                  applyVadPrefs({ minSpeechMs: Number(e.target.value) })
+                                }
+                              />
+                            </label>
+                            <label>
+                              Silence (ms)
+                              <input
+                                type="number"
+                                min={0}
+                                max={10000}
+                                step={50}
+                                value={vadSilenceMs}
+                                onChange={(e) =>
+                                  applyVadPrefs({ silenceMs: Number(e.target.value) })
+                                }
+                              />
+                            </label>
+                          </div>
+                        ) : null}
+                      </div>
+                    </section>
+                    {devices}
+                    <div className="panelDialog__save">{actions}</div>
+                  </PanelDialog>
+                )}
+              />
+
               <PanelDialog
-                id="devices"
-                title="Devices and wake words"
-                open={panel === 'devices'}
+                id="character"
+                title="Characters"
+                subtitle="Choose who is in the scene and set each character's personality."
+                open={panel === 'character'}
                 onClose={closePanel}
               >
-                <section className="kiosk__controls">
-                  <div className="control">
-                    <label htmlFor="input-device">Microphone</label>
-                    <select
-                      id="input-device"
-                      value={selectedInput}
-                      onChange={handleInputChange}
-                      disabled={isSaving || loadingConfig}
-                    >
-                      <option value="">System default</option>
-                      {inputs.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label || 'Microphone'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="control">
-                    <label htmlFor="output-device">Speakers</label>
-                    <select
-                      id="output-device"
-                      value={selectedOutput}
-                      onChange={handleOutputChange}
-                      disabled={isSaving || loadingConfig}
-                    >
-                      <option value="">System default</option>
-                      {outputs.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label || 'Speaker'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {!isSatellite ? (
+                <SceneCast
+                  api={activeBridge?.avatars}
+                  profiles={avatarProfiles}
+                  models={vrmModels}
+                  roomActive={Boolean(backgrounds.activeRoom)}
+                  onChanged={async () => {
+                    setPersonaRevision((revision) => revision + 1);
+                    await refreshAvatars();
+                  }}
+                  settings={characterSettings}
+                />
+                <AvatarConfigurator
+                  avatarApi={activeBridge?.avatar}
+                  onActiveModelChange={setActiveVrmModel}
+                  studio={{ open: studioOpen, onClose: () => setStudioOpen(false) }}
+                  compact
+                >
+                  <section className="kiosk__realtime" aria-labelledby="kiosk-test-title">
+                    <h2 id="kiosk-test-title">Try the voice</h2>
+                    <p className="kiosk__helper">
+                      Plays a short reply in the active character&apos;s voice.
+                    </p>
                     <div className="control">
-                      <label htmlFor="camera-device">Camera (for presence)</label>
-                      <select id="camera-device" value={cameraDeviceId} onChange={(event) => setCameraDeviceId(event.target.value)}>
-                        <option value="">System default</option>
-                        {cameras.map((device) => (
-                          <option key={device.deviceId} value={device.deviceId}>
-                            {device.label}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="kiosk__helper">The camera only notes that a face is there. Turn it on for this PC in Places.</p>
+                      <button
+                        type="button"
+                        className="btn btn--secondary"
+                        onClick={handleTestResponse}
+                        disabled={isTesting || !isLocalBackend || loadingConfig}
+                      >
+                        {isTesting ? 'Testing...' : 'Test Response'}
+                      </button>
                     </div>
-                  ) : null}
-                  <div className="control">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={useServerVad}
-                        onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
-                        disabled={loadingConfig}
-                      />
-                      Use server VAD
-                    </label>
-                    {useServerVad ? (
-                      <div className="vadControls">
-                        <label>
-                          Threshold
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={vadThreshold}
-                            onChange={(e) =>
-                              applyVadPrefs({ threshold: Number(e.target.value) })
-                            }
-                          />
-                          <span>{vadThreshold.toFixed(2)}</span>
-                        </label>
-                        <label>
-                          Min speech (ms)
-                          <input
-                            type="number"
-                            min={0}
-                            max={10000}
-                            step={50}
-                            value={vadMinSpeechMs}
-                            onChange={(e) =>
-                              applyVadPrefs({ minSpeechMs: Number(e.target.value) })
-                            }
-                          />
-                        </label>
-                        <label>
-                          Silence (ms)
-                          <input
-                            type="number"
-                            min={0}
-                            max={10000}
-                            step={50}
-                            value={vadSilenceMs}
-                            onChange={(e) =>
-                              applyVadPrefs({ silenceMs: Number(e.target.value) })
-                            }
-                          />
-                        </label>
+                    {testResponse && (
+                      <div className="control">
+                        <label htmlFor="test-response-output">Test Response</label>
+                        <output
+                          id="test-response-output"
+                          className="test-response"
+                          style={{ display: 'block' }}
+                        >
+                          {testResponse}
+                        </output>
                       </div>
-                    ) : null}
-                  </div>
-                </section>
-                {devices}
-                <div className="panelDialog__save">{actions}</div>
+                    )}
+                  </section>
+                </AvatarConfigurator>
               </PanelDialog>
-            )}
-          />
 
-          <PanelDialog id="character" title="Characters" subtitle="Choose who is in the scene and set each character's personality." open={panel === 'character'} onClose={closePanel}>
-            <SceneCast
-              api={activeBridge?.avatars}
-              profiles={avatarProfiles}
-              models={vrmModels}
-              roomActive={Boolean(backgrounds.activeRoom)}
-              onChanged={async () => {
-                setPersonaRevision((revision) => revision + 1);
-                await refreshAvatars();
-              }}
-              settings={characterSettings}
-            />
-            <AvatarConfigurator
-              avatarApi={activeBridge?.avatar}
-              onActiveModelChange={setActiveVrmModel}
-              studio={{ open: studioOpen, onClose: () => setStudioOpen(false) }}
-              compact
-            >
-              <section className="kiosk__realtime" aria-labelledby="kiosk-test-title">
-                <h2 id="kiosk-test-title">Try the voice</h2>
-                <p className="kiosk__helper">Plays a short reply in the active character&apos;s voice.</p>
-                <div className="control">
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={handleTestResponse}
-                    disabled={isTesting || !isLocalBackend || loadingConfig}
-                  >
-                    {isTesting ? 'Testing...' : 'Test Response'}
-                  </button>
-                </div>
-                {testResponse && (
-                  <div className="control">
-                    <label htmlFor="test-response-output">Test Response</label>
-                    <output id="test-response-output" className="test-response" style={{ display: 'block' }}>
-                      {testResponse}
-                    </output>
-                  </div>
-                )}
-              </section>
-            </AvatarConfigurator>
-          </PanelDialog>
+              <PanelDialog
+                id="backgrounds"
+                title="Backgrounds"
+                subtitle="Pick a scene or describe a new one."
+                open={panel === 'backgrounds'}
+                onClose={closePanel}
+              >
+                <BackgroundControls
+                  backgrounds={backgrounds}
+                  stations={activeBridge?.stations}
+                  mcp={activeBridge?.mcp}
+                  walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
+                />
+              </PanelDialog>
 
-          <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
-            <BackgroundControls
-              backgrounds={backgrounds}
-              stations={activeBridge?.stations}
-              mcp={activeBridge?.mcp}
-              walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
-            />
-          </PanelDialog>
+              <PanelDialog
+                id="furniture"
+                title="Furniture"
+                subtitle="Describe a piece of furniture and see it in 3D at real size."
+                open={panel === 'furniture'}
+                onClose={closePanel}
+              >
+                <FurnitureControls bridge={activeBridge?.furniture} />
+              </PanelDialog>
 
-          <PanelDialog id="furniture" title="Furniture" subtitle="Describe a piece of furniture and see it in 3D at real size." open={panel === 'furniture'} onClose={closePanel}>
-            <FurnitureControls bridge={activeBridge?.furniture} />
-          </PanelDialog>
+              <PanelDialog
+                id="places"
+                title="Places"
+                subtitle="Where the characters can be, and the desktops that show a room."
+                open={panel === 'places'}
+                onClose={closePanel}
+              >
+                <PlacesPanel
+                  roomHub={activeBridge?.roomHub}
+                  snapshot={placesSnapshot}
+                  nameOf={(avatarId) =>
+                    avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId
+                  }
+                  active={panel === 'places'}
+                  roomChoices={[
+                    ...backgrounds.rooms.map((room) => ({
+                      id: room.id,
+                      name: room.name,
+                      kind: '3D room',
+                    })),
+                    ...backgrounds.items.map((item) => ({
+                      id: item.id,
+                      name: item.name,
+                      kind: 'Background',
+                    })),
+                  ]}
+                />
+              </PanelDialog>
 
-          <PanelDialog id="places" title="Places" subtitle="Where the characters can be, and the desktops that show a room." open={panel === 'places'} onClose={closePanel}>
-            <PlacesPanel
-              roomHub={activeBridge?.roomHub}
-              snapshot={placesSnapshot}
-              nameOf={(avatarId) => avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId}
-              active={panel === 'places'}
-              roomChoices={[
-                ...backgrounds.rooms.map((room) => ({ id: room.id, name: room.name, kind: '3D room' })),
-                ...backgrounds.items.map((item) => ({ id: item.id, name: item.name, kind: 'Background' })),
-              ]}
-            />
-          </PanelDialog>
+              <PanelDialog
+                id="tools"
+                title="Tools / MCP"
+                subtitle="What the assistant can do besides talk."
+                open={panel === 'tools'}
+                onClose={closePanel}
+              >
+                <ToolsSettings
+                  mcp={activeBridge?.mcp}
+                  models={activeBridge?.models}
+                  stations={activeBridge?.stations}
+                  active={panel === 'tools'}
+                  onOpenWebSearch={activeBridge?.models ? () => openModels('search') : undefined}
+                />
+              </PanelDialog>
 
-          <PanelDialog id="tools" title="Tools / MCP" subtitle="What the assistant can do besides talk." open={panel === 'tools'} onClose={closePanel}>
-            <ToolsSettings
-              mcp={activeBridge?.mcp}
-              models={activeBridge?.models}
-              stations={activeBridge?.stations}
-              active={panel === 'tools'}
-              onOpenWebSearch={activeBridge?.models ? () => openModels('search') : undefined}
-            />
-          </PanelDialog>
-
-          <PanelDialog id="memory" title="Memory" subtitle="What the assistant remembers, and what to correct or forget." open={panel === 'memory'} onClose={closePanel} wide>
-            <MemoryPanel memory={activeBridge?.memoryEngine} active={panel === 'memory'} />
-          </PanelDialog>
+              <PanelDialog
+                id="memory"
+                title="Memory"
+                subtitle="What the assistant remembers, and what to correct or forget."
+                open={panel === 'memory'}
+                onClose={closePanel}
+                wide
+              >
+                <MemoryPanel memory={activeBridge?.memoryEngine} active={panel === 'memory'} />
+              </PanelDialog>
             </>
           ) : null}
 
           {satellite ? (
-            <PanelDialog id="status" title="Status" subtitle="This room, and the link to bija." open={panel === 'status'} onClose={closePanel}>
+            <PanelDialog
+              id="status"
+              title="Status"
+              subtitle="This room, and the link to bija."
+              open={panel === 'status'}
+              onClose={closePanel}
+            >
               <SatelliteStatusPanel
                 status={satellite.status}
                 bridge={satellite.bridge}
@@ -3742,7 +4352,11 @@ export default function App() {
                 gateBridge={resolveApi()?.deviceGate}
                 outputs={outputs}
                 selectedOutput={selectedOutput}
-                onOutputChange={(value) => void handleOutputChange({ target: { value } } as unknown as ChangeEvent<HTMLSelectElement>)}
+                onOutputChange={(value) =>
+                  void handleOutputChange({
+                    target: { value },
+                  } as unknown as ChangeEvent<HTMLSelectElement>)
+                }
                 lastTurn={lastTurnTiming}
                 cameras={cameras}
                 selectedCamera={cameraDeviceId}
@@ -3751,124 +4365,134 @@ export default function App() {
               />
             </PanelDialog>
           ) : (
-          <PanelDialog id="status" title="Status and diagnostics" open={panel === 'status'} onClose={closePanel}>
-            {playbackIssue ? (
-              <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                <span style={{ display: 'block', marginBottom: 4 }}>
-                  Audio playback is blocked ({playbackIssue}).
-                </span>
-                <button type="button" onClick={reconnectAndResume}>
-                  Reconnect & Resume Audio
-                </button>
+            <PanelDialog
+              id="status"
+              title="Status and diagnostics"
+              open={panel === 'status'}
+              onClose={closePanel}
+            >
+              {playbackIssue ? (
+                <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                  <span style={{ display: 'block', marginBottom: 4 }}>
+                    Audio playback is blocked ({playbackIssue}).
+                  </span>
+                  <button type="button" onClick={reconnectAndResume}>
+                    Reconnect & Resume Audio
+                  </button>
+                </div>
+              ) : null}
+              <RoomDevicesStatus roomHub={activeBridge?.roomHub} active={panel === 'status'} />
+              <label className="kiosk__helper">
+                <input
+                  type="checkbox"
+                  checked={showWalkableArea}
+                  onChange={(event) => setShowWalkableArea(event.target.checked)}
+                />{' '}
+                Show navmesh and colliders (3D rooms)
+              </label>
+              <label className="kiosk__helper">
+                <input
+                  type="checkbox"
+                  checked={motionTraceOn}
+                  onChange={(event) => {
+                    setMotionTraceOn(event.target.checked);
+                    void setMotionTraceSetting(event.target.checked);
+                  }}
+                />{' '}
+                Verbose motion log (motion-trace.jsonl)
+              </label>
+              <label className="kiosk__helper">
+                <input
+                  type="checkbox"
+                  checked={settleRetriesOn}
+                  onChange={(event) => {
+                    setSettleRetriesOn(event.target.checked);
+                    setSettleRetryEnabled(event.target.checked);
+                  }}
+                />{' '}
+                Re-try sits that end with legs in furniture (off by default)
+              </label>
+              <div className="kiosk__statusBar">
+                <div
+                  className={`statusChip statusChip--${wakeStatusVariant}`}
+                  data-testid="wake-indicator"
+                >
+                  <span className="statusChip__label">Wake</span>
+                  <span className="statusChip__value" data-testid="wake-value">
+                    {wakeState === 'awake' ? 'Awake' : 'Idle'}
+                  </span>
+                </div>
+                <div
+                  className={`statusChip statusChip--${realtimeVariant}`}
+                  data-testid="realtime-indicator"
+                >
+                  <span className="statusChip__label">Realtime</span>
+                  <span className="statusChip__value">{realtimeStatusLabel}</span>
+                </div>
+                <div
+                  className={`statusChip statusChip--${audioVariant}`}
+                  data-testid="audio-indicator"
+                >
+                  <span className="statusChip__label">Audio</span>
+                  <span className="statusChip__value">{audioGraphStatusLabel}</span>
+                </div>
+                <div
+                  className={`statusChip statusChip--${deviceVariant}`}
+                  data-testid="device-indicator"
+                >
+                  <span className="statusChip__label">Devices</span>
+                  <span className="statusChip__value">{deviceStatusLabel}</span>
+                </div>
+                <div
+                  className={`statusChip statusChip--${networkVariant}`}
+                  data-testid="network-indicator"
+                >
+                  <span className="statusChip__label">Network</span>
+                  <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
+                </div>
+                <div
+                  className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}
+                >
+                  <span className="statusChip__label">Preload</span>
+                  <span className="statusChip__value">
+                    {ping === 'available' ? 'Connected' : 'Unavailable'}
+                  </span>
+                </div>
               </div>
-            ) : null}
-            <RoomDevicesStatus roomHub={activeBridge?.roomHub} active={panel === 'status'} />
-            <label className="kiosk__helper">
-              <input
-                type="checkbox"
-                checked={showWalkableArea}
-                onChange={(event) => setShowWalkableArea(event.target.checked)}
-              />{' '}
-              Show navmesh and colliders (3D rooms)
-            </label>
-            <label className="kiosk__helper">
-              <input
-                type="checkbox"
-                checked={motionTraceOn}
-                onChange={(event) => {
-                  setMotionTraceOn(event.target.checked);
-                  void setMotionTraceSetting(event.target.checked);
-                }}
-              />{' '}
-              Verbose motion log (motion-trace.jsonl)
-            </label>
-            <label className="kiosk__helper">
-              <input
-                type="checkbox"
-                checked={settleRetriesOn}
-                onChange={(event) => {
-                  setSettleRetriesOn(event.target.checked);
-                  setSettleRetryEnabled(event.target.checked);
-                }}
-              />{' '}
-              Re-try sits that end with legs in furniture (off by default)
-            </label>
-            <div className="kiosk__statusBar">
-              <div
-                className={`statusChip statusChip--${wakeStatusVariant}`}
-                data-testid="wake-indicator"
-              >
-                <span className="statusChip__label">Wake</span>
-                <span className="statusChip__value" data-testid="wake-value">
-                  {wakeState === 'awake' ? 'Awake' : 'Idle'}
-                </span>
-              </div>
-              <div
-                className={`statusChip statusChip--${realtimeVariant}`}
-                data-testid="realtime-indicator"
-              >
-                <span className="statusChip__label">Realtime</span>
-                <span className="statusChip__value">{realtimeStatusLabel}</span>
-              </div>
-              <div
-                className={`statusChip statusChip--${audioVariant}`}
-                data-testid="audio-indicator"
-              >
-                <span className="statusChip__label">Audio</span>
-                <span className="statusChip__value">{audioGraphStatusLabel}</span>
-              </div>
-              <div
-                className={`statusChip statusChip--${deviceVariant}`}
-                data-testid="device-indicator"
-              >
-                <span className="statusChip__label">Devices</span>
-                <span className="statusChip__value">{deviceStatusLabel}</span>
-              </div>
-              <div
-                className={`statusChip statusChip--${networkVariant}`}
-                data-testid="network-indicator"
-              >
-                <span className="statusChip__label">Network</span>
-                <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
-              </div>
-              <div
-                className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}
-              >
-                <span className="statusChip__label">Preload</span>
-                <span className="statusChip__value">
-                  {ping === 'available' ? 'Connected' : 'Unavailable'}
-                </span>
-              </div>
-            </div>
 
-            <div className="kiosk__avatarDetails">
-              <h1 id="avatar-preview-title">{activeAvatarName}</h1>
-              <AssistantStatusPanel
-                activity={displayedActivity}
-                wakeScore={wakeScore}
-                toolCalls={toolCalls}
-                wakePhrase={wakePhrase}
-                models={modelStatuses}
-              />
-            </div>
-            <div className="kiosk__meter" aria-live="polite">
-              <div className="meter">
-                <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+              <div className="kiosk__avatarDetails">
+                <h1 id="avatar-preview-title">{activeAvatarName}</h1>
+                <AssistantStatusPanel
+                  activity={displayedActivity}
+                  wakeScore={wakeScore}
+                  toolCalls={toolCalls}
+                  wakePhrase={wakePhrase}
+                  models={modelStatuses}
+                />
               </div>
-              <p className="meter__label">Input level: {levelPercentage}%</p>
-              <p className="meter__status">
-                Speech gate: {audioGraph.isActive ? 'open' : 'closed'}
-              </p>
-            </div>
-            <ApprovalsCard api={activeBridge?.approvals} />
-            <CodingStatusLine api={activeBridge?.coding} active={panel === 'status'} />
-            <CodingTasksPanel api={activeBridge?.codingTasks} codingApi={activeBridge?.coding} localVoice={activeBridge?.localVoice} active={panel === 'status'} />
-            <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
-            <WorkflowsStatusLine api={activeBridge?.workflows} active={panel === 'status'} />
-            <DoNotDisturbToggle api={activeBridge?.presence} />
-            <HearChatterToggle api={activeBridge?.floor} />
-            <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
-          </PanelDialog>
+              <div className="kiosk__meter" aria-live="polite">
+                <div className="meter">
+                  <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+                </div>
+                <p className="meter__label">Input level: {levelPercentage}%</p>
+                <p className="meter__status">
+                  Speech gate: {audioGraph.isActive ? 'open' : 'closed'}
+                </p>
+              </div>
+              <ApprovalsCard api={activeBridge?.approvals} />
+              <CodingStatusLine api={activeBridge?.coding} active={panel === 'status'} />
+              <CodingTasksPanel
+                api={activeBridge?.codingTasks}
+                codingApi={activeBridge?.coding}
+                localVoice={activeBridge?.localVoice}
+                active={panel === 'status'}
+              />
+              <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
+              <WorkflowsStatusLine api={activeBridge?.workflows} active={panel === 'status'} />
+              <DoNotDisturbToggle api={activeBridge?.presence} />
+              <HearChatterToggle api={activeBridge?.floor} />
+              <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
+            </PanelDialog>
           )}
 
           {modelsOpen && activeBridge?.models ? (

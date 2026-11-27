@@ -20,10 +20,17 @@ export const BID_SYSTEM_PROMPT = [
   'Answer with one JSON object {"bids": [{"avatar": "<id>", "want": 0.0, "reason": "..."}]} with one entry per candidate and nothing else.',
 ].join(' ');
 
-export function buildBidUser(candidates: BidCandidate[], recentLines: FloorLine[], nameOfSpeaker: (from: string) => string): string {
+export function buildBidUser(
+  candidates: BidCandidate[],
+  recentLines: FloorLine[],
+  nameOfSpeaker: (from: string) => string,
+): string {
   return [
     'Recent lines (oldest first):',
-    ...recentLines.map((line) => `${nameOfSpeaker(line.from)}: ${line.text.replace(/\s+/g, ' ').trim().slice(0, MAX_LINE_CHARS)}`),
+    ...recentLines.map(
+      (line) =>
+        `${nameOfSpeaker(line.from)}: ${line.text.replace(/\s+/g, ' ').trim().slice(0, MAX_LINE_CHARS)}`,
+    ),
     '',
     'Candidates:',
     ...candidates.map((candidate) => `- ${candidate.avatarId} (${candidate.name})`),
@@ -53,10 +60,20 @@ export function parseBids(raw: string, candidates: BidCandidate[]): FloorBid[] |
     for (const item of list) {
       if (typeof item !== 'object' || item === null) continue;
       const { avatar, want, reason } = item as Record<string, unknown>;
-      const avatarId = typeof avatar === 'string' ? known.get(avatar.trim().toLowerCase()) : undefined;
-      const number = typeof want === 'number' ? want : typeof want === 'string' ? Number.parseFloat(want) : Number.NaN;
+      const avatarId =
+        typeof avatar === 'string' ? known.get(avatar.trim().toLowerCase()) : undefined;
+      const number =
+        typeof want === 'number'
+          ? want
+          : typeof want === 'string'
+            ? Number.parseFloat(want)
+            : Number.NaN;
       if (!avatarId || !Number.isFinite(number)) continue;
-      bids.push({ avatarId, want: Math.min(1, Math.max(0, number)), reason: typeof reason === 'string' ? reason.trim().slice(0, 200) : '' });
+      bids.push({
+        avatarId,
+        want: Math.min(1, Math.max(0, number)),
+        reason: typeof reason === 'string' ? reason.trim().slice(0, 200) : '',
+      });
     }
     return bids;
   }
@@ -79,7 +96,10 @@ export function createModelBid(options: ModelBidOptions): BidFunction {
     const clients =
       options.clients?.() ??
       (options.routing && options.keyFor
-        ? idleClients({ routing: options.routing(), keyFor: options.keyFor, fetchFn: options.fetchFn }, { temperature: BID_TEMPERATURE, maxTokens: BID_MAX_TOKENS })
+        ? idleClients(
+            { routing: options.routing(), keyFor: options.keyFor, fetchFn: options.fetchFn },
+            { temperature: BID_TEMPERATURE, maxTokens: BID_MAX_TOKENS },
+          )
         : []);
     if (clients.length === 0) throw new Error('No idle model is configured.');
     const chat = clients.length > 1 ? new FailoverChatClient(clients, options.logger) : clients[0];
@@ -87,7 +107,10 @@ export function createModelBid(options: ModelBidOptions): BidFunction {
     for await (const part of chat.streamChat(
       [
         { role: 'system', content: BID_SYSTEM_PROMPT },
-        { role: 'user', content: buildBidUser(candidates, recentLines, options.nameOfSpeaker ?? ((from) => from)) },
+        {
+          role: 'user',
+          content: buildBidUser(candidates, recentLines, options.nameOfSpeaker ?? ((from) => from)),
+        },
       ],
       { signal },
     )) {

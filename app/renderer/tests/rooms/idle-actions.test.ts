@@ -29,7 +29,17 @@ function input(overrides: Partial<IdleInput> = {}): IdleInput {
   };
 }
 
-const seated: AvatarState = { posture: 'seated', held: null, seat: { objectId: 'sofa', session: 's', frame: { origin: { x: 0, z: 0, yaw: 0 }, scale: 1 }, approach: [0, 0, 0], facing: 0 } };
+const seated: AvatarState = {
+  posture: 'seated',
+  held: null,
+  seat: {
+    objectId: 'sofa',
+    session: 's',
+    frame: { origin: { x: 0, z: 0, yaw: 0 }, scale: 1 },
+    approach: [0, 0, 0],
+    facing: 0,
+  },
+};
 const holding: AvatarState = { posture: 'standing', held: { objectId: 'mug', hand: 'left' } };
 
 describe('parseIdleReply', () => {
@@ -92,17 +102,32 @@ describe('writing tags back', () => {
   ];
 
   it('writes the text the scene executor reads, which reads back to the same tags', () => {
-    expect(idleTagsToText(tags)).toBe('{go:bookshelf}{move:browses the books}{put:mug@coffee-table}{stand}');
-    expect(parseIdleReply(idleTagsToText(tags), input({ state: holding }))[0]).toEqual({ type: 'go', object: 'bookshelf' });
+    expect(idleTagsToText(tags)).toBe(
+      '{go:bookshelf}{move:browses the books}{put:mug@coffee-table}{stand}',
+    );
+    expect(parseIdleReply(idleTagsToText(tags), input({ state: holding }))[0]).toEqual({
+      type: 'go',
+      object: 'bookshelf',
+    });
   });
 
   it('lists targets and describes what happened for the log', () => {
     expect(idleTargets(tags)).toEqual(['bookshelf', 'mug', 'coffee-table']);
-    expect(describeIdleTags(tags.slice(0, 2), room)).toBe('walked to the bookshelf (browses {the} books)');
-    expect(describeIdleTags([{ type: 'sit', object: 'armchair' }, { type: 'move', text: 'a person sips tea' }], room)).toBe(
-      'sat down on the armchair (sips tea)',
+    expect(describeIdleTags(tags.slice(0, 2), room)).toBe(
+      'walked to the bookshelf (browses {the} books)',
     );
-    expect(describeIdleTags([{ type: 'come' }, { type: 'wait' }], room)).toBe('walked back to the middle of the room');
+    expect(
+      describeIdleTags(
+        [
+          { type: 'sit', object: 'armchair' },
+          { type: 'move', text: 'a person sips tea' },
+        ],
+        room,
+      ),
+    ).toBe('sat down on the armchair (sips tea)');
+    expect(describeIdleTags([{ type: 'come' }, { type: 'wait' }], room)).toBe(
+      'walked back to the middle of the room',
+    );
     expect(describeIdleTags([{ type: 'wait' }], room)).toBe('');
   });
 });
@@ -127,7 +152,8 @@ describe('fallbackIdleTags', () => {
 
   it('offers putting down what is held, and not picking up more', () => {
     const picks = new Set<string>();
-    for (let r = 0; r < 1; r += 0.01) picks.add(idleTagsToText(fallbackIdleTags(input({ state: holding }), () => r)));
+    for (let r = 0; r < 1; r += 0.01)
+      picks.add(idleTagsToText(fallbackIdleTags(input({ state: holding }), () => r)));
     expect(picks).toContain('{put:mug@coffee-table}');
     expect(picks).not.toContain('{pick:mug}');
   });
@@ -141,13 +167,16 @@ describe('fallbackIdleTags', () => {
     }
     const come = picks.get('{come}') ?? 0;
     expect(come).toBeGreaterThan(0);
-    expect(come).toBeLessThan((picks.get('{sit:sofa}') ?? 0));
+    expect(come).toBeLessThan(picks.get('{sit:sofa}') ?? 0);
   });
 
   it('avoids the last two targets', () => {
     const picks = new Set<string>();
-    for (let r = 0; r < 1; r += 0.01) picks.add(idleTagsToText(fallbackIdleTags(input(), () => r, ['sofa', 'mug', 'armchair'])));
-    expect([...picks].some((text) => text.includes('armchair') || text.includes('mug'))).toBe(false);
+    for (let r = 0; r < 1; r += 0.01)
+      picks.add(idleTagsToText(fallbackIdleTags(input(), () => r, ['sofa', 'mug', 'armchair'])));
+    expect([...picks].some((text) => text.includes('armchair') || text.includes('mug'))).toBe(
+      false,
+    );
     expect([...picks].some((text) => text.includes('sofa'))).toBe(true); // only the last two are avoided
   });
 
@@ -173,7 +202,9 @@ describe('{room:} in an idle reply', () => {
       { type: 'move', text: 'waves' },
       { type: 'room', place: 'the study' },
     ]);
-    expect(parseIdleReply('{room:The Study}', input({ places }))).toEqual([{ type: 'room', place: 'the study' }]);
+    expect(parseIdleReply('{room:The Study}', input({ places }))).toEqual([
+      { type: 'room', place: 'the study' },
+    ]);
     expect(parseIdleReply('{room:the moon}', input({ places }))).toEqual([]);
     // With no other places on offer the tag means nothing.
     expect(parseIdleReply('{room:the study}', input())).toEqual([]);
@@ -181,7 +212,10 @@ describe('{room:} in an idle reply', () => {
   });
 
   it('writes and describes the tag', () => {
-    const tags: IdleTag[] = [{ type: 'go', object: 'bookshelf' }, { type: 'room', place: 'the study' }];
+    const tags: IdleTag[] = [
+      { type: 'go', object: 'bookshelf' },
+      { type: 'room', place: 'the study' },
+    ];
     expect(idleTagsToText(tags)).toBe('{go:bookshelf}{room:the study}');
     expect(describeIdleTags(tags, room)).toBe('walked to the bookshelf and went to the study');
     expect(idleTargets(tags)).toEqual(['bookshelf']);

@@ -30,13 +30,25 @@ type Logger = {
 export type ActCode = 'offline' | 'refused' | 'bad_args' | 'failed' | 'busy';
 
 export class ActError extends Error {
-  constructor(readonly code: ActCode, message: string) {
+  constructor(
+    readonly code: ActCode,
+    message: string,
+  ) {
     super(message);
     this.name = 'ActError';
   }
 }
 
-export const ACT_KINDS = ['context', 'think', 'say', 'tool', 'ask', 'start_pursuit', 'return_home', 'sleep_state'] as const;
+export const ACT_KINDS = [
+  'context',
+  'think',
+  'say',
+  'tool',
+  'ask',
+  'start_pursuit',
+  'return_home',
+  'sleep_state',
+] as const;
 export type ActKind = (typeof ACT_KINDS)[number];
 
 /** How long a think waits for a live conversation to end before it gives up with code "busy". */
@@ -86,7 +98,12 @@ export interface AgentActDeps {
     execute(toolId: string, params: unknown, context?: ToolContext): Promise<ToolExecutionResult>;
   };
   approvals: {
-    request(tool: RegisteredTool, params: unknown, avatarId?: string, options?: { ttlMs?: number }): Promise<PendingApproval>;
+    request(
+      tool: RegisteredTool,
+      params: unknown,
+      avatarId?: string,
+      options?: { ttlMs?: number },
+    ): Promise<PendingApproval>;
     on(event: 'outcome', listener: (outcome: ApprovalOutcome) => void): unknown;
     off(event: 'outcome', listener: (outcome: ApprovalOutcome) => void): unknown;
   };
@@ -104,7 +121,9 @@ interface ActRequest {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function clip(text: string, limit: number): string {
@@ -145,12 +164,14 @@ export class AgentActHandler {
   stop(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
-    for (const set of this.thinking.values()) for (const controller of set) controller.abort(new DOMException('closing', 'AbortError'));
+    for (const set of this.thinking.values())
+      for (const controller of set) controller.abort(new DOMException('closing', 'AbortError'));
   }
 
   /** A real voice turn started for the avatar: its running thinks stop (they answer "busy"). */
   interruptThinking(avatarId: string): void {
-    for (const controller of this.thinking.get(avatarId) ?? []) controller.abort(new DOMException('conversation', 'AbortError'));
+    for (const controller of this.thinking.get(avatarId) ?? [])
+      controller.abort(new DOMException('conversation', 'AbortError'));
   }
 
   /** Handles one event. Never throws or rejects; resolves when the answer is published. */
@@ -173,23 +194,40 @@ export class AgentActHandler {
     const kind = typeof payload.kind === 'string' ? payload.kind : '';
     const avatarId = typeof payload.avatarId === 'string' ? payload.avatarId : '';
     const deadline = event.txn?.deadline ? Date.parse(event.txn.deadline) : Number.NaN;
-    const request: ActRequest = { txnId, kind, avatarId, args: asRecord(payload.args), deadline: Number.isNaN(deadline) ? null : deadline };
+    const request: ActRequest = {
+      txnId,
+      kind,
+      avatarId,
+      args: asRecord(payload.args),
+      deadline: Number.isNaN(deadline) ? null : deadline,
+    };
     const startedAt = now();
     let result: { ok: true; result: unknown } | { ok: false; error: string; code: ActCode };
     try {
       result = { ok: true, result: await this.run(request) };
     } catch (error) {
       if (error instanceof ActError) result = { ok: false, error: error.message, code: error.code };
-      else result = { ok: false, error: error instanceof Error ? error.message : String(error), code: 'failed' };
+      else
+        result = {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          code: 'failed',
+        };
     }
-    logger?.info(`Agent act ${kind || '(none)'} for ${avatarId || '(none)'} -> ${result.ok ? 'ok' : 'failed'} (${now() - startedAt} ms)`, {
-      txn: txnId,
-      ...(result.ok ? {} : { code: result.code, error: clip(result.error, 200) }),
-    });
+    logger?.info(
+      `Agent act ${kind || '(none)'} for ${avatarId || '(none)'} -> ${result.ok ? 'ok' : 'failed'} (${now() - startedAt} ms)`,
+      {
+        txn: txnId,
+        ...(result.ok ? {} : { code: result.code, error: clip(result.error, 200) }),
+      },
+    );
     this.answer(txnId, result);
   }
 
-  private answer(txnId: string, result: { ok: true; result: unknown } | { ok: false; error: string; code: ActCode }): void {
+  private answer(
+    txnId: string,
+    result: { ok: true; result: unknown } | { ok: false; error: string; code: ActCode },
+  ): void {
     try {
       this.deps.bus()?.publish({
         type: 'agent.act.result',
@@ -197,16 +235,23 @@ export class AgentActHandler {
         to: ['service:workflows'],
         audience: 'private',
         txn: { id: txnId, state: result.ok ? 'done' : 'failed' },
-        payload: result.ok ? { ok: true, result: result.result } : { ok: false, error: result.error, code: result.code },
+        payload: result.ok
+          ? { ok: true, result: result.result }
+          : { ok: false, error: result.error, code: result.code },
       });
     } catch (error) {
-      this.deps.logger?.warn('Agent act answer could not be published', { txn: txnId, message: error instanceof Error ? error.message : String(error) });
+      this.deps.logger?.warn('Agent act answer could not be published', {
+        txn: txnId,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
   private async run(request: ActRequest): Promise<unknown> {
-    if (!(ACT_KINDS as readonly string[]).includes(request.kind)) throw new ActError('bad_args', `Unknown act kind "${request.kind}".`);
-    if (!request.avatarId || this.deps.avatarName(request.avatarId) === null) throw new ActError('bad_args', `Unknown avatar "${request.avatarId}".`);
+    if (!(ACT_KINDS as readonly string[]).includes(request.kind))
+      throw new ActError('bad_args', `Unknown act kind "${request.kind}".`);
+    if (!request.avatarId || this.deps.avatarName(request.avatarId) === null)
+      throw new ActError('bad_args', `Unknown avatar "${request.avatarId}".`);
     switch (request.kind as ActKind) {
       case 'context':
         return this.context(request.avatarId);
@@ -261,7 +306,10 @@ export class AgentActHandler {
   private say(request: ActRequest): { queued: true } {
     const text = typeof request.args.text === 'string' ? request.args.text.trim() : '';
     if (!text) throw new ActError('bad_args', 'say needs "text".');
-    const source = typeof request.args.source === 'string' && request.args.source.trim() ? request.args.source.trim() : 'own thoughts';
+    const source =
+      typeof request.args.source === 'string' && request.args.source.trim()
+        ? request.args.source.trim()
+        : 'own thoughts';
     this.deps.say(request.avatarId, text, request.args.urgent === true, source);
     return { queued: true };
   }
@@ -277,22 +325,29 @@ export class AgentActHandler {
     return true;
   }
 
-  private async think(request: ActRequest): Promise<{ text: string; toolCalls: Array<{ name: string; ok: boolean }> }> {
+  private async think(
+    request: ActRequest,
+  ): Promise<{ text: string; toolCalls: Array<{ name: string; ok: boolean }> }> {
     const { deps } = this;
     const { avatarId, args } = request;
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
     if (!prompt) throw new ActError('bad_args', 'think needs a "prompt".');
     const toolsMode = args.tools === 'safe' ? 'safe' : 'none';
-    if (args.tools !== undefined && args.tools !== 'safe' && args.tools !== 'none') throw new ActError('bad_args', 'tools must be "none" or "safe".');
+    if (args.tools !== undefined && args.tools !== 'safe' && args.tools !== 'none')
+      throw new ActError('bad_args', 'tools must be "none" or "safe".');
     const chat = deps.chatFor(avatarId);
-    if (!chat) throw new ActError('failed', 'The avatar\'s voice is not ready.');
-    if (!(await this.waitForQuiet(avatarId))) throw new ActError('busy', 'Kevin is talking with this avatar.');
+    if (!chat) throw new ActError('failed', "The avatar's voice is not ready.");
+    if (!(await this.waitForQuiet(avatarId)))
+      throw new ActError('busy', 'Kevin is talking with this avatar.');
 
     const controller = new AbortController();
     const set = this.thinking.get(avatarId) ?? new Set<AbortController>();
     set.add(controller);
     this.thinking.set(avatarId, set);
-    const timer = setTimeout(() => controller.abort(new DOMException('The think timed out.', 'TimeoutError')), deps.thinkTimeoutMs ?? THINK_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => controller.abort(new DOMException('The think timed out.', 'TimeoutError')),
+      deps.thinkTimeoutMs ?? THINK_TIMEOUT_MS,
+    );
     timer.unref?.();
     try {
       const name = deps.avatarName(avatarId) ?? avatarId;
@@ -314,14 +369,23 @@ export class AgentActHandler {
         execute: (toolId, params) => deps.tools.execute(toolId, params, { avatarId }),
         allowToolCall: () => (calls < THINK_MAX_TOOL_CALLS ? ((calls += 1), true) : false),
       });
-      if (toolsMode === 'none') return { text: await llm.ask(prompt, controller.signal), toolCalls: [] };
-      const safe = deps.tools.list().filter((tool) => tool.confirmationLevel === 'none' || tool.confirmationLevel === 'notify');
-      const { text, results } = await llm.useTools(prompt, safe, THINK_MAX_TOOL_CALLS + 1, controller.signal);
+      if (toolsMode === 'none')
+        return { text: await llm.ask(prompt, controller.signal), toolCalls: [] };
+      const safe = deps.tools
+        .list()
+        .filter((tool) => tool.confirmationLevel === 'none' || tool.confirmationLevel === 'notify');
+      const { text, results } = await llm.useTools(
+        prompt,
+        safe,
+        THINK_MAX_TOOL_CALLS + 1,
+        controller.signal,
+      );
       return { text, toolCalls: results.map((round) => ({ name: round.name, ok: round.ok })) };
     } catch (error) {
       if (controller.signal.aborted) {
         const reason = controller.signal.reason as { message?: string } | undefined;
-        if (reason?.message === 'conversation') throw new ActError('busy', 'Kevin started talking with this avatar.');
+        if (reason?.message === 'conversation')
+          throw new ActError('busy', 'Kevin started talking with this avatar.');
         throw new ActError('failed', reason?.message ?? 'The think was stopped.');
       }
       throw new ActError('failed', error instanceof Error ? error.message : String(error));
@@ -333,7 +397,10 @@ export class AgentActHandler {
   }
 
   /** The approval's outcome, waiting until the deadline. Null when nobody answered in time. */
-  private waitForOutcome(approvalId: string, deadline: number | null): Promise<ApprovalOutcome | null> {
+  private waitForOutcome(
+    approvalId: string,
+    deadline: number | null,
+  ): Promise<ApprovalOutcome | null> {
     const { approvals } = this.deps;
     const now = this.deps.now ?? Date.now;
     const waitMs = Math.max(1000, (deadline ?? now() + DEFAULT_APPROVAL_WAIT_MS) - now());
@@ -357,24 +424,34 @@ export class AgentActHandler {
     return Math.max(60_000, (request.deadline ?? now + DEFAULT_APPROVAL_WAIT_MS) - now);
   }
 
-  private async tool(request: ActRequest): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  private async tool(
+    request: ActRequest,
+  ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
     const { deps } = this;
     const name = typeof request.args.name === 'string' ? request.args.name : '';
     if (!name) throw new ActError('bad_args', 'tool needs a "name".');
     const params = request.args.params ?? {};
     const tool = deps.tools.list().find((candidate) => candidate.toolName === name);
     if (!tool) throw new ActError('bad_args', `There is no tool called ${name}.`);
-    if (tool.confirmationLevel === 'block') throw new ActError('refused', `The tool ${name} is not allowed to run.`);
+    if (tool.confirmationLevel === 'block')
+      throw new ActError('refused', `The tool ${name} is not allowed to run.`);
     if (tool.confirmationLevel === 'confirm') {
-      const approval = await deps.approvals.request(tool, params, request.avatarId, { ttlMs: this.ttlFor(request) });
+      const approval = await deps.approvals.request(tool, params, request.avatarId, {
+        ttlMs: this.ttlFor(request),
+      });
       const outcome = await this.waitForOutcome(approval.id, request.deadline);
       if (!outcome) return { ok: false, error: 'Kevin did not answer in time.' };
       if (outcome.decision === 'declined') throw new ActError('refused', 'Kevin declined.');
-      if (outcome.decision === 'expired') return { ok: false, error: 'Kevin did not answer in time.' };
-      return outcome.ok ? { ok: true, data: outcome.result } : { ok: false, error: outcome.result ?? 'The tool failed.' };
+      if (outcome.decision === 'expired')
+        return { ok: false, error: 'Kevin did not answer in time.' };
+      return outcome.ok
+        ? { ok: true, data: outcome.result }
+        : { ok: false, error: outcome.result ?? 'The tool failed.' };
     }
     const executed = await deps.tools.execute(tool.id, params, { avatarId: request.avatarId });
-    return executed.success ? { ok: true, data: executed.data } : { ok: false, error: executed.error ?? 'The tool failed.' };
+    return executed.success
+      ? { ok: true, data: executed.data }
+      : { ok: false, error: executed.error ?? 'The tool failed.' };
   }
 
   private async ask(request: ActRequest): Promise<{ approved: boolean; expired?: boolean }> {
@@ -382,7 +459,12 @@ export class AgentActHandler {
     if (!question) throw new ActError('bad_args', 'ask needs a "question".');
     const detail = typeof request.args.detail === 'string' ? request.args.detail.trim() : '';
     const name = this.deps.avatarName(request.avatarId) ?? request.avatarId;
-    const approval = await this.deps.approvals.request(createQuestionTool(name), { question, ...(detail ? { detail } : {}) }, request.avatarId, { ttlMs: this.ttlFor(request) });
+    const approval = await this.deps.approvals.request(
+      createQuestionTool(name),
+      { question, ...(detail ? { detail } : {}) },
+      request.avatarId,
+      { ttlMs: this.ttlFor(request) },
+    );
     const outcome = await this.waitForOutcome(approval.id, request.deadline);
     if (!outcome || outcome.decision === 'expired') return { approved: false, expired: true };
     return { approved: outcome.decision === 'approved' };
@@ -393,7 +475,11 @@ export class AgentActHandler {
     const { avatarId } = request;
     let stationId = typeof request.args.stationId === 'string' ? request.args.stationId : '';
     if (!stationId) {
-      const offer = pursuits.offers().find((candidate) => candidate.characters === 'all' || candidate.characters.includes(avatarId));
+      const offer = pursuits
+        .offers()
+        .find(
+          (candidate) => candidate.characters === 'all' || candidate.characters.includes(avatarId),
+        );
       if (!offer) return { ok: false, reason: 'nothing to read here' };
       stationId = offer.stationId;
     }
@@ -402,11 +488,14 @@ export class AgentActHandler {
 
   private returnHome(avatarId: string): { moved: boolean; reason?: string } {
     const result = this.deps.nextDoor.tryAvatar(avatarId);
-    return result.moved ? { moved: true } : { moved: false, ...(result.reason ? { reason: result.reason } : {}) };
+    return result.moved
+      ? { moved: true }
+      : { moved: false, ...(result.reason ? { reason: result.reason } : {}) };
   }
 
   private sleepState(request: ActRequest): { ok: true } {
-    if (typeof request.args.asleep !== 'boolean') throw new ActError('bad_args', 'sleep_state needs "asleep" (true or false).');
+    if (typeof request.args.asleep !== 'boolean')
+      throw new ActError('bad_args', 'sleep_state needs "asleep" (true or false).');
     const reason = typeof request.args.reason === 'string' ? request.args.reason : undefined;
     this.deps.sleep.set(request.avatarId, request.args.asleep, reason);
     if (request.args.asleep) {

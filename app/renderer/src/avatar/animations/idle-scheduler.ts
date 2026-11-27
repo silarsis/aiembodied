@@ -71,20 +71,13 @@ export class IdleAnimationScheduler {
   private disposed = false;
   private tokenCounter = 0;
 
-  constructor(
-    params: {
-      mixer: THREE.AnimationMixer;
-      vrm: VRM;
-      config?: IdleAnimationSchedulerConfig;
-      options?: IdleSchedulerOptions;
-    },
-  ) {
-    const {
-      mixer,
-      vrm,
-      config = DEFAULT_CONFIG,
-      options = {},
-    } = params;
+  constructor(params: {
+    mixer: THREE.AnimationMixer;
+    vrm: VRM;
+    config?: IdleAnimationSchedulerConfig;
+    options?: IdleSchedulerOptions;
+  }) {
+    const { mixer, vrm, config = DEFAULT_CONFIG, options = {} } = params;
 
     this.mixer = mixer;
     this.vrm = vrm;
@@ -264,7 +257,14 @@ export class IdleAnimationScheduler {
           bone: 'upperChest' as VrmHumanoidBoneName,
           track: createHumanoidRotationTrack(this.vrm, 'upperChest' as VrmHumanoidBoneName, [
             { time: 0, rotation: new THREE.Euler(THREE.MathUtils.degToRad(-0.1), 0, 0) },
-            { time: 1.5, rotation: new THREE.Euler(THREE.MathUtils.degToRad(0.6), THREE.MathUtils.degToRad(0.3), 0) },
+            {
+              time: 1.5,
+              rotation: new THREE.Euler(
+                THREE.MathUtils.degToRad(0.6),
+                THREE.MathUtils.degToRad(0.3),
+                0,
+              ),
+            },
             { time: 3, rotation: new THREE.Euler(THREE.MathUtils.degToRad(-0.1), 0, 0) },
           ]),
         },
@@ -301,16 +301,44 @@ export class IdleAnimationScheduler {
           bone: 'neck' as VrmHumanoidBoneName,
           track: createHumanoidRotationTrack(this.vrm, 'neck' as VrmHumanoidBoneName, [
             { time: 0, rotation: new THREE.Euler(0, THREE.MathUtils.degToRad(-1.8), 0) },
-            { time: 2.4, rotation: new THREE.Euler(THREE.MathUtils.degToRad(0.8), THREE.MathUtils.degToRad(1.8), 0) },
+            {
+              time: 2.4,
+              rotation: new THREE.Euler(
+                THREE.MathUtils.degToRad(0.8),
+                THREE.MathUtils.degToRad(1.8),
+                0,
+              ),
+            },
             { time: 4.8, rotation: new THREE.Euler(0, THREE.MathUtils.degToRad(-1.8), 0) },
           ]),
         },
         {
           bone: 'head' as VrmHumanoidBoneName,
           track: createHumanoidRotationTrack(this.vrm, 'head' as VrmHumanoidBoneName, [
-            { time: 0, rotation: new THREE.Euler(THREE.MathUtils.degToRad(-2.2), THREE.MathUtils.degToRad(-1.2), 0) },
-            { time: 2.4, rotation: new THREE.Euler(THREE.MathUtils.degToRad(2.4), THREE.MathUtils.degToRad(1.5), 0) },
-            { time: 4.8, rotation: new THREE.Euler(THREE.MathUtils.degToRad(-2.2), THREE.MathUtils.degToRad(-1.2), 0) },
+            {
+              time: 0,
+              rotation: new THREE.Euler(
+                THREE.MathUtils.degToRad(-2.2),
+                THREE.MathUtils.degToRad(-1.2),
+                0,
+              ),
+            },
+            {
+              time: 2.4,
+              rotation: new THREE.Euler(
+                THREE.MathUtils.degToRad(2.4),
+                THREE.MathUtils.degToRad(1.5),
+                0,
+              ),
+            },
+            {
+              time: 4.8,
+              rotation: new THREE.Euler(
+                THREE.MathUtils.degToRad(-2.2),
+                THREE.MathUtils.degToRad(-1.2),
+                0,
+              ),
+            },
           ]),
         },
       ],
@@ -483,10 +511,7 @@ export class IdleAnimationScheduler {
     }
     handle.action.play();
     this.blink.playing = true;
-    this.blink.cooldown = this.randomBlinkCooldown(
-      this.blink.minInterval,
-      this.blink.maxInterval,
-    );
+    this.blink.cooldown = this.randomBlinkCooldown(this.blink.minInterval, this.blink.maxInterval);
   }
 
   private handleMixerFinished = (event: { action?: THREE.AnimationAction | null }): void => {

@@ -8,10 +8,19 @@
  * name this one as its cause before the server has answered.
  */
 import { randomBytes } from 'node:crypto';
-import { LoopbackRouter, type OpenTxn, type RouterEntry, type SwitchboardBus, type SwitchboardSubscription } from './bus.js';
+import {
+  LoopbackRouter,
+  type OpenTxn,
+  type RouterEntry,
+  type SwitchboardBus,
+  type SwitchboardSubscription,
+} from './bus.js';
 import type { SwitchboardEvent, SwitchboardEventInput, SwitchboardHealth } from './types.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const BATCH_SIZE = 100;
@@ -90,13 +99,21 @@ class LiveSubscription {
     this.ws = ws;
     ws.onopen = () => {
       const { actor, to, types } = this.entry.subscription;
-      ws.send(JSON.stringify({ op: 'hello', actor: actor ?? null, subscribe: { types: types ?? ['*'], to, observe: false }, since: this.lastId }));
+      ws.send(
+        JSON.stringify({
+          op: 'hello',
+          actor: actor ?? null,
+          subscribe: { types: types ?? ['*'], to, observe: false },
+          since: this.lastId,
+        }),
+      );
     };
     ws.onmessage = (message) => {
       try {
         const data = JSON.parse(String(message.data)) as { op?: string; event?: SwitchboardEvent };
         if (data.op === 'welcome') {
-          if (!this.up) this.logger?.info('Switchboard: subscribed', { to: this.entry.subscription.to });
+          if (!this.up)
+            this.logger?.info('Switchboard: subscribed', { to: this.entry.subscription.to });
           this.up = true;
           this.backoff = BACKOFF_MIN_MS;
         } else if (data.op === 'event' && data.event?.id) {
@@ -117,7 +134,11 @@ class LiveSubscription {
   }
 
   private lost(error?: unknown): void {
-    if (this.up) this.logger?.warn('Switchboard: subscription lost; events are delivered locally until it is back', { message: error instanceof Error ? error.message : undefined });
+    if (this.up)
+      this.logger?.warn(
+        'Switchboard: subscription lost; events are delivered locally until it is back',
+        { message: error instanceof Error ? error.message : undefined },
+      );
     this.up = false;
     if (this.closed || this.timer) return;
     const delay = this.backoff;
@@ -166,7 +187,8 @@ export class SwitchboardClient implements SwitchboardBus {
     this.flushMs = options.flushMs ?? 200;
     this.maxQueue = options.maxQueue ?? 1000;
     this.now = options.now ?? Date.now;
-    this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    this.webSocketFactory =
+      options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
   }
 
   /**
@@ -176,13 +198,25 @@ export class SwitchboardClient implements SwitchboardBus {
    */
   subscribe(subscription: SwitchboardSubscription): () => void {
     const entry = this.router.add(subscription, (error) =>
-      this.logger?.warn('Switchboard: a subscriber threw', { message: error instanceof Error ? error.message : String(error) }),
+      this.logger?.warn('Switchboard: a subscriber threw', {
+        message: error instanceof Error ? error.message : String(error),
+      }),
     );
     if (!this.stopped) {
       try {
-        this.live.set(entry, new LiveSubscription(this.baseUrl.replace(/^http/, 'ws') + '/v1/stream', entry, this.webSocketFactory, this.logger));
+        this.live.set(
+          entry,
+          new LiveSubscription(
+            this.baseUrl.replace(/^http/, 'ws') + '/v1/stream',
+            entry,
+            this.webSocketFactory,
+            this.logger,
+          ),
+        );
       } catch (error) {
-        this.logger?.warn('Switchboard: could not start a subscription', { message: error instanceof Error ? error.message : String(error) });
+        this.logger?.warn('Switchboard: could not start a subscription', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
     return () => {
@@ -200,7 +234,9 @@ export class SwitchboardClient implements SwitchboardBus {
   /** Open transactions, for the status panel. Null if the switchboard does not answer in time. */
   async openTxns(limit = 20): Promise<OpenTxn[] | null> {
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/v1/txns?state=open&limit=${limit}`, { signal: AbortSignal.timeout(2000) });
+      const response = await this.fetchFn(`${this.baseUrl}/v1/txns?state=open&limit=${limit}`, {
+        signal: AbortSignal.timeout(2000),
+      });
       if (!response.ok) return null;
       return ((await response.json()) as { txns?: OpenTxn[] }).txns ?? [];
     } catch {
@@ -232,7 +268,9 @@ export class SwitchboardClient implements SwitchboardBus {
       this.schedule(this.backoff || this.flushMs);
       return event;
     } catch (error) {
-      this.logger?.warn('Switchboard: could not queue an event', { message: error instanceof Error ? error.message : String(error) });
+      this.logger?.warn('Switchboard: could not queue an event', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -249,7 +287,9 @@ export class SwitchboardClient implements SwitchboardBus {
 
   async health(): Promise<SwitchboardHealth | null> {
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const response = await this.fetchFn(`${this.baseUrl}/health`, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
       if (!response.ok) return null;
       return (await response.json()) as SwitchboardHealth;
     } catch {
@@ -291,7 +331,10 @@ export class SwitchboardClient implements SwitchboardBus {
         if (!response.ok) {
           // The server read it and refused it (for example a payload that is too big): retrying will not help.
           if (response.status >= 400 && response.status < 500) {
-            this.logger?.warn('Switchboard: batch rejected and dropped', { status: response.status, events: batch.length });
+            this.logger?.warn('Switchboard: batch rejected and dropped', {
+              status: response.status,
+              events: batch.length,
+            });
           } else {
             throw new Error(`HTTP ${response.status}`);
           }
@@ -313,7 +356,9 @@ export class SwitchboardClient implements SwitchboardBus {
     this.backoff = this.backoff ? Math.min(this.backoff * 2, BACKOFF_MAX_MS) : BACKOFF_MIN_MS;
     if (!this.down) {
       this.down = true;
-      this.logger?.warn('Switchboard unreachable; events are kept and retried', { message: error instanceof Error ? error.message : String(error) });
+      this.logger?.warn('Switchboard unreachable; events are kept and retried', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

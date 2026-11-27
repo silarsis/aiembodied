@@ -1,6 +1,11 @@
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
-import { VRMA_JSON_SCHEMA, VRMA_PLAN_JSON_SCHEMA, parseVrmaSchema, VRMA_SLUG_PATTERN } from './vrma-schema.js';
+import {
+  VRMA_JSON_SCHEMA,
+  VRMA_PLAN_JSON_SCHEMA,
+  parseVrmaSchema,
+  VRMA_SLUG_PATTERN,
+} from './vrma-schema.js';
 import { buildVrmAnimation, encodeVrmaGlb } from './vrma-converter.js';
 import type {
   AvatarAnimationUploadResult,
@@ -149,7 +154,10 @@ function normalizeBones(bones?: string[]): string[] {
   return Array.from(new Set(cleaned)).sort();
 }
 
-function findInvalidBones(definition: { tracks: Array<{ bone: string }> }, validBones: string[]): string[] {
+function findInvalidBones(
+  definition: { tracks: Array<{ bone: string }> },
+  validBones: string[],
+): string[] {
   if (validBones.length === 0) {
     return [];
   }
@@ -195,7 +203,11 @@ function buildAnalystInput(prompt: string, modelDescription?: string): ResponseI
   return messages;
 }
 
-function buildPlannerInput(analysis: string, bones: string[], modelDescription?: string): ResponseInput {
+function buildPlannerInput(
+  analysis: string,
+  bones: string[],
+  modelDescription?: string,
+): ResponseInput {
   const messages: ResponseInput = [
     {
       type: 'message',
@@ -234,7 +246,11 @@ function buildPlannerInput(analysis: string, bones: string[], modelDescription?:
   return messages;
 }
 
-function buildCompilerInput(planJson: unknown, bones: string[], invalidBones?: string[]): ResponseInput {
+function buildCompilerInput(
+  planJson: unknown,
+  bones: string[],
+  invalidBones?: string[],
+): ResponseInput {
   const messages: ResponseInput = [
     {
       type: 'message',
@@ -247,7 +263,12 @@ function buildCompilerInput(planJson: unknown, bones: string[], invalidBones?: s
     messages.push({
       type: 'message',
       role: 'system',
-      content: [{ type: 'input_text', text: `Valid VRM human bones: ${bones.join(', ')}. Use only these bone names.` }],
+      content: [
+        {
+          type: 'input_text',
+          text: `Valid VRM human bones: ${bones.join(', ')}. Use only these bone names.`,
+        },
+      ],
     });
   }
 
@@ -291,21 +312,27 @@ export class VrmaGenerationService {
     this.model = options.model?.trim() || 'gpt-4.1-mini';
   }
 
-  async generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult> {
+  async generateAnimation(
+    request: AvatarAnimationGenerationRequest,
+  ): Promise<AvatarAnimationUploadResult> {
     const prompt = typeof request?.prompt === 'string' ? request.prompt.trim() : '';
     if (!prompt) {
       throw new Error('VRMA generation prompt is required.');
     }
 
     const bones = normalizeBones(request?.bones);
-    const modelDescription = typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
+    const modelDescription =
+      typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
 
     const analysis = await this.runAnalystStep(prompt, modelDescription);
     this.logger?.info?.('VRMA movement analysis generated.');
 
     const plan = await this.runPlannerStep(analysis, bones, modelDescription);
     const planMeta = plan as { meta?: { name?: string } };
-    this.logger?.info?.('VRMA animation plan generated.', { planName: planMeta?.meta?.name, hasModelDescription: !!modelDescription });
+    this.logger?.info?.('VRMA animation plan generated.', {
+      planName: planMeta?.meta?.name,
+      hasModelDescription: !!modelDescription,
+    });
 
     const definition = await this.runCompilerStep(plan, bones);
 
@@ -357,7 +384,11 @@ export class VrmaGenerationService {
     return outputText;
   }
 
-  private async runPlannerStep(analysis: string, bones: string[], modelDescription?: string): Promise<unknown> {
+  private async runPlannerStep(
+    analysis: string,
+    bones: string[],
+    modelDescription?: string,
+  ): Promise<unknown> {
     const input = buildPlannerInput(analysis, bones, modelDescription);
 
     const response = await this.callModel(input, {
@@ -410,7 +441,11 @@ export class VrmaGenerationService {
     this.logger?.info?.('VRMA compiler output (JSON)', {
       meta: definition.meta,
       tracksCount: definition.tracks.length,
-      hasHipsPosition: !!(definition.hips && definition.hips.position && definition.hips.position.keyframes?.length),
+      hasHipsPosition: !!(
+        definition.hips &&
+        definition.hips.position &&
+        definition.hips.position.keyframes?.length
+      ),
       hipsPositionKeyframes: definition.hips?.position?.keyframes?.length ?? 0,
       expressionsCount: definition.expressions?.length ?? 0,
       fullJson: JSON.stringify(definition),

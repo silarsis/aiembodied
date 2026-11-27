@@ -1,6 +1,5 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface PlaceDeviceState {
   mic: string;
   camera: string;

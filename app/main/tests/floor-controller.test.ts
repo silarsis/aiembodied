@@ -1,7 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FloorController, HEAR_CHATTER_KEY, chatterNote, converseNote, relayChatterNote, relayNote } from '../src/floor/index.js';
-import type { FloorBid, IntentFunction, IntentResult, QuickIntentFunction } from '../src/floor/floor-manager.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/shared/local-voice/types.js';
+import {
+  FloorController,
+  HEAR_CHATTER_KEY,
+  chatterNote,
+  converseNote,
+  relayChatterNote,
+  relayNote,
+} from '../src/floor/index.js';
+import type {
+  FloorBid,
+  IntentFunction,
+  IntentResult,
+  QuickIntentFunction,
+} from '../src/floor/floor-manager.js';
+import type {
+  LocalVoiceEvent,
+  LocalVoiceRespondRequest,
+  LocalVoiceRespondResult,
+} from '../src/shared/local-voice/types.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
 import { avatarIdForName } from '../src/avatars/avatar-id.js';
 import { AvatarRegistry } from '../src/avatars/avatar-registry.js';
@@ -12,7 +28,11 @@ const PROFILES = [
   { id: 'rex', name: 'Rex', vrmModelId: 'm1' },
 ];
 
-const say = (addressed: string, wants: IntentResult['wants'] = 'answer', other: string | null = null): IntentResult => ({ addressed, wants, other });
+const say = (
+  addressed: string,
+  wants: IntentResult['wants'] = 'answer',
+  other: string | null = null,
+): IntentResult => ({ addressed, wants, other });
 /** What the fake quick model says for each of Kevin's lines; an unlisted line makes it fail, so the default (partner or host) answers. */
 const QUICK_SCRIPT: Record<string, IntentResult> = {
   'Sage, what do you think?': say('sage'),
@@ -40,7 +60,15 @@ const quickFromScript: QuickIntentFunction = async (input) => {
   return { ...answer, confidence: 0.95 };
 };
 
-function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[]; hear?: boolean; profiles?: typeof PROFILES; intent?: IntentFunction } = {}) {
+function harness(
+  options: {
+    replies?: Record<string, string[]>;
+    bids?: FloorBid[];
+    hear?: boolean;
+    profiles?: typeof PROFILES;
+    intent?: IntentFunction;
+  } = {},
+) {
   const kv = new Map<string, string>();
   if (options.hear) kv.set(HEAR_CHATTER_KEY, '1');
   const published: SwitchboardEventInput[] = [];
@@ -54,16 +82,33 @@ function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[
   const gates = new Map<string, () => void>();
   const hold = new Set<string>();
 
-  const respond = (avatarId: string) => async (request: LocalVoiceRespondRequest, emit: (event: LocalVoiceEvent) => void): Promise<LocalVoiceRespondResult> => {
-    turns.push({ avatarId, request });
-    emit({ requestId: request.requestId, type: 'sentence', index: 0, text: 'x', wav: new Uint8Array(request.silent ? 0 : 3) });
-    if (hold.has(avatarId)) await new Promise<void>((resolve) => gates.set(avatarId, resolve));
-    const text = replies.get(avatarId)?.shift() ?? '';
-    return { requestId: request.requestId, text, cancelled: false };
-  };
+  const respond =
+    (avatarId: string) =>
+    async (
+      request: LocalVoiceRespondRequest,
+      emit: (event: LocalVoiceEvent) => void,
+    ): Promise<LocalVoiceRespondResult> => {
+      turns.push({ avatarId, request });
+      emit({
+        requestId: request.requestId,
+        type: 'sentence',
+        index: 0,
+        text: 'x',
+        wav: new Uint8Array(request.silent ? 0 : 3),
+      });
+      if (hold.has(avatarId)) await new Promise<void>((resolve) => gates.set(avatarId, resolve));
+      const text = replies.get(avatarId)?.shift() ?? '';
+      return { requestId: request.requestId, text, cancelled: false };
+    };
   const controller = new FloorController({
-    registry: { list: () => options.profiles ?? PROFILES, get: (id) => (options.profiles ?? PROFILES).find((p) => p.id === id) ?? null },
-    store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) },
+    registry: {
+      list: () => options.profiles ?? PROFILES,
+      get: (id) => (options.profiles ?? PROFILES).find((p) => p.id === id) ?? null,
+    },
+    store: {
+      getValue: (key) => kv.get(key) ?? null,
+      setValue: (key, value) => void kv.set(key, value),
+    },
     voice: (avatarId) => ({
       respond: respond(avatarId),
       cancel: () => void cancelled.push(avatarId),
@@ -73,13 +118,29 @@ function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[
     emitChatter: (_id, event) => void forwarded.push(event),
     saveLine: (line) => void saved.push(line),
     instructionsFor: (avatarId) => `You are ${avatarId}.`,
-    bus: () => ({ publish: (event) => (published.push(event), null), subscribe: () => () => undefined, connected: () => false }),
+    bus: () => ({
+      publish: (event) => (published.push(event), null),
+      subscribe: () => () => undefined,
+      connected: () => false,
+    }),
     bid: async () => (bidCalls(), options.bids ?? []),
     quickIntent: options.intent ? undefined : quickFromScript,
     intent: options.intent,
     now: () => 1_000,
   });
-  return { controller, kv, published, turns, saved, forwarded, cancelled, hold, gates, heard, bidCalls };
+  return {
+    controller,
+    kv,
+    published,
+    turns,
+    saved,
+    forwarded,
+    cancelled,
+    hold,
+    gates,
+    heard,
+    bidCalls,
+  };
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 const types = (published: SwitchboardEventInput[]) => published.map((e) => e.type);
@@ -100,28 +161,46 @@ describe('FloorController', () => {
 
   it('runs the named avatar for Kevin and journals the decision in the turn txn', async () => {
     const h = harness({ replies: { sage: ['I think so.'] } });
-    const result = await h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, what do you think?' });
+    const result = await h.controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Sage, what do you think?',
+    });
     expect(result.text).toBe('I think so.');
-    expect(h.turns.map((t) => [t.avatarId, t.request.avatarId, t.request.requestId])).toEqual([['sage', 'sage', 'r1']]);
+    expect(h.turns.map((t) => [t.avatarId, t.request.avatarId, t.request.requestId])).toEqual([
+      ['sage', 'sage', 'r1'],
+    ]);
     const decision = h.published.find((e) => e.type === 'floor.decision');
     expect(decision).toMatchObject({ audience: 'private', to: [], txn: { id: 'turn:r1' } });
     expect(decision?.txn?.state).toBeUndefined();
-    expect(decision?.payload).toMatchObject({ channel: 'aloud', speakers: [{ avatarId: 'sage', reason: 'addressed' }] });
+    expect(decision?.payload).toMatchObject({
+      channel: 'aloud',
+      speakers: [{ avatarId: 'sage', reason: 'addressed' }],
+    });
     expect((decision?.payload.trace as string[]).length).toBeGreaterThan(0);
-    expect(h.published.find((e) => e.type === 'floor.grant')?.payload).toMatchObject({ avatar: 'sage', reason: 'addressed' });
+    expect(h.published.find((e) => e.type === 'floor.grant')?.payload).toMatchObject({
+      avatar: 'sage',
+      reason: 'addressed',
+    });
   });
 
   it('runs the first named avatar now and queues the rest in order, each with its own request id', async () => {
     const h = harness({ replies: { echo: ['Echo here.'] } });
     h.hold.add('echo');
-    const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Rex and Sage, settle this' });
+    const first = h.controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Rex and Sage, settle this',
+    });
     await settle();
     expect(h.turns.map((t) => t.avatarId)).toEqual(['echo']);
     h.hold.delete('echo');
     h.gates.get('echo')?.();
     await first;
     await settle();
-    expect(h.turns.map((t) => [t.avatarId, t.request.requestId])).toEqual([['echo', 'r1'], ['sage', 'r1:sage'], ['rex', 'r1:rex']]);
+    expect(h.turns.map((t) => [t.avatarId, t.request.requestId])).toEqual([
+      ['echo', 'r1'],
+      ['sage', 'r1:sage'],
+      ['rex', 'r1:rex'],
+    ]);
     expect(types(h.published)).toContain('floor.release');
   });
 
@@ -158,8 +237,14 @@ describe('FloorController', () => {
     const decisions = h.published.filter((e) => e.type === 'floor.decision');
     // Kevin's turn, Echo's line to Sage, and Sage's reply (nobody bids for it).
     expect(decisions).toHaveLength(3);
-    expect(decisions[1]).toMatchObject({ txn: { id: expect.stringMatching(/^chatter:/) }, producer: { kind: 'avatar', id: 'echo' } });
-    expect(decisions[1].payload).toMatchObject({ channel: 'back', speakers: [{ avatarId: 'sage', reason: 'addressed' }] });
+    expect(decisions[1]).toMatchObject({
+      txn: { id: expect.stringMatching(/^chatter:/) },
+      producer: { kind: 'avatar', id: 'echo' },
+    });
+    expect(decisions[1].payload).toMatchObject({
+      channel: 'back',
+      speakers: [{ avatarId: 'sage', reason: 'addressed' }],
+    });
   });
 
   it('speaks chatter normally when Hear avatar chatter is on, with events carrying the avatar id', async () => {
@@ -173,18 +258,27 @@ describe('FloorController', () => {
   });
 
   it('uses a bid for chatter when nobody is named, and says nothing when no bid wins', async () => {
-    const won = harness({ replies: { echo: ['Sage, what is time?'], sage: ['Interesting question.'], rex: ['Hm.'] }, bids: [{ avatarId: 'rex', want: 0.9, reason: 'curious' }] });
+    const won = harness({
+      replies: { echo: ['Sage, what is time?'], sage: ['Interesting question.'], rex: ['Hm.'] },
+      bids: [{ avatarId: 'rex', want: 0.9, reason: 'curious' }],
+    });
     await won.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what is time?' });
     await settle();
     expect(won.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage', 'rex']);
-    const quiet = harness({ replies: { echo: ['Sage, what is time?'], sage: ['Interesting question.'] }, bids: [{ avatarId: 'rex', want: 0.1, reason: '' }] });
+    const quiet = harness({
+      replies: { echo: ['Sage, what is time?'], sage: ['Interesting question.'] },
+      bids: [{ avatarId: 'rex', want: 0.1, reason: '' }],
+    });
     await quiet.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what is time?' });
     await settle();
     expect(quiet.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage']);
   });
 
   it('does not open chatter or ask for bids after an answer to Kevin that names nobody', async () => {
-    const h = harness({ replies: { echo: ['Interesting question.'] }, bids: [{ avatarId: 'rex', want: 0.9, reason: '' }] });
+    const h = harness({
+      replies: { echo: ['Interesting question.'] },
+      bids: [{ avatarId: 'rex', want: 0.9, reason: '' }],
+    });
     await h.controller.respondToPerson({ requestId: 'r1', text: 'what is time?' });
     await settle();
     expect(h.turns.map((t) => t.avatarId)).toEqual(['echo']);
@@ -257,7 +351,7 @@ describe('FloorController', () => {
     expect(h.heard).toEqual([{ to: 'rex', from: 'Echo (to Sage)', text: 'a b' }]);
   });
 
-  it('interrupt() during a person turn leaves that turn\'s own result intact', async () => {
+  it("interrupt() during a person turn leaves that turn's own result intact", async () => {
     const h = harness({ replies: { echo: ['Done.'] } });
     h.hold.add('echo');
     const pending = h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, hi' });
@@ -305,17 +399,28 @@ describe('FloorController', () => {
       registry: { list: () => PROFILES, get: (id) => PROFILES.find((p) => p.id === id) ?? null },
       store: { getValue: () => null, setValue: () => undefined },
       voice: () => null,
-      runPersonTurn: (avatarId, request) => Promise.resolve({ requestId: request.requestId, text: avatarId, cancelled: false }),
+      runPersonTurn: (avatarId, request) =>
+        Promise.resolve({ requestId: request.requestId, text: avatarId, cancelled: false }),
       saveLine: () => undefined,
-      bus: () => ({ publish: () => { throw new Error('bus'); }, subscribe: () => () => undefined, connected: () => false }),
+      bus: () => ({
+        publish: () => {
+          throw new Error('bus');
+        },
+        subscribe: () => () => undefined,
+        connected: () => false,
+      }),
     });
-    await expect(controller.respondToPerson({ requestId: 'r1', text: 'hello' })).resolves.toMatchObject({ text: 'echo' });
+    await expect(
+      controller.respondToPerson({ requestId: 'r1', text: 'hello' }),
+    ).resolves.toMatchObject({ text: 'echo' });
   });
 });
 
 describe('chatterNote', () => {
   it('says who spoke, to whom, and asks for an answer in own words', () => {
-    expect(chatterNote('Sage', 'Hello\nthere')).toBe('[Sage says to you, not Kevin: "Hello there" Answer in your own words; do not repeat what was said.]');
+    expect(chatterNote('Sage', 'Hello\nthere')).toBe(
+      '[Sage says to you, not Kevin: "Hello there" Answer in your own words; do not repeat what was said.]',
+    );
   });
 
   it('in a chat Kevin asked for, adds the conversation instruction', () => {
@@ -325,7 +430,9 @@ describe('chatterNote', () => {
   });
 
   it('drops action tags', () => {
-    expect(chatterNote('Sage', 'Hi {move:waves}, there {go:chair}')).toBe('[Sage says to you, not Kevin: "Hi, there" Answer in your own words; do not repeat what was said.]');
+    expect(chatterNote('Sage', 'Hi {move:waves}, there {go:chair}')).toBe(
+      '[Sage says to you, not Kevin: "Hi, there" Answer in your own words; do not repeat what was said.]',
+    );
   });
 });
 
@@ -335,7 +442,7 @@ describe('avatars added through the registry', () => {
     expect(avatarIdForName('Dr. Who?')).toBe('dr-who');
   });
 
-  it('keeps scene order and each profile\'s body and prompt', () => {
+  it("keeps scene order and each profile's body and prompt", () => {
     const kv = new Map<string, string>();
     const registry = new AvatarRegistry({
       store: { getValue: (k) => kv.get(k) ?? null, setValue: (k, v) => void kv.set(k, v) },
@@ -343,19 +450,30 @@ describe('avatars added through the registry', () => {
     });
     registry.add({ id: 'sage', name: 'Sage', vrmModelId: 'vrm-1', prompt: 'You are Sage.' });
     registry.add({ id: 'rex', name: 'Rex', vrmModelId: 'vrm-1' });
-    expect(registry.list().map((p) => [p.id, p.name, p.vrmModelId])).toEqual([['echo', 'Echo', 'vrm-1'], ['sage', 'Sage', 'vrm-1'], ['rex', 'Rex', 'vrm-1']]);
+    expect(registry.list().map((p) => [p.id, p.name, p.vrmModelId])).toEqual([
+      ['echo', 'Echo', 'vrm-1'],
+      ['sage', 'Sage', 'vrm-1'],
+      ['rex', 'Rex', 'vrm-1'],
+    ]);
     expect(registry.get('sage')?.prompt).toBe('You are Sage.');
     expect(registry.peek().find((p) => p.id === 'sage')?.prompt).toContain('Sage');
   });
 });
 
 describe('floor with several avatars', () => {
-  it('passes Kevin\'s question on: the asker is told to name the target, the target answers aloud and does not open more chatter', async () => {
-    const h = harness({ replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] } });
-    await h.controller.respondToPerson({ requestId: 'r1', text: "Sage, can you ask Echo what they're doing?" });
+  it("passes Kevin's question on: the asker is told to name the target, the target answers aloud and does not open more chatter", async () => {
+    const h = harness({
+      replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] },
+    });
+    await h.controller.respondToPerson({
+      requestId: 'r1',
+      text: "Sage, can you ask Echo what they're doing?",
+    });
     await settle();
     expect(h.turns.map((t) => t.avatarId)).toEqual(['sage', 'echo']);
-    expect(h.turns[0].request.text).toBe(`Sage, can you ask Echo what they're doing?\n\n${relayNote('Echo')}`);
+    expect(h.turns[0].request.text).toBe(
+      `Sage, can you ask Echo what they're doing?\n\n${relayNote('Echo')}`,
+    );
     expect(h.turns[1].request).toMatchObject({
       avatarId: 'echo',
       silent: false,
@@ -363,13 +481,18 @@ describe('floor with several avatars', () => {
     });
     expect(h.forwarded.length).toBeGreaterThan(0);
     expect(h.saved).toEqual([{ speaker: 'echo', content: 'Just tidying up.', ts: 1_000 }]);
-    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ relay: { from: 'sage', to: 'echo' } });
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({
+      relay: { from: 'sage', to: 'echo' },
+    });
   });
 
   it('forgets a pending relay when Kevin speaks again', async () => {
     const h = harness({ replies: { sage: ['Echo, what are you up to?'] } });
     h.hold.add('sage');
-    const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, ask Echo what they do' });
+    const first = h.controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Sage, ask Echo what they do',
+    });
     await settle();
     await h.controller.respondToPerson({ requestId: 'r2', text: 'Rex, hello' });
     h.hold.delete('sage');
@@ -388,13 +511,18 @@ describe('a conversation Kevin asks for', () => {
   it('tells the starter what to do, then routes its reply to the target aloud even with Hear avatar chatter off', async () => {
     const h = harness({
       profiles: PROFILES.slice(0, 2),
-      replies: { echo: ['Hello over there, how is your day going?', 'That sounds lovely.'], sage: ['Quiet, thanks. And yours?', 'Yes, it was.'] },
+      replies: {
+        echo: ['Hello over there, how is your day going?', 'That sounds lovely.'],
+        sage: ['Quiet, thanks. And yours?', 'Yes, it was.'],
+      },
     });
     expect(h.controller.hearChatter()).toBe(false);
     await h.controller.respondToPerson({ requestId: 'r1', text: "I'd like you to talk to Sage." });
     await flush();
     expect(h.turns[0]).toMatchObject({ avatarId: 'echo' });
-    expect(h.turns[0].request.text).toBe(`I'd like you to talk to Sage.\n\n${converseNote('Sage')}`);
+    expect(h.turns[0].request.text).toBe(
+      `I'd like you to talk to Sage.\n\n${converseNote('Sage')}`,
+    );
     expect(converseNote('Sage')).toContain('Kevin wants you to have a conversation with Sage');
     expect(h.turns[1]).toMatchObject({ avatarId: 'sage' });
     expect(h.turns[1].request).toMatchObject({
@@ -403,11 +531,18 @@ describe('a conversation Kevin asks for', () => {
       text: chatterNote('Echo', 'Hello over there, how is your day going?', { talk: true }),
     });
     expect(h.turns.slice(0, 4).map((t) => t.avatarId)).toEqual(['echo', 'sage', 'echo', 'sage']);
-    expect(h.turns[2].request.text).toBe(chatterNote('Sage', 'Quiet, thanks. And yours?', { talk: true }));
+    expect(h.turns[2].request.text).toBe(
+      chatterNote('Sage', 'Quiet, thanks. And yours?', { talk: true }),
+    );
     expect(h.forwarded.some((e) => e.avatarId === 'sage')).toBe(true);
     const decisions = h.published.filter((e) => e.type === 'floor.decision');
-    expect(decisions[0].payload).toMatchObject({ speakers: [{ avatarId: 'echo', reason: 'host' }] });
-    expect(decisions[1].payload).toMatchObject({ channel: 'aloud', speakers: [{ avatarId: 'sage', reason: 'addressed' }] });
+    expect(decisions[0].payload).toMatchObject({
+      speakers: [{ avatarId: 'echo', reason: 'host' }],
+    });
+    expect(decisions[1].payload).toMatchObject({
+      channel: 'aloud',
+      speakers: [{ avatarId: 'sage', reason: 'addressed' }],
+    });
   });
 
   it('does not tell the other avatar anything extra on a plain question', async () => {
@@ -418,11 +553,16 @@ describe('a conversation Kevin asks for', () => {
 
   it('keeps action tags away from the other avatars: routed, overheard and journalled text is clean', async () => {
     const h = harness({
-      replies: { echo: ['Hi Sage {move:waves hello}, what is up? {go:sofa}'], sage: ['{static:smile}Nothing much {pose:happy}.'] },
+      replies: {
+        echo: ['Hi Sage {move:waves hello}, what is up? {go:sofa}'],
+        sage: ['{static:smile}Nothing much {pose:happy}.'],
+      },
     });
     await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, talk to Sage' });
     await flush();
-    expect(h.turns[1].request.text).toBe(chatterNote('Echo', 'Hi Sage, what is up?', { talk: true }));
+    expect(h.turns[1].request.text).toBe(
+      chatterNote('Echo', 'Hi Sage, what is up?', { talk: true }),
+    );
     const everything = [
       ...h.turns.slice(1).map((t) => t.request.text),
       ...h.heard.map((l) => l.text),
@@ -435,7 +575,12 @@ describe('a conversation Kevin asks for', () => {
   });
 
   it('a third avatar only overhears the pair', async () => {
-    const h = harness({ replies: { echo: ['Rex would like this, Sage.', 'Right.'], sage: ['Rex, join us? Hm.', 'Yes.'] } });
+    const h = harness({
+      replies: {
+        echo: ['Rex would like this, Sage.', 'Right.'],
+        sage: ['Rex, join us? Hm.', 'Yes.'],
+      },
+    });
     await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, talk to Sage' });
     await flush();
     expect(h.turns.map((t) => t.avatarId)).not.toContain('rex');
@@ -444,7 +589,11 @@ describe('a conversation Kevin asks for', () => {
 
   it('Kevin speaking ends the conversation: the cancelled speaker is dropped and nobody carries on', async () => {
     const h = harness({
-      replies: { echo: ['Hello Sage.', 'Again.'], sage: ['Hello Echo.', 'Again.'], rex: ['Yes Kevin?'] },
+      replies: {
+        echo: ['Hello Sage.', 'Again.'],
+        sage: ['Hello Echo.', 'Again.'],
+        rex: ['Yes Kevin?'],
+      },
     });
     h.hold.add('sage');
     const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, talk to Sage' });
@@ -467,44 +616,88 @@ describe('lines the intent model decides', () => {
   };
 
   it('tells the starter of a model-made conversation what to do, and journals who decided', async () => {
-    const intent = vi.fn<IntentFunction>(async () => ({ addressed: 'echo', wants: 'converse', other: 'sage' }));
+    const intent = vi.fn<IntentFunction>(async () => ({
+      addressed: 'echo',
+      wants: 'converse',
+      other: 'sage',
+    }));
     const h = harness({
       profiles: PROFILES.slice(0, 2),
       intent,
       replies: { echo: ['Hello over there, how is your day going?'], sage: ['Quiet, thanks.'] },
     });
-    await h.controller.respondToPerson({ requestId: 'r1', text: 'Hey Eko, have a word with Sage.' });
+    await h.controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Hey Eko, have a word with Sage.',
+    });
     await flush();
     expect(intent).toHaveBeenCalledOnce();
     expect(h.turns[0]).toMatchObject({ avatarId: 'echo' });
-    expect(h.turns[0].request.text).toBe(`Hey Eko, have a word with Sage.\n\n${converseNote('Sage')}`);
+    expect(h.turns[0].request.text).toBe(
+      `Hey Eko, have a word with Sage.\n\n${converseNote('Sage')}`,
+    );
     expect(h.turns[1]).toMatchObject({ avatarId: 'sage' });
-    expect(h.turns[1].request).toMatchObject({ silent: false, text: chatterNote('Echo', 'Hello over there, how is your day going?', { talk: true }) });
+    expect(h.turns[1].request).toMatchObject({
+      silent: false,
+      text: chatterNote('Echo', 'Hello over there, how is your day going?', { talk: true }),
+    });
     const decision = h.published.find((e) => e.type === 'floor.decision');
-    expect(decision?.payload).toMatchObject({ decidedBy: 'model', speakers: [{ avatarId: 'echo', reason: 'addressed' }] });
-    expect((decision?.payload.trace as string[]).join(' ')).toMatch(/chat model decided -> echo converse sage \(\d+ ms\)/);
+    expect(decision?.payload).toMatchObject({
+      decidedBy: 'model',
+      speakers: [{ avatarId: 'echo', reason: 'addressed' }],
+    });
+    expect((decision?.payload.trace as string[]).join(' ')).toMatch(
+      /chat model decided -> echo converse sage \(\d+ ms\)/,
+    );
   });
 
   it('tells the asked avatar of a model-made relay to name the target, then the target answers aloud', async () => {
-    const intent = vi.fn<IntentFunction>(async () => ({ addressed: 'sage', wants: 'relay', other: 'echo' }));
-    const h = harness({ intent, replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] } });
-    await h.controller.respondToPerson({ requestId: 'r1', text: 'Not you, Echo. Sage, find out what Echo is doing.' });
+    const intent = vi.fn<IntentFunction>(async () => ({
+      addressed: 'sage',
+      wants: 'relay',
+      other: 'echo',
+    }));
+    const h = harness({
+      intent,
+      replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] },
+    });
+    await h.controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Not you, Echo. Sage, find out what Echo is doing.',
+    });
     await settle();
     expect(h.turns.map((t) => t.avatarId)).toEqual(['sage', 'echo']);
-    expect(h.turns[0].request.text).toBe(`Not you, Echo. Sage, find out what Echo is doing.\n\n${relayNote('Echo')}`);
-    expect(h.turns[1].request).toMatchObject({ avatarId: 'echo', silent: false, text: relayChatterNote('Sage', 'Echo, what are you up to right now?') });
-    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'model', relay: { from: 'sage', to: 'echo' } });
+    expect(h.turns[0].request.text).toBe(
+      `Not you, Echo. Sage, find out what Echo is doing.\n\n${relayNote('Echo')}`,
+    );
+    expect(h.turns[1].request).toMatchObject({
+      avatarId: 'echo',
+      silent: false,
+      text: relayChatterNote('Sage', 'Echo, what are you up to right now?'),
+    });
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({
+      decidedBy: 'model',
+      relay: { from: 'sage', to: 'echo' },
+    });
   });
 
   it('journals quick when the quick model is sure', async () => {
     const h = harness({ replies: { sage: ['I think so.'] } });
     await h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, what do you think?' });
-    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'quick' });
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({
+      decidedBy: 'quick',
+    });
   });
 
   it('answers with the host and journals default when both models fail', async () => {
-    const h = harness({ intent: async () => Promise.reject(new Error('down')), replies: { echo: ['Hi.'] } });
-    await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what do you think of Sage?' });
+    const h = harness({
+      intent: async () => Promise.reject(new Error('down')),
+      replies: { echo: ['Hi.'] },
+    });
+    await h.controller.respondToPerson({
+      requestId: 'r1',
+      text: 'Echo, what do you think of Sage?',
+    });
     await settle();
     expect(h.turns.map((t) => t.avatarId)).toEqual(['echo']);
     const payload = h.published.find((e) => e.type === 'floor.decision')?.payload;
@@ -513,7 +706,11 @@ describe('lines the intent model decides', () => {
   });
 
   it('drops a pending intent call when Kevin speaks again: no turn runs for the old line, the new one is unaffected', async () => {
-    let release: (value: { addressed: string; wants: 'answer' | 'converse' | 'relay'; other: string | null }) => void = () => undefined;
+    let release: (value: {
+      addressed: string;
+      wants: 'answer' | 'converse' | 'relay';
+      other: string | null;
+    }) => void = () => undefined;
     let aborted = false;
     const intent = vi.fn<IntentFunction>((input, signal) => {
       if (input.text.startsWith('Tell me')) {
@@ -526,7 +723,10 @@ describe('lines the intent model decides', () => {
     const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Tell me about Sage.' });
     await settle();
     expect(intent).toHaveBeenCalledOnce();
-    const second = await h.controller.respondToPerson({ requestId: 'r2', text: 'Rex, are you there?' });
+    const second = await h.controller.respondToPerson({
+      requestId: 'r2',
+      text: 'Rex, are you there?',
+    });
     expect(aborted).toBe(true);
     release({ addressed: 'sage', wants: 'converse', other: 'echo' });
     expect(await first).toEqual({ requestId: 'r1', text: '', cancelled: true });
@@ -535,6 +735,10 @@ describe('lines the intent model decides', () => {
     expect(h.turns.map((t) => [t.avatarId, t.request.requestId])).toEqual([['rex', 'r2']]);
     // The late answer did not start a conversation or change who Kevin last talked with.
     expect(h.controller.manager.state()).toMatchObject({ talking: false, partner: 'rex' });
-    expect(h.published.filter((e) => e.type === 'floor.decision' && e.payload.from === 'person:kevin').map((e) => e.payload.text)).toEqual(['Rex, are you there?']);
+    expect(
+      h.published
+        .filter((e) => e.type === 'floor.decision' && e.payload.from === 'person:kevin')
+        .map((e) => e.payload.text),
+    ).toEqual(['Rex, are you there?']);
   });
 });

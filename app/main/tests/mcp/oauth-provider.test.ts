@@ -18,7 +18,10 @@ vi.mock('electron', () => ({
   safeStorage: {
     isAsyncEncryptionAvailable: vi.fn(async () => true),
     encryptStringAsync: vi.fn(async (text: string) => Buffer.from(`enc:${text}`)),
-    decryptStringAsync: vi.fn(async (buffer: Buffer) => ({ shouldReEncrypt: false, result: buffer.toString().replace(/^enc:/, '') })),
+    decryptStringAsync: vi.fn(async (buffer: Buffer) => ({
+      shouldReEncrypt: false,
+      result: buffer.toString().replace(/^enc:/, ''),
+    })),
   },
 }));
 
@@ -61,18 +64,34 @@ describe('MCP OAuth', () => {
   describe('storage', () => {
     it('round-trips client information, tokens and verifier, encrypted at rest', async () => {
       const provider = makeProvider();
-      await provider.saveClientInformation({ client_id: 'cid', redirect_uris: [`http://127.0.0.1:${port}/mcp/oauth/callback`] } as any);
-      await provider.saveTokens({ access_token: 'secret-access', refresh_token: 'secret-refresh', token_type: 'Bearer' });
+      await provider.saveClientInformation({
+        client_id: 'cid',
+        redirect_uris: [`http://127.0.0.1:${port}/mcp/oauth/callback`],
+      } as any);
+      await provider.saveTokens({
+        access_token: 'secret-access',
+        refresh_token: 'secret-refresh',
+        token_type: 'Bearer',
+      });
       await provider.saveCodeVerifier('verifier-123');
 
       expect(await provider.clientInformation()).toMatchObject({ client_id: 'cid' });
-      expect(await provider.tokens()).toEqual({ access_token: 'secret-access', refresh_token: 'secret-refresh', token_type: 'Bearer' });
+      expect(await provider.tokens()).toEqual({
+        access_token: 'secret-access',
+        refresh_token: 'secret-refresh',
+        token_type: 'Bearer',
+      });
       expect(await provider.codeVerifier()).toBe('verifier-123');
 
       // What is on disk is not plain text.
-      const row = db.prepare('SELECT * FROM mcp_oauth WHERE server_id = ?').get('s1') as Record<string, string>;
+      const row = db.prepare('SELECT * FROM mcp_oauth WHERE server_id = ?').get('s1') as Record<
+        string,
+        string
+      >;
       expect(JSON.stringify(row)).not.toContain('secret-access');
-      expect(row.tokens_encrypted).toBe(Buffer.from('enc:' + JSON.stringify(await provider.tokens())).toString('base64'));
+      expect(row.tokens_encrypted).toBe(
+        Buffer.from('enc:' + JSON.stringify(await provider.tokens())).toString('base64'),
+      );
     });
 
     it('keeps servers apart and returns undefined when nothing is saved', async () => {
@@ -115,9 +134,15 @@ describe('MCP OAuth', () => {
 
     it('registers again when the saved client was made for another callback port', async () => {
       const provider = makeProvider();
-      await provider.saveClientInformation({ client_id: 'old', redirect_uris: ['http://127.0.0.1:1/mcp/oauth/callback'] } as any);
+      await provider.saveClientInformation({
+        client_id: 'old',
+        redirect_uris: ['http://127.0.0.1:1/mcp/oauth/callback'],
+      } as any);
       expect(await provider.clientInformation()).toBeUndefined();
-      await provider.saveClientInformation({ client_id: 'new', redirect_uris: [provider.redirectUrl] } as any);
+      await provider.saveClientInformation({
+        client_id: 'new',
+        redirect_uris: [provider.redirectUrl],
+      } as any);
       expect(await provider.clientInformation()).toMatchObject({ client_id: 'new' });
     });
   });
@@ -161,7 +186,9 @@ describe('MCP OAuth', () => {
       expect(openExternal).toHaveBeenCalledWith('https://auth.example/authorize?x=1');
 
       const wait = provider.waitForCode();
-      const response = await fetch(`http://127.0.0.1:${port}/mcp/oauth/callback?code=abc&state=${state}`);
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mcp/oauth/callback?code=abc&state=${state}`,
+      );
       expect(response.status).toBe(200);
       expect(await response.text()).toContain('You can close this tab');
       await expect(wait).resolves.toBe('abc');
@@ -180,7 +207,9 @@ describe('MCP OAuth', () => {
       const bad = await fetch(`http://127.0.0.1:${port}/mcp/oauth/callback?code=evil&state=wrong`);
       expect(bad.status).toBe(400);
 
-      const good = await fetch(`http://127.0.0.1:${port}/mcp/oauth/callback?code=real&state=${state}`);
+      const good = await fetch(
+        `http://127.0.0.1:${port}/mcp/oauth/callback?code=real&state=${state}`,
+      );
       expect(good.status).toBe(200);
       await expect(wait).resolves.toBe('real');
       await provider.endSignIn();

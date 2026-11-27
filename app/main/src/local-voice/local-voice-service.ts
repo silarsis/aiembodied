@@ -209,7 +209,10 @@ export class LocalVoiceService {
   }
 
   async status(): Promise<LocalVoiceStatus> {
-    const [llmAvailable, speech] = await Promise.all([this.llm.isAvailable(), this.speech.health()]);
+    const [llmAvailable, speech] = await Promise.all([
+      this.llm.isAvailable(),
+      this.speech.health(),
+    ]);
     const stt = await this.stt.status(speech);
     return {
       llm: {
@@ -253,7 +256,12 @@ export class LocalVoiceService {
   notify(text: string, options: { urgent?: boolean; source?: string } = {}): void {
     const note = text.trim();
     if (!note) return;
-    this.notes.push({ text: note, urgent: options.urgent === true, at: this.now(), source: options.source?.trim() || DEFAULT_NOTE_SOURCE });
+    this.notes.push({
+      text: note,
+      urgent: options.urgent === true,
+      at: this.now(),
+      source: options.source?.trim() || DEFAULT_NOTE_SOURCE,
+    });
     this.scheduleSystemReady();
   }
 
@@ -353,7 +361,11 @@ export class LocalVoiceService {
   }
 
   /** Say one line out loud without asking the model: speech only, sent as a 'sentence' event of the request that is about to be answered. */
-  async speakOnly(requestId: string, text: string, emit: (event: LocalVoiceEvent) => void): Promise<void> {
+  async speakOnly(
+    requestId: string,
+    text: string,
+    emit: (event: LocalVoiceEvent) => void,
+  ): Promise<void> {
     const spoken = toSpeakableText(text);
     if (!spoken) return;
     try {
@@ -361,7 +373,9 @@ export class LocalVoiceService {
       const wav = await this.tts.synthesize(spoken, voice ? { voice } : {});
       emit({ requestId, type: 'sentence', index: 0, text, wav });
     } catch (error) {
-      this.logger?.warn('Local voice: could not speak the holding line', { message: error instanceof Error ? error.message : String(error) });
+      this.logger?.warn('Local voice: could not speak the holding line', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -386,7 +400,15 @@ export class LocalVoiceService {
       inputText = taken.text;
     }
     try {
-      return await this.runTurn(request, emit, { requestId, preview, system, silent, inputText, systemNote, restoreNotes });
+      return await this.runTurn(request, emit, {
+        requestId,
+        preview,
+        system,
+        silent,
+        inputText,
+        systemNote,
+        restoreNotes,
+      });
     } catch (error) {
       restoreNotes?.();
       throw error;
@@ -396,7 +418,15 @@ export class LocalVoiceService {
   private async runTurn(
     request: LocalVoiceRespondRequest,
     emit: (event: LocalVoiceEvent) => void,
-    turn: { requestId: string; preview: boolean; system: boolean; silent?: boolean; inputText: string; systemNote?: string; restoreNotes?: () => void },
+    turn: {
+      requestId: string;
+      preview: boolean;
+      system: boolean;
+      silent?: boolean;
+      inputText: string;
+      systemNote?: string;
+      restoreNotes?: () => void;
+    },
   ): Promise<LocalVoiceRespondResult> {
     const { requestId, preview, system, inputText, systemNote, restoreNotes } = turn;
     // A silent turn runs the whole LLM turn (history, memory, tools) but makes no speech.
@@ -419,7 +449,9 @@ export class LocalVoiceService {
     // Both run at once and have their own time limits; neither throws.
     const [brief, recalled] = await Promise.all([
       this.brief === null && memory ? memory.brief() : Promise.resolve(preview ? null : this.brief),
-      system ? Promise.resolve(null) : (memory?.recall(inputText, this.recalledIds) ?? Promise.resolve(null)),
+      system
+        ? Promise.resolve(null)
+        : (memory?.recall(inputText, this.recalledIds) ?? Promise.resolve(null)),
     ]);
     if (signal.aborted) {
       memory?.activity?.(false);
@@ -431,7 +463,10 @@ export class LocalVoiceService {
     }
     if (recalled) {
       this.recalledIds.push(...recalled.ids);
-      this.logger?.info('Local voice: recalled memories', { requestId, count: recalled.ids.length });
+      this.logger?.info('Local voice: recalled memories', {
+        requestId,
+        count: recalled.ids.length,
+      });
     }
     // The recalled block rides in the user message (Qwen's template wants one system message,
     // first) and stays in the history as sent, so later turns keep the same prefix.
@@ -450,7 +485,10 @@ export class LocalVoiceService {
       const outcome = await this.approvals.resolveSpoken(inputText).catch(() => null);
       if (outcome) {
         userContent = `${userContent}\n\n[Approval handled: ${describeOutcome(outcome)} Tell Kevin in one short sentence.]`;
-        this.logger?.info('Local voice: spoken approval handled', { decision: outcome.decision, tool: outcome.approval.toolName });
+        this.logger?.info('Local voice: spoken approval handled', {
+          decision: outcome.decision,
+          tool: outcome.approval.toolName,
+        });
       }
     }
 
@@ -470,7 +508,12 @@ export class LocalVoiceService {
     const tools = this.stations?.offer?.(allowed) ?? allowed;
     if (!preview && !request.noTools) {
       // For diagnosing a model that never calls a tool: what exactly was it offered?
-      this.logger?.info('Local voice: tools offered', { requestId, avatarId: this.avatarId, count: tools.length, names: tools.map((tool) => tool.toolName) });
+      this.logger?.info('Local voice: tools offered', {
+        requestId,
+        avatarId: this.avatarId,
+        count: tools.length,
+        names: tools.map((tool) => tool.toolName),
+      });
     }
     const systemPrompt = [
       request.instructions?.trim(),
@@ -488,7 +531,9 @@ export class LocalVoiceService {
     ];
 
     const { llm, tts } = this;
-    const voice = silent ? undefined : await Promise.resolve(this.voiceFor?.()).catch(() => undefined);
+    const voice = silent
+      ? undefined
+      : await Promise.resolve(this.voiceFor?.()).catch(() => undefined);
     const splitter = new SentenceSplitter();
     let index = 0;
     let speaking = Promise.resolve();
@@ -505,14 +550,20 @@ export class LocalVoiceService {
           return;
         }
         try {
-          const wav = spoken && !silent ? await tts.synthesize(spoken, { signal, ...(voice ? { voice } : {}) }) : new Uint8Array(0);
+          const wav =
+            spoken && !silent
+              ? await tts.synthesize(spoken, { signal, ...(voice ? { voice } : {}) })
+              : new Uint8Array(0);
           if (!signal.aborted) {
             emit({ requestId, type: 'sentence', index: sentenceIndex, text: sentence, wav });
           }
         } catch (error) {
           if (!signal.aborted) {
             const message = error instanceof Error ? error.message : String(error);
-            this.logger?.warn('Local voice: text-to-speech failed for a sentence', { message, sentence: spoken });
+            this.logger?.warn('Local voice: text-to-speech failed for a sentence', {
+              message,
+              sentence: spoken,
+            });
             emit({ requestId, type: 'error', message });
           }
         }
@@ -527,7 +578,10 @@ export class LocalVoiceService {
         const offered = round < MAX_TOOL_ROUNDS ? tools : [];
         const thinking = new ThinkFilter();
         let calls: LlmToolCall[] = [];
-        for await (const part of llm.streamChat(messages, { signal, tools: toToolDefinitions(offered, this.stations) })) {
+        for await (const part of llm.streamChat(messages, {
+          signal,
+          tools: toToolDefinitions(offered, this.stations),
+        })) {
           if (part.type === 'tool_calls') {
             calls = part.calls;
           } else {
@@ -543,7 +597,13 @@ export class LocalVoiceService {
         }
         if (runaway) {
           // Nothing of this round is spoken or kept, and no tool call from it is run.
-          this.logger?.warn('Local voice: runaway output stopped', { requestId, avatarId: this.avatarId, round, chars: thinking.visible.length, sample: thinking.visible.slice(-40) });
+          this.logger?.warn('Local voice: runaway output stopped', {
+            requestId,
+            avatarId: this.avatarId,
+            round,
+            chars: thinking.visible.length,
+            sample: thinking.visible.slice(-40),
+          });
           splitter.flush();
           speak(RUNAWAY_FALLBACK_LINE);
           reply = [reply, RUNAWAY_FALLBACK_LINE].filter(Boolean).join(' ');
@@ -580,7 +640,14 @@ export class LocalVoiceService {
           })),
         });
         for (const call of calls) {
-          const content = await this.runTool(requestId, findTool(offered, call.name), call, emit, signal, llm);
+          const content = await this.runTool(
+            requestId,
+            findTool(offered, call.name),
+            call,
+            emit,
+            signal,
+            llm,
+          );
           signal.throwIfAborted();
           messages.push({ role: 'tool', tool_call_id: call.id, content });
         }
@@ -605,7 +672,11 @@ export class LocalVoiceService {
     cancelled ||= signal.aborted;
     if (cancelled) restoreNotes?.();
     if (preview) {
-      this.logger?.info('Local voice: preview finished', { requestId, cancelled, sentences: index });
+      this.logger?.info('Local voice: preview finished', {
+        requestId,
+        cancelled,
+        sentences: index,
+      });
       return { requestId, text: reply, cancelled };
     }
 
@@ -646,7 +717,8 @@ export class LocalVoiceService {
     } catch {
       params = undefined;
     }
-    const label = (params !== undefined && tool?.describeCall?.(params)) || call.arguments.slice(0, 80);
+    const label =
+      (params !== undefined && tool?.describeCall?.(params)) || call.arguments.slice(0, 80);
     const event = { requestId, type: 'tool' as const, callId: call.id, name: call.name, label };
     emit({ ...event, status: 'started' });
 
@@ -658,7 +730,9 @@ export class LocalVoiceService {
       try {
         trip = this.stations?.begin(this.avatarId, tool) ?? null;
       } catch (error) {
-        this.logger?.warn('Local voice: starting a station trip failed', { message: error instanceof Error ? error.message : String(error) });
+        this.logger?.warn('Local voice: starting a station trip failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
     try {
@@ -670,18 +744,33 @@ export class LocalVoiceService {
         // Not run: Kevin has to approve it first (the card, or a spoken yes).
         const approval = await this.approvals.request(tool, params);
         content = this.approvals.waitingMessage(approval);
-        this.logger?.info('Local voice: tool call waits for approval', { name: call.name, label, approvalId: approval.id });
+        this.logger?.info('Local voice: tool call waits for approval', {
+          name: call.name,
+          label,
+          approvalId: approval.id,
+        });
         emit({ ...event, status: 'done', detail: 'waiting for approval' });
       } else {
         // A station lookup tool runs the focused loop with the station's tools; any other tool runs as itself.
         const lookup = this.stations?.runLookup?.(this.avatarId, tool, params, { chat, signal });
-        const result = lookup ? await lookup.then(
-              (data): ToolExecutionResult => ({ success: true, data, durationMs: this.now() - startedAt }),
+        const result = lookup
+          ? await lookup.then(
+              (data): ToolExecutionResult => ({
+                success: true,
+                data,
+                durationMs: this.now() - startedAt,
+              }),
               // A cancelled turn is handled by the abort check after the call; anything else is a failed tool.
-              (error: unknown): ToolExecutionResult => ({ success: false, error: error instanceof Error ? error.message : String(error), durationMs: this.now() - startedAt }),
-            ) : await this.tools.execute(tool.id, params);
+              (error: unknown): ToolExecutionResult => ({
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+                durationMs: this.now() - startedAt,
+              }),
+            )
+          : await this.tools.execute(tool.id, params);
         if (result.success) {
-          content = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? null);
+          content =
+            typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? null);
           emit({ ...event, status: 'done', detail: `${result.durationMs} ms` });
         } else {
           failure = result.error ?? 'The tool failed.';
@@ -691,17 +780,27 @@ export class LocalVoiceService {
       if (trip) {
         // Hold the answer until the avatar is at the station (or back), at most the trip's own cap.
         await trip.settle(failure === null, signal).catch((error: unknown) => {
-          this.logger?.warn('Local voice: a station trip failed', { message: error instanceof Error ? error.message : String(error) });
+          this.logger?.warn('Local voice: a station trip failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
         });
       }
     }
-    this.reportToolResult(call.name, params ?? call.arguments, failure ?? content, failure === null);
+    this.reportToolResult(
+      call.name,
+      params ?? call.arguments,
+      failure ?? content,
+      failure === null,
+    );
     // One line per call, whatever the tool: what the model asked for and how it went (arguments cut short).
     const logged = {
       requestId,
       avatarId: this.avatarId,
       name: call.name,
-      args: call.arguments.length > TOOL_LOG_ARGS_CHARS ? `${call.arguments.slice(0, TOOL_LOG_ARGS_CHARS)}…` : call.arguments,
+      args:
+        call.arguments.length > TOOL_LOG_ARGS_CHARS
+          ? `${call.arguments.slice(0, TOOL_LOG_ARGS_CHARS)}…`
+          : call.arguments,
       durationMs: this.now() - startedAt,
       ok: failure === null,
     };
@@ -714,7 +813,9 @@ export class LocalVoiceService {
       emit({ ...event, status: 'failed', detail: failure });
       return JSON.stringify({ error: failure });
     }
-    return content.length > MAX_TOOL_RESULT_CHARS ? `${content.slice(0, MAX_TOOL_RESULT_CHARS)}…` : content;
+    return content.length > MAX_TOOL_RESULT_CHARS
+      ? `${content.slice(0, MAX_TOOL_RESULT_CHARS)}…`
+      : content;
   }
 
   private reportToolResult(name: string, args: unknown, result: string, ok: boolean): void {
@@ -736,7 +837,11 @@ function toToolDefinitions(tools: RegisteredTool[], stations?: VoiceStations): L
   return tools.map((tool) => ({
     type: 'function',
     // The stored description stays as it is; the note about where the tool is kept is added for the model only.
-    function: { name: tool.toolName, description: tool.description + (stations?.descriptionNote(tool) ?? ''), parameters: tool.inputSchema },
+    function: {
+      name: tool.toolName,
+      description: tool.description + (stations?.descriptionNote(tool) ?? ''),
+      parameters: tool.inputSchema,
+    },
   }));
 }
 
@@ -816,7 +921,12 @@ function findCut(text: string): number {
         return i + 1;
       }
       const next = text[i + 1];
-      if ('.!?…'.includes(char) && next !== undefined && /\s/.test(next) && i + 1 >= MIN_SENTENCE_CHARS) {
+      if (
+        '.!?…'.includes(char) &&
+        next !== undefined &&
+        /\s/.test(next) &&
+        i + 1 >= MIN_SENTENCE_CHARS
+      ) {
         return i + 1;
       }
       if ((char === ',' || char === ';' || char === ':') && next !== undefined && /\s/.test(next)) {

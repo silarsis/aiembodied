@@ -58,7 +58,8 @@ const TMP_A = new THREE.Vector3();
 const TMP_B = new THREE.Vector3();
 
 function legsOf(rig: AvatarRig): { restLegLengths?: RestLegLengths } {
-  const legs = rig.restHipsHeight > 0 ? measureRestLegLengths(rig.humanoid, rig.restHipsHeight) : null;
+  const legs =
+    rig.restHipsHeight > 0 ? measureRestLegLengths(rig.humanoid, rig.restHipsHeight) : null;
   return legs ? { restLegLengths: legs } : {};
 }
 
@@ -109,7 +110,11 @@ export class RoomSceneEnv implements SceneEnv {
       },
       seatGeometry: (objectId) => stage.seatGeometry(objectId),
       frame: {
-        origin: { x: rig.scene.position.x, z: rig.scene.position.z, yaw: rig.scene.rotation.y - rig.baseRotationY },
+        origin: {
+          x: rig.scene.position.x,
+          z: rig.scene.position.z,
+          yaw: rig.scene.rotation.y - rig.baseRotationY,
+        },
         scale: rig.scene.scale.x || 1,
       },
       restHipsHeight: rig.restHipsHeight > 0 ? rig.restHipsHeight : FALLBACK_HIPS_HEIGHT,
@@ -175,7 +180,9 @@ export class RoomSceneEnv implements SceneEnv {
     const grab = tag
       ? node.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2]))
       : new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
-    const target = bone.worldToLocal(node.getWorldPosition(new THREE.Vector3()).add(palm.sub(grab)));
+    const target = bone.worldToLocal(
+      node.getWorldPosition(new THREE.Vector3()).add(palm.sub(grab)),
+    );
     return target.distanceTo(node.position) < GRIP_SNAP_EPSILON ? null : target;
   }
 
@@ -228,7 +235,11 @@ export class RoomSceneEnv implements SceneEnv {
   step(deltaSeconds: number): void {
     const rig = this.host.rig();
     const occupancy = this.occupancyOf();
-    if (rig && occupancy) occupancy.standing(this.host.avatarId ?? 'echo', { x: rig.scene.position.x, z: rig.scene.position.z });
+    if (rig && occupancy)
+      occupancy.standing(this.host.avatarId ?? 'echo', {
+        x: rig.scene.position.x,
+        z: rig.scene.position.z,
+      });
     for (const grip of this.grips.values()) if (grip.active) grip.update(deltaSeconds);
     this.easeCarried(deltaSeconds);
     this.fitSeat(rig, deltaSeconds);
@@ -265,7 +276,15 @@ export class RoomSceneEnv implements SceneEnv {
       this.carriedCache = [...this.carried.keys()];
       this.carriedDirty = false;
     }
-    contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null, this.seatId, this.seatId !== null && !this.streamPlaying);
+    contact.update(
+      rig,
+      stage.collision,
+      deltaSeconds,
+      this.carriedCache,
+      stage.debugNavmesh ? stage.group : null,
+      this.seatId,
+      this.seatId !== null && !this.streamPlaying,
+    );
     if (isMotionTraceEnabled()) this.traceContact(rig, contact, deltaSeconds);
   }
 
@@ -278,14 +297,21 @@ export class RoomSceneEnv implements SceneEnv {
     const active = contact.isInContact();
     this.traceClock += deltaSeconds;
     // A contact that has just begun is written at once; after that every TRACE_INTERVAL_S.
-    const due = changed || (active && (!this.traceWasActive || this.traceClock >= TRACE_INTERVAL_S));
+    const due =
+      changed || (active && (!this.traceWasActive || this.traceClock >= TRACE_INTERVAL_S));
     this.traceWasActive = active;
     if (!due) return;
     this.traceClock = 0;
-    trace(avatar, 'contact', () => this.contactSnapshot(rig, contact, changed ? 'seat-change' : 'sample'));
+    trace(avatar, 'contact', () =>
+      this.contactSnapshot(rig, contact, changed ? 'seat-change' : 'sample'),
+    );
   }
 
-  private contactSnapshot(rig: AvatarRig, contact: ContactBody, reason: string): Record<string, unknown> {
+  private contactSnapshot(
+    rig: AvatarRig,
+    contact: ContactBody,
+    reason: string,
+  ): Record<string, unknown> {
     rig.scene.updateWorldMatrix(true, true);
     const r3 = (value: number) => round(value, 3);
     const hips = rig.humanoid.getNormalizedBoneNode('hips');
@@ -418,7 +444,14 @@ export class RoomSceneEnv implements SceneEnv {
     return [...this.carried.keys()];
   }
 
-  private putDown(stage: RoomStage, objectId: string, node: THREE.Object3D, origin: Vec3, yaw: number, hand: Hand): void {
+  private putDown(
+    stage: RoomStage,
+    objectId: string,
+    node: THREE.Object3D,
+    origin: Vec3,
+    yaw: number,
+    hand: Hand,
+  ): void {
     stage.propParent.add(node); // the physics sync and placeObject set its pose in room space
     stage.placeObject(objectId, origin, yaw);
     this.carried.delete(objectId);

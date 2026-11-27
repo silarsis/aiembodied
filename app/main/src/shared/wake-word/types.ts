@@ -1,6 +1,5 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface WakeWordDetectionEvent {
   keywordLabel: string;
   confidence: number;
@@ -8,14 +7,12 @@ export interface WakeWordDetectionEvent {
   sessionId?: string;
 }
 
-
 /** Validation figures train.py reports for a model trained in the app. */
 export interface WakeWordTrainingMetrics {
   accuracy?: number;
   recall?: number;
   falsePositivesPerHour?: number;
 }
-
 
 /** A wake word the Settings page can pick. */
 export interface WakeWordOption {
@@ -30,9 +27,7 @@ export interface WakeWordOption {
   metrics?: WakeWordTrainingMetrics;
 }
 
-
 export type WakeWordTrainingState = 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted';
-
 
 /** One training run, as train_wake_word.py reports it in status.json. */
 export interface WakeWordTrainingJob {
@@ -53,7 +48,6 @@ export interface WakeWordTrainingJob {
   model?: string;
   metrics?: WakeWordTrainingMetrics;
 }
-
 
 export interface WakeWordTrainingStatus {
   /** Whether training can run here: it needs WSL and the training scripts. */

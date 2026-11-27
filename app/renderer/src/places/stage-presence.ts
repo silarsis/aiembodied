@@ -22,7 +22,10 @@ export interface StagePresence {
   absent: AbsentAvatar[];
 }
 
-export function stagePresence(snapshot: PlacesSnapshot | null | undefined, avatarIds: readonly string[]): StagePresence {
+export function stagePresence(
+  snapshot: PlacesSnapshot | null | undefined,
+  avatarIds: readonly string[],
+): StagePresence {
   if (!snapshot) return { present: [...avatarIds], incoming: [], absent: [] };
   const local = snapshot.localPlaceId;
   const moving = new Map(snapshot.transit.map((entry) => [entry.avatarId, entry]));
@@ -46,14 +49,24 @@ export function stagePresence(snapshot: PlacesSnapshot | null | undefined, avata
 }
 
 /** One line for the Elsewhere chip: "Echo is next door", "Sage is on the way to the lounge". */
-export function describeAbsent(entry: AbsentAvatar, nameOfAvatar: string, snapshot: PlacesSnapshot): string {
-  const place = snapshot.places.find((candidate) => candidate.id === entry.placeId)?.name ?? entry.placeId;
-  return entry.state === 'away' ? `${nameOfAvatar} is ${place}` : `${nameOfAvatar} is on the way to ${place}`;
+export function describeAbsent(
+  entry: AbsentAvatar,
+  nameOfAvatar: string,
+  snapshot: PlacesSnapshot,
+): string {
+  const place =
+    snapshot.places.find((candidate) => candidate.id === entry.placeId)?.name ?? entry.placeId;
+  return entry.state === 'away'
+    ? `${nameOfAvatar} is ${place}`
+    : `${nameOfAvatar} is on the way to ${place}`;
 }
 
 /** Roughly how long a line takes to say, for hiding an avatar once it has finished talking (2D, where no clock tells). */
 export function estimateSpeechMs(text: string): number {
-  const spoken = text.replace(/\{[^}]*\}/g, ' ').replace(/\s+/g, ' ').trim();
+  const spoken = text
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   // About 15 characters a second; never longer than the longest sentence is likely to take.
   return Math.min(8000, Math.round((spoken.length / 15) * 1000));
 }

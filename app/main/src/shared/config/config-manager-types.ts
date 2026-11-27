@@ -3,12 +3,9 @@ import type { CodingConfig } from '../coding/types.js';
 import type { ModelRoute, ModelRouting, ServerType, UseId } from './model-routing.js';
 import type { ProviderSettings } from './provider-settings.js';
 
-
 export type FeatureFlags = Record<string, boolean>;
 
-
 export type ConversationBackend = 'local' | 'openai';
-
 
 /** The web_search tool's backends. Main process only: it can hold an API key. */
 export interface WebSearchConfig {
@@ -19,7 +16,6 @@ export interface WebSearchConfig {
   /** BRAVE_SEARCH_API_KEY: the Brave Search API token for the brave provider. */
   braveApiKey?: string;
 }
-
 
 export interface AppConfig {
   realtimeApiKey: string;
@@ -49,7 +45,6 @@ export interface AppConfig {
   metrics: MetricsConfig;
 }
 
-
 export interface WakeWordConfig {
   /** openWakeWord builtin model name (e.g. hey_echo) or an absolute path to a custom .onnx model. */
   model: string;
@@ -60,7 +55,6 @@ export interface WakeWordConfig {
   deviceIndex?: number;
 }
 
-
 export interface MetricsConfig {
   enabled: boolean;
   host: string;
@@ -68,11 +62,12 @@ export interface MetricsConfig {
   path: string;
 }
 
-
 export type RendererWakeWordConfig = WakeWordConfig;
 
-
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch' | 'models' | 'coding'> & {
+export type RendererConfig = Omit<
+  AppConfig,
+  'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch' | 'models' | 'coding'
+> & {
   /** 'satellite' on a second desktop that draws one room of bija's world; absent on the full app. */
   role?: 'satellite';
   /** Set on a satellite that is a web page (a browser, or the Android shell's WebView) rather than the Electron app. */
@@ -83,9 +78,7 @@ export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'co
   wakeWord: RendererWakeWordConfig;
 };
 
-
 export type ConfigSecretKey = 'realtimeApiKey';
-
 
 /** A server as the Models and servers pop-up sees it: no keys, only whether one is set. */
 export interface ModelServerView {
@@ -99,7 +92,6 @@ export interface ModelServerView {
   /** The key comes from an environment variable, so the app cannot change it. */
   keyFromEnv?: boolean;
 }
-
 
 export interface ModelRoutingView {
   servers: ModelServerView[];

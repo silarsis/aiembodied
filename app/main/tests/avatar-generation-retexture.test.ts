@@ -30,7 +30,8 @@ function buildVrm(): Buffer {
   }
   const mainPng = PNG.sync.write(main);
   const shadePng = solidPng(8, 8, [50, 50, 50, 255]);
-  const pad = (buffer: Buffer) => Buffer.concat([buffer, Buffer.alloc((4 - (buffer.length % 4)) % 4)]);
+  const pad = (buffer: Buffer) =>
+    Buffer.concat([buffer, Buffer.alloc((4 - (buffer.length % 4)) % 4)]);
   const bin = Buffer.concat([pad(vertices), pad(mainPng), shadePng]);
   const mainOffset = pad(vertices).length;
   const shadeOffset = mainOffset + pad(mainPng).length;
@@ -52,7 +53,10 @@ function buildVrm(): Buffer {
         VRM: {
           meta: { title: 'Base' },
           materialProperties: [
-            { name: 'N00_000_00_Body_00_SKIN (Instance)', textureProperties: { _MainTex: 0, _ShadeTexture: 1 } },
+            {
+              name: 'N00_000_00_Body_00_SKIN (Instance)',
+              textureProperties: { _MainTex: 0, _ShadeTexture: 1 },
+            },
           ],
         },
       },
@@ -75,7 +79,9 @@ describe('vrm retexture', () => {
 
   it('pastes edits through the original alpha, rebuilds shade, and keeps other buffers', () => {
     const vrm = buildVrm();
-    const edited = [{ box: { x: 0, y: 0, width: 8, height: 8 }, png: solidPng(4, 4, [200, 20, 20, 255]) }];
+    const edited = [
+      { box: { x: 0, y: 0, width: 8, height: 8 }, png: solidPng(4, 4, [200, 20, 20, 255]) },
+    ];
     const result = readGlb(assembleRetexturedVrm(vrm, edited, 'Red'));
 
     expect(result.json.extensions?.VRM?.meta?.title).toBe('Red');
@@ -122,13 +128,20 @@ describe('vrm retexture', () => {
       for (let index = 0; index < png.data.length; index += 4) {
         const col = (index / 4) % 128;
         const row = Math.floor(index / 4 / 128);
-        const pixel = col < 64 ? (Math.floor(row / 16) % 2 ? [200, 60, 60] : [90, 20, 20]) : background(row, col);
+        const pixel =
+          col < 64
+            ? Math.floor(row / 16) % 2
+              ? [200, 60, 60]
+              : [90, 20, 20]
+            : background(row, col);
         png.data.set([...pixel, 255], index);
       }
       return PNG.sync.write(png);
     };
     const original = panel(() => [128, 128, 128]);
-    const noisyBackground = panel((row, col) => ((row * 7 + col * 13) % 5 < 2 ? [0, 0, 0] : [255, 255, 255]));
+    const noisyBackground = panel((row, col) =>
+      (row * 7 + col * 13) % 5 < 2 ? [0, 0, 0] : [255, 255, 255],
+    );
     expect(layoutSimilarity(original, noisyBackground)).toBeGreaterThan(0.9);
   });
 

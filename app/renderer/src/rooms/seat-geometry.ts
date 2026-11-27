@@ -118,7 +118,11 @@ export function applySeatOverrides(measured: SeatGeometry, seat: SitTag['seat'])
     ...measured,
     seatTopY: seat.top ?? measured.seatTopY,
     frontEdge,
-    depth: seat.depth ?? (seat.frontEdge !== undefined ? measured.depth - measured.frontEdge + frontEdge : measured.depth),
+    depth:
+      seat.depth ??
+      (seat.frontEdge !== undefined
+        ? measured.depth - measured.frontEdge + frontEdge
+        : measured.depth),
   };
 }
 
@@ -136,7 +140,9 @@ export function seatGeometryToWorld(
     seatTopY: local.seatTopY + y,
     frontEdge: local.frontEdge,
     depth: local.depth,
-    backRest: local.backRest ? { distance: local.backRest.distance, top: local.backRest.top + y } : null,
+    backRest: local.backRest
+      ? { distance: local.backRest.distance, top: local.backRest.top + y }
+      : null,
     footFloorY: local.footFloorY + y,
     position: [
       object.position[0] + tag.position[0] * cos + tag.position[2] * sin,

@@ -16,12 +16,23 @@ export function rectOf(cx: number, cz: number, width: number, depth: number, rot
 }
 
 /** Local (x, z) of a rect to world (x, z); same maths as objectToWorld in the renderer. */
-export function toWorld(rect: Pick<Rect, 'cx' | 'cz' | 'rot'>, lx: number, lz: number): [number, number] {
+export function toWorld(
+  rect: Pick<Rect, 'cx' | 'cz' | 'rot'>,
+  lx: number,
+  lz: number,
+): [number, number] {
   const a = rad(rect.rot);
-  return [rect.cx + lx * Math.cos(a) + lz * Math.sin(a), rect.cz - lx * Math.sin(a) + lz * Math.cos(a)];
+  return [
+    rect.cx + lx * Math.cos(a) + lz * Math.sin(a),
+    rect.cz - lx * Math.sin(a) + lz * Math.cos(a),
+  ];
 }
 
-export function toLocal(rect: Pick<Rect, 'cx' | 'cz' | 'rot'>, x: number, z: number): [number, number] {
+export function toLocal(
+  rect: Pick<Rect, 'cx' | 'cz' | 'rot'>,
+  x: number,
+  z: number,
+): [number, number] {
   const a = rad(rect.rot);
   const dx = x - rect.cx;
   const dz = z - rect.cz;
@@ -52,14 +63,17 @@ export function overlaps(a: Rect, b: Rect, gap = 0): boolean {
   for (const [ax, az] of axes) {
     const pa = ca.map(([x, z]) => x * ax + z * az);
     const pb = cb.map(([x, z]) => x * ax + z * az);
-    if (Math.max(...pa) <= Math.min(...pb) + 1e-9 || Math.max(...pb) <= Math.min(...pa) + 1e-9) return false;
+    if (Math.max(...pa) <= Math.min(...pb) + 1e-9 || Math.max(...pb) <= Math.min(...pa) + 1e-9)
+      return false;
   }
   return true;
 }
 
 /** True when every corner of `rect` is inside the room interior (shrunk by `margin`). */
 export function insideRoom(rect: Rect, halfW: number, halfD: number, margin = 0.02): boolean {
-  return corners(rect).every(([x, z]) => Math.abs(x) <= halfW - margin + 1e-9 && Math.abs(z) <= halfD - margin + 1e-9);
+  return corners(rect).every(
+    ([x, z]) => Math.abs(x) <= halfW - margin + 1e-9 && Math.abs(z) <= halfD - margin + 1e-9,
+  );
 }
 
 /** True when `inner` lies completely inside `outer` (both rotated rectangles). */

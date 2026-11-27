@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseVrmaSchema, VRMA_JSON_SCHEMA, VRMA_PLAN_JSON_SCHEMA } from '../src/avatar/vrma-schema.js';
+import {
+  parseVrmaSchema,
+  VRMA_JSON_SCHEMA,
+  VRMA_PLAN_JSON_SCHEMA,
+} from '../src/avatar/vrma-schema.js';
 
 type JsonSchemaObject = {
   type: 'object';
@@ -20,7 +24,11 @@ type JsonSchema = JsonSchemaObject | JsonSchemaArray | { type: string };
  * This is required by OpenAI's Responses API validator.
  * All nested object properties must be in their parent's required array if they have properties.
  */
-function collectSchemaViolations(schema: unknown, path: string = '', isTopLevel: boolean = true): string[] {
+function collectSchemaViolations(
+  schema: unknown,
+  path: string = '',
+  isTopLevel: boolean = true,
+): string[] {
   if (typeof schema !== 'object' || schema === null) {
     return [];
   }

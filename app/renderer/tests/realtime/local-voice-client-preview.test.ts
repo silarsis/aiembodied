@@ -22,7 +22,13 @@ function createFakeContext() {
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
-    createBufferSource: vi.fn(() => ({ ...node(), buffer: null, start: vi.fn(), stop: vi.fn(), onended: null })),
+    createBufferSource: vi.fn(() => ({
+      ...node(),
+      buffer: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      onended: null,
+    })),
   };
   return { context: context as unknown as AudioContext, processor };
 }
@@ -34,9 +40,16 @@ function createBridge(overrides: Partial<LocalVoiceBridge> = {}) {
       llm: { available: true, baseUrl: 'http://llm' },
       speech: { available: true, ready: true, error: null },
     })) as unknown as LocalVoiceBridge['getStatus'],
-    transcribe: vi.fn(async () => ({ text: 'Hey Jarvis, what time is it?' })) as unknown as LocalVoiceBridge['transcribe'],
+    transcribe: vi.fn(async () => ({
+      text: 'Hey Jarvis, what time is it?',
+    })) as unknown as LocalVoiceBridge['transcribe'],
     respond: vi.fn(async (request: { requestId: string }) => {
-      listener?.({ type: 'sentence', requestId: request.requestId, text: 'It is noon.', wav: new Uint8Array([1]) } as LocalVoiceEvent);
+      listener?.({
+        type: 'sentence',
+        requestId: request.requestId,
+        text: 'It is noon.',
+        wav: new Uint8Array([1]),
+      } as LocalVoiceEvent);
       return { text: 'It is noon.', cancelled: false };
     }) as unknown as LocalVoiceBridge['respond'],
     cancel: vi.fn(async () => undefined),
@@ -67,7 +80,8 @@ describe('Test Response voice preview', () => {
     const spoken: string[] = [];
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
-      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => context,
+      createMicCaptureNode: micNodeOf,
       now: () => 10_000,
       callbacks: { onTextContent: (text) => spoken.push(text) },
     });
@@ -96,7 +110,11 @@ describe('Test Response voice preview', () => {
     const { context } = createFakeContext();
     const bridge = createBridge();
 
-    const pending = playPreviewReply(bridge, { text: 'say something' }, { createAudioContext: () => context });
+    const pending = playPreviewReply(
+      bridge,
+      { text: 'say something' },
+      { createAudioContext: () => context },
+    );
     await vi.advanceTimersByTimeAsync(1000);
 
     await expect(pending).resolves.toEqual({ text: 'It is noon.', cancelled: false });

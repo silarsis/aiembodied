@@ -1,4 +1,9 @@
-import type { BrowserWindow, Event as ElectronEvent, RenderProcessGoneDetails, WebContents } from 'electron';
+import type {
+  BrowserWindow,
+  Event as ElectronEvent,
+  RenderProcessGoneDetails,
+  WebContents,
+} from 'electron';
 import type { Logger } from 'winston';
 
 export interface CrashGuardOptions {
@@ -17,7 +22,7 @@ export class CrashGuard {
   private window: WatchedWindow | null = null;
   private quitting = false;
 
-  constructor(private readonly options: CrashGuardOptions) { }
+  constructor(private readonly options: CrashGuardOptions) {}
 
   watch(window: BrowserWindow): void {
     this.dispose();
@@ -72,7 +77,10 @@ export class CrashGuard {
     this.window.on('closed', this.handleClosed);
   }
 
-  private handleRenderProcessGone = (_event: ElectronEvent, details: RenderProcessGoneDetails): void => {
+  private handleRenderProcessGone = (
+    _event: ElectronEvent,
+    details: RenderProcessGoneDetails,
+  ): void => {
     this.options.logger.error('Renderer process exited unexpectedly', details);
     if (this.quitting) {
       return;

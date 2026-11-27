@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
+import type {
+  SatelliteBridge,
+  SatelliteStatus,
+} from '../../../main/src/shared/satellite/bridge-types.js';
 
 /** Follows the satellite's pairing and link: read once, then pushed on every change. Null until the first answer. */
 export function useSatelliteStatus(bridge: SatelliteBridge | undefined): SatelliteStatus | null {

@@ -73,7 +73,7 @@ function setupCamera(vrm: VRM, scene: THREE.Scene): THREE.PerspectiveCamera {
     headBox.getSize(size);
 
     const maxDim = Math.max(size.x, size.y, size.z);
-    const distance = maxDim / (2 * Math.tan((CAMERA_FOV * Math.PI) / 360)) * 1.5;
+    const distance = (maxDim / (2 * Math.tan((CAMERA_FOV * Math.PI) / 360))) * 1.5;
 
     camera.position.set(center.x, center.y + CAMERA_HEIGHT_OFFSET, center.z + distance);
     camera.lookAt(center.x, center.y + CAMERA_HEIGHT_OFFSET, center.z);
@@ -82,7 +82,11 @@ function setupCamera(vrm: VRM, scene: THREE.Scene): THREE.PerspectiveCamera {
     if (headNode) {
       const worldPos = new THREE.Vector3();
       headNode.getWorldPosition(worldPos);
-      camera.position.set(worldPos.x, worldPos.y + CAMERA_HEIGHT_OFFSET, worldPos.z + CAMERA_DISTANCE);
+      camera.position.set(
+        worldPos.x,
+        worldPos.y + CAMERA_HEIGHT_OFFSET,
+        worldPos.z + CAMERA_DISTANCE,
+      );
       camera.lookAt(worldPos.x, worldPos.y + CAMERA_HEIGHT_OFFSET, worldPos.z);
     } else {
       camera.position.set(0, 1.5, CAMERA_DISTANCE);

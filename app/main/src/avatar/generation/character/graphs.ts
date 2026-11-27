@@ -38,7 +38,8 @@ export function characterMeshGraph(
   seed: number,
   geometry?: GeometryModel,
 ): ComfyGraph {
-  if (geometry?.kind === 'hunyuan3d-2mv') return hunyuanMultiViewGraph(images, seed, geometry.checkpoint);
+  if (geometry?.kind === 'hunyuan3d-2mv')
+    return hunyuanMultiViewGraph(images, seed, geometry.checkpoint);
   // TRELLIS.2 takes one image, so it is only ever given the front.
   const graph: ComfyGraph = structuredClone(template);
   graph.image.inputs.image = images.front;
@@ -120,7 +121,12 @@ export function hunyuanMultiViewGraph(
     },
     decode: {
       class_type: 'VAEDecodeHunyuan3D',
-      inputs: { samples: ['sample', 0], vae: ['checkpoint', 2], num_chunks: 8000, octree_resolution: 256 },
+      inputs: {
+        samples: ['sample', 0],
+        vae: ['checkpoint', 2],
+        num_chunks: 8000,
+        octree_resolution: 256,
+      },
     },
     voxels: {
       class_type: 'VoxelToMesh',
@@ -144,19 +150,20 @@ const VIEW_FRAMING =
   'centred, pure white background, no shadow, no scenery, one character only, no text.';
 
 /** What to draw for each extra view, as an edit of the approved front image. */
-export const CHARACTER_VIEW_PROMPTS: Record<'left' | 'back', { prompt: string; negative: string }> = {
-  left: {
-    prompt:
-      'Turn this character 90 degrees to show their left side: a strict side profile view, the character facing the left edge of the image. ' +
-      VIEW_FRAMING,
-    negative:
-      'front view, back view, three-quarter view, facing the viewer, facing right, turnaround sheet, multiple views, multiple characters, cropped, cut off feet, scenery, floor shadow, text, watermark',
-  },
-  back: {
-    prompt:
-      'Turn this character around to show them from directly behind: a back view showing the back of the head, hair and outfit, no face visible. ' +
-      VIEW_FRAMING,
-    negative:
-      'front view, side view, face, eyes, facing the viewer, turnaround sheet, multiple views, multiple characters, cropped, cut off feet, scenery, floor shadow, text, watermark',
-  },
-};
+export const CHARACTER_VIEW_PROMPTS: Record<'left' | 'back', { prompt: string; negative: string }> =
+  {
+    left: {
+      prompt:
+        'Turn this character 90 degrees to show their left side: a strict side profile view, the character facing the left edge of the image. ' +
+        VIEW_FRAMING,
+      negative:
+        'front view, back view, three-quarter view, facing the viewer, facing right, turnaround sheet, multiple views, multiple characters, cropped, cut off feet, scenery, floor shadow, text, watermark',
+    },
+    back: {
+      prompt:
+        'Turn this character around to show them from directly behind: a back view showing the back of the head, hair and outfit, no face visible. ' +
+        VIEW_FRAMING,
+      negative:
+        'front view, side view, face, eyes, facing the viewer, turnaround sheet, multiple views, multiple characters, cropped, cut off feet, scenery, floor shadow, text, watermark',
+    },
+  };

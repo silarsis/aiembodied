@@ -5,7 +5,13 @@
  * run it with fakes.
  */
 import type { Op } from '../shared/room-hub/frames.js';
-import { DeviceGate, avatarsHere, guardMediaPermissions, type DeviceGateState, type PermissionSession } from '../shared/satellite/device-gate.js';
+import {
+  DeviceGate,
+  avatarsHere,
+  guardMediaPermissions,
+  type DeviceGateState,
+  type PermissionSession,
+} from '../shared/satellite/device-gate.js';
 import type { FullscreenWatcher } from './fullscreen-watch.js';
 import { stateIcon, trayRoomName, trayTooltip, type IconBitmap } from './tray-state.js';
 import type { SatelliteSettings } from './settings.js';
@@ -29,13 +35,26 @@ export interface TrayLike {
 
 export interface DeviceWindowLike {
   isDestroyed(): boolean;
-  webContents: { send(channel: string, ...args: unknown[]): void; reload(): void; isDestroyed?(): boolean };
+  webContents: {
+    send(channel: string, ...args: unknown[]): void;
+    reload(): void;
+    isDestroyed?(): boolean;
+  };
 }
 
 export interface DeviceRuntimeDeps {
-  settings: { get(): SatelliteSettings; update(patch: Partial<SatelliteSettings>): SatelliteSettings };
-  powerMonitor: { on(event: 'lock-screen' | 'unlock-screen', listener: () => void): unknown; removeListener(event: 'lock-screen' | 'unlock-screen', listener: () => void): unknown };
-  globalShortcut: { register(accelerator: string, callback: () => void): boolean; unregister(accelerator: string): void };
+  settings: {
+    get(): SatelliteSettings;
+    update(patch: Partial<SatelliteSettings>): SatelliteSettings;
+  };
+  powerMonitor: {
+    on(event: 'lock-screen' | 'unlock-screen', listener: () => void): unknown;
+    removeListener(event: 'lock-screen' | 'unlock-screen', listener: () => void): unknown;
+  };
+  globalShortcut: {
+    register(accelerator: string, callback: () => void): boolean;
+    unregister(accelerator: string): void;
+  };
   session: PermissionSession;
   getWindow: () => DeviceWindowLike | null;
   /** Sends an op to bija. False when the link is down. */
@@ -44,7 +63,9 @@ export interface DeviceRuntimeDeps {
   makeImage: (icon: IconBitmap) => unknown;
   makeMenu: (template: MenuItemLike[]) => unknown;
   /** Makes the full-screen watcher; `onChange(true)` means no other app is full screen. */
-  makeWatcher: (onChange: (noFullscreenApp: boolean) => void) => Pick<FullscreenWatcher, 'start' | 'stop'>;
+  makeWatcher: (
+    onChange: (noFullscreenApp: boolean) => void,
+  ) => Pick<FullscreenWatcher, 'start' | 'stop'>;
   notify: (title: string, body: string) => void;
   placeName: () => string | null;
   avatarName: (avatarId: string) => string;
@@ -77,7 +98,9 @@ export class DeviceRuntime {
       onChange: (state, changed) => this.onChange(state, changed),
       logger: deps.logger,
     });
-    this.watcher = deps.makeWatcher((noFullscreenApp) => void this.gate.update({ noFullscreenApp }));
+    this.watcher = deps.makeWatcher(
+      (noFullscreenApp) => void this.gate.update({ noFullscreenApp }),
+    );
   }
 
   state(): DeviceGateState {
@@ -119,14 +142,17 @@ export class DeviceRuntime {
   /** A places snapshot: who stands in this room, whether this room's camera presence is on and whether its doorbell is. */
   setSnapshot(snapshot: unknown): void {
     this.present = avatarsHere(snapshot);
-    this.gate.update({ occupied: this.present.length > 0, cameraEnabled: cameraSettingHere(snapshot) });
+    this.gate.update({
+      occupied: this.present.length > 0,
+      cameraEnabled: cameraSettingHere(snapshot),
+    });
     // After the occupancy: the doorbell level is only ever read against the room as it is now.
     this.gate.setDoorbellEnabled(doorbellSettingHere(snapshot));
   }
 
   /** bija asked the devices off. It can never turn them on. */
   hubOff(reason: string): void {
-    this.deps.logger?.info('bija asked this PC\'s devices off', { reason });
+    this.deps.logger?.info("bija asked this PC's devices off", { reason });
     this.gate.update({ notHeldOff: false });
   }
 
@@ -153,24 +179,36 @@ export class DeviceRuntime {
   private registerShortcut(): void {
     const accelerator = this.deps.settings.get().closeShortcut || DEFAULT_CLOSE_SHORTCUT;
     try {
-      if (this.deps.globalShortcut.register(accelerator, () => void this.toggleOpen())) this.shortcut = accelerator;
-      else this.deps.logger?.warn('The close-room shortcut is taken by another app', { accelerator });
+      if (this.deps.globalShortcut.register(accelerator, () => void this.toggleOpen()))
+        this.shortcut = accelerator;
+      else
+        this.deps.logger?.warn('The close-room shortcut is taken by another app', { accelerator });
     } catch (error) {
-      this.deps.logger?.warn('The close-room shortcut is not valid', { accelerator, message: error instanceof Error ? error.message : String(error) });
+      this.deps.logger?.warn('The close-room shortcut is not valid', {
+        accelerator,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
   // -- Reacting to a change -------------------------------------------------------------------------
 
   private onChange(state: DeviceGateState, changed: string[]): void {
-    this.deps.logger?.info('Devices changed', { mic: state.mic, camera: state.camera, changed, summary: state.summary });
+    this.deps.logger?.info('Devices changed', {
+      mic: state.mic,
+      camera: state.camera,
+      changed,
+      summary: state.summary,
+    });
     this.sendToPage(state);
     this.sendState(state);
     this.refreshTray(state);
     try {
       this.deps.onGate?.(state);
     } catch (error) {
-      this.deps.logger?.warn('A gate listener failed', { message: error instanceof Error ? error.message : String(error) });
+      this.deps.logger?.warn('A gate listener failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
     if (state.micAllowed && !this.announced) {
       this.announced = true;
@@ -216,14 +254,19 @@ export class DeviceRuntime {
         this.deps.makeMenu([
           { label: `${trayRoomName(name)}: ${state.summary || 'mic live'}`, enabled: false },
           { type: 'separator' },
-          { label: state.open ? 'Close this room' : 'Open this room', click: () => void this.toggleOpen() },
+          {
+            label: state.open ? 'Close this room' : 'Open this room',
+            click: () => void this.toggleOpen(),
+          },
           { label: 'Show window', click: () => this.deps.showWindow() },
           { type: 'separator' },
           { label: 'Quit', click: () => this.deps.quit() },
         ]),
       );
     } catch (error) {
-      this.deps.logger?.warn('Could not update the tray', { message: error instanceof Error ? error.message : String(error) });
+      this.deps.logger?.warn('Could not update the tray', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

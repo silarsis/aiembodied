@@ -1,13 +1,11 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface HfFile {
   /** Path inside the repo, such as Q4_K_M/model-00001-of-00002.gguf. */
   path: string;
   size: number;
   sha256?: string;
 }
-
 
 /** One size of the model: a quantisation, made of one GGUF file or several split parts. */
 export interface HfQuant {
@@ -19,13 +17,11 @@ export interface HfQuant {
   sizeBytes: number;
 }
 
-
 export interface HfRepoSuggestion {
   repo: string;
   downloads: number;
   likes: number;
 }
-
 
 export interface HfLookup {
   /** Set when the reference named a repo that exists. */

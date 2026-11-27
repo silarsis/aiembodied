@@ -111,39 +111,68 @@ describe('installed image models', () => {
 });
 
 describe('view model', () => {
-  it('draws views with the take\'s own Qwen model, or an installed Qwen when the front came from another family', async () => {
+  it("draws views with the take's own Qwen model, or an installed Qwen when the front came from another family", async () => {
     const service = new AvatarImageModelService(async () => installed);
     const xlFront = await service.resolve('checkpoints:folder/variant.safetensors');
     const fromXl = await service.resolveViewModel(xlFront);
     expect(fromXl?.family).toBe('qwen-image-2.1');
     expect(fromXl?.model).toBe('renamed-qwen.safetensors');
     expect(fromXl?.loras).toBeUndefined();
-    const qwenFront = { ...(await service.resolve('diffusion_models:renamed-qwen.safetensors')), loras: [{ name: 'q.safetensors', strength: 1 }] };
+    const qwenFront = {
+      ...(await service.resolve('diffusion_models:renamed-qwen.safetensors')),
+      loras: [{ name: 'q.safetensors', strength: 1 }],
+    };
     expect(await service.resolveViewModel(qwenFront)).toBe(qwenFront);
     const noQwen = new AvatarImageModelService(async () =>
       installed.filter((file) => file.kind !== 'qwen-image-2.1'),
     );
-    expect(await noQwen.resolveViewModel(await noQwen.resolve('checkpoints:folder/variant.safetensors'))).toBeUndefined();
+    expect(
+      await noQwen.resolveViewModel(await noQwen.resolve('checkpoints:folder/variant.safetensors')),
+    ).toBeUndefined();
   });
 });
 
 describe('LoRAs', () => {
   const withLoras: ImageModelFile[] = [
     ...installed,
-    { folder: 'loras', name: 'cyberpunk.safetensors', kind: 'lora', family: 'sd1', title: 'Cyberpunk', baseModel: 'SD 1.5', triggerWords: ['cyberpunk', 'neon'] },
+    {
+      folder: 'loras',
+      name: 'cyberpunk.safetensors',
+      kind: 'lora',
+      family: 'sd1',
+      title: 'Cyberpunk',
+      baseModel: 'SD 1.5',
+      triggerWords: ['cyberpunk', 'neon'],
+    },
     { folder: 'loras', name: 'xl-style.safetensors', kind: 'lora', family: 'sdxl' },
     { folder: 'loras', name: 'mystery.safetensors', kind: 'lora' },
-    { folder: 'checkpoints', name: 'dreamshaper_8.safetensors', kind: 'sd1', title: 'DreamShaper', embeddedClip: true, embeddedVae: true },
+    {
+      folder: 'checkpoints',
+      name: 'dreamshaper_8.safetensors',
+      kind: 'sd1',
+      title: 'DreamShaper',
+      embeddedClip: true,
+      embeddedVae: true,
+    },
   ];
 
   it('lists LoRAs, keeps the choice, and applies only those of the model’s family with their trigger words', async () => {
     const values = new Map<string, string>();
-    const store = { getValue: (key: string) => values.get(key) ?? null, setValue: (key: string, value: string) => values.set(key, value) };
+    const store = {
+      getValue: (key: string) => values.get(key) ?? null,
+      setValue: (key: string, value: string) => values.set(key, value),
+    };
     const service = new AvatarImageModelService(async () => withLoras, store);
     const state = await service.list();
-    expect(state.loras?.map((lora) => lora.name)).toEqual(['cyberpunk.safetensors', 'mystery.safetensors', 'xl-style.safetensors']);
+    expect(state.loras?.map((lora) => lora.name)).toEqual([
+      'cyberpunk.safetensors',
+      'mystery.safetensors',
+      'xl-style.safetensors',
+    ]);
     expect(state.modelFamilies?.['checkpoints:legacy.safetensors']).toBe('sd1');
-    expect(state.models.find((model) => model.id === 'checkpoints:dreamshaper_8.safetensors')?.name).toBe('DreamShaper');
+    expect(
+      state.models.find((model) => model.id === 'checkpoints:dreamshaper_8.safetensors')?.name,
+    ).toBe('DreamShaper');
     service.selectLoras([
       { name: 'cyberpunk.safetensors', strength: 0.7 },
       { name: 'xl-style.safetensors', strength: 5 },
@@ -157,11 +186,19 @@ describe('LoRAs', () => {
     ]);
 
     const sd1 = await restarted.resolve('checkpoints:legacy.safetensors');
-    expect(sd1.loras).toEqual([{ name: 'cyberpunk.safetensors', strength: 0.7, triggerWords: ['cyberpunk', 'neon'] }]);
+    expect(sd1.loras).toEqual([
+      { name: 'cyberpunk.safetensors', strength: 0.7, triggerWords: ['cyberpunk', 'neon'] },
+    ]);
     const graph = buildImageWorkflow(sd1, 'a character', 1);
     expect(graph.lora0).toEqual({
       class_type: 'LoraLoader',
-      inputs: { model: ['checkpoint', 0], clip: ['checkpoint', 1], lora_name: 'cyberpunk.safetensors', strength_model: 0.7, strength_clip: 0.7 },
+      inputs: {
+        model: ['checkpoint', 0],
+        clip: ['checkpoint', 1],
+        lora_name: 'cyberpunk.safetensors',
+        strength_model: 0.7,
+        strength_clip: 0.7,
+      },
     });
     expect(graph.sample.inputs.model).toEqual(['lora0', 0]);
     expect(graph.positive.inputs.clip).toEqual(['lora0', 1]);
@@ -172,7 +209,9 @@ describe('LoRAs', () => {
     const xl = await restarted.resolve('checkpoints:folder/variant.safetensors');
     expect(xl.loras).toEqual([{ name: 'xl-style.safetensors', strength: 2 }]);
     // Qwen has no LoRAs of its family here, so nothing changes.
-    expect((await restarted.resolve('diffusion_models:renamed-qwen.safetensors')).loras).toBeUndefined();
+    expect(
+      (await restarted.resolve('diffusion_models:renamed-qwen.safetensors')).loras,
+    ).toBeUndefined();
   });
 
   it('chains model-only LoRAs after a diffusion model loader', () => {
@@ -192,18 +231,45 @@ describe('LoRAs', () => {
       'x',
       1,
     );
-    expect(graph.lora0.inputs).toEqual({ model: ['model', 0], lora_name: 'a.safetensors', strength_model: 1 });
-    expect(graph.lora1.inputs).toEqual({ model: ['lora0', 0], lora_name: 'b.safetensors', strength_model: 0.5 });
+    expect(graph.lora0.inputs).toEqual({
+      model: ['model', 0],
+      lora_name: 'a.safetensors',
+      strength_model: 1,
+    });
+    expect(graph.lora1.inputs).toEqual({
+      model: ['lora0', 0],
+      lora_name: 'b.safetensors',
+      strength_model: 0.5,
+    });
     expect(graph.sampling.inputs.model).toEqual(['lora1', 0]);
   });
 
   it('runs a lightning LoRA at its own step count on a diffusion model only', () => {
-    const qwen = { id: 'q', name: 'Q', family: 'qwen-image-2.1' as const, model: 'q.safetensors', clip: 'c.safetensors', vae: 'v.safetensors' };
+    const qwen = {
+      id: 'q',
+      name: 'Q',
+      family: 'qwen-image-2.1' as const,
+      model: 'q.safetensors',
+      clip: 'c.safetensors',
+      vae: 'v.safetensors',
+    };
     const lightning = { name: 'qwen_image_2.1_lightning_4step.safetensors', strength: 1 };
     const samplerSteps = (graph: ReturnType<typeof buildImageWorkflow>) =>
-      Object.values(graph).filter((node) => node.class_type.startsWith('KSampler')).map((node) => node.inputs.steps);
+      Object.values(graph)
+        .filter((node) => node.class_type.startsWith('KSampler'))
+        .map((node) => node.inputs.steps);
     expect(samplerSteps(buildImageWorkflow({ ...qwen, loras: [lightning] }, 'x', 1))).toEqual([4]);
-    expect(samplerSteps(buildImageWorkflow({ ...qwen, loras: [{ ...lightning, strength: 0 }] }, 'x', 1))).not.toContain(4);
-    expect(samplerSteps(buildImageWorkflow({ ...qwen, loras: [{ name: 'style.safetensors', strength: 1 }] }, 'x', 1))).not.toContain(4);
+    expect(
+      samplerSteps(buildImageWorkflow({ ...qwen, loras: [{ ...lightning, strength: 0 }] }, 'x', 1)),
+    ).not.toContain(4);
+    expect(
+      samplerSteps(
+        buildImageWorkflow(
+          { ...qwen, loras: [{ name: 'style.safetensors', strength: 1 }] },
+          'x',
+          1,
+        ),
+      ),
+    ).not.toContain(4);
   });
 });

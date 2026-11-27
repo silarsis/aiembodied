@@ -1,6 +1,13 @@
 import type { IdleSettings } from '../rooms/idle-settings.js';
-import type { GeneratedObjectSummary, ObjectSettings, ObjectSettingsView } from '../rooms/object-settings.js';
-import type { RoomGenerationProgress, RoomGenerationResult } from '../rooms/room-generation-types.js';
+import type {
+  GeneratedObjectSummary,
+  ObjectSettings,
+  ObjectSettingsView,
+} from '../rooms/object-settings.js';
+import type {
+  RoomGenerationProgress,
+  RoomGenerationResult,
+} from '../rooms/room-generation-types.js';
 import type { IdlePickContext, IdlePickResult, RoomFile, RoomSummary } from '../rooms/types.js';
 
 export interface BackgroundSummary {

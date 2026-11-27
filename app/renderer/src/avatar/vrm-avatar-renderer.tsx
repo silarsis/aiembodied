@@ -139,9 +139,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   onBodyReady,
 }: VrmAvatarRendererProps) {
   const sceneExecutorsRef = useRef(sceneExecutors);
-  useEffect(() => { sceneExecutorsRef.current = sceneExecutors; }, [sceneExecutors]);
+  useEffect(() => {
+    sceneExecutorsRef.current = sceneExecutors;
+  }, [sceneExecutors]);
   const bodyReadyRef = useRef(onBodyReady);
-  useEffect(() => { bodyReadyRef.current = onBodyReady; }, [onBodyReady]);
+  useEffect(() => {
+    bodyReadyRef.current = onBodyReady;
+  }, [onBodyReady]);
   // Who is not on this screen right now. Kept in a ref too, for the load callbacks.
   const hiddenKey = (hiddenIds ?? []).slice().sort().join('|');
   const hiddenRef = useRef<Set<string>>(new Set());
@@ -154,7 +158,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const lastRoomIdRef = useRef<string | null>(null);
   const groundCallbackRef = useRef(onGroundPositionChange);
   const groundMeasuredRef = useRef(false);
-  useEffect(() => { groundCallbackRef.current = onGroundPositionChange; }, [onGroundPositionChange]);
+  useEffect(() => {
+    groundCallbackRef.current = onGroundPositionChange;
+  }, [onGroundPositionChange]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -167,7 +173,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const actorsRef = useRef<Map<string, AvatarActor> | null>(null);
   if (actorsRef.current === null) {
     actorsRef.current = new Map([
-      [DEFAULT_AVATAR_ID, new AvatarActor({ id: DEFAULT_AVATAR_ID, hasRoom: () => roomRef.current !== null })],
+      [
+        DEFAULT_AVATAR_ID,
+        new AvatarActor({ id: DEFAULT_AVATAR_ID, hasRoom: () => roomRef.current !== null }),
+      ],
     ]);
   }
   const actors = actorsRef.current;
@@ -179,12 +188,20 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const model = avatars ? echoEntry?.model : modelProp;
   const echoFrame = avatars ? (echoEntry?.frame ?? null) : frame;
   const extraEntries = useMemo(
-    () => (avatars ? avatars.filter((entry) => entry.id !== DEFAULT_AVATAR_ID).slice(0, MAX_STAGE_AVATARS - 1) : []),
+    () =>
+      avatars
+        ? avatars.filter((entry) => entry.id !== DEFAULT_AVATAR_ID).slice(0, MAX_STAGE_AVATARS - 1)
+        : [],
     [avatars],
   );
-  const extraKey = extraEntries.map((entry) => `${entry.id}:${entry.model?.id ?? ''}:${entry.model?.fileSha ?? ''}`).join('|');
+  const extraKey = extraEntries
+    .map((entry) => `${entry.id}:${entry.model?.id ?? ''}:${entry.model?.fileSha ?? ''}`)
+    .join('|');
   // One portrait frame per avatar on screen; the ones in another place take no room.
-  const stageUnits = Math.max(1, (echoHidden ? 0 : 1) + extraEntries.filter((entry) => !hiddenRef.current.has(entry.id)).length);
+  const stageUnits = Math.max(
+    1,
+    (echoHidden ? 0 : 1) + extraEntries.filter((entry) => !hiddenRef.current.has(entry.id)).length,
+  );
   /** Rest-pose bounds of each loaded body (before it is placed), by avatar id. */
   const boundsRef = useRef(new Map<string, ActorBounds>());
   const loadedModelRef = useRef(new Map<string, string>());
@@ -246,7 +263,16 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     const distance = camera.position.z - (min.z + max.z) / 2;
     const visibleWidth = 2 * distance * Math.tan((CAMERA_FOV * Math.PI) / 360) * camera.aspect;
     setLabelPositions(
-      ids.map((id, index) => ({ id, leftPct: 50 + (((offsets[index] ?? 0) + (boundsRef.current.get(id)?.center.x ?? 0) - camera.position.x) / visibleWidth) * 100 })),
+      ids.map((id, index) => ({
+        id,
+        leftPct:
+          50 +
+          (((offsets[index] ?? 0) +
+            (boundsRef.current.get(id)?.center.x ?? 0) -
+            camera.position.x) /
+            visibleWidth) *
+            100,
+      })),
     );
   };
 
@@ -270,10 +296,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
       const played = target.playWave();
       if (!played) {
-        console.warn('[vrm-avatar-renderer] Received greet_face cue but wave animation is unavailable.', {
-          source: event.source,
-          avatarId: event.avatarId,
-        });
+        console.warn(
+          '[vrm-avatar-renderer] Received greet_face cue but wave animation is unavailable.',
+          {
+            source: event.source,
+            avatarId: event.avatarId,
+          },
+        );
       } else {
         console.info('[vrm-avatar-renderer] greet_face cue triggered wave animation.', {
           source: event.source,
@@ -326,7 +355,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     try {
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to initialize WebGL renderer.';
+      const message =
+        error instanceof Error ? error.message : 'Failed to initialize WebGL renderer.';
       console.error('[vrm-avatar-renderer] unable to create WebGLRenderer', error);
       setStatus({ status: 'error', message });
       return;
@@ -353,7 +383,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     scene.add(keyLight);
     scene.add(fillLight);
 
-    const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1;
+    const pixelRatio = typeof window !== 'undefined' ? (window.devicePixelRatio ?? 1) : 1;
     canvas.width = Math.floor(VRM_CANVAS_WIDTH * pixelRatio);
     canvas.height = Math.floor(VRM_CANVAS_HEIGHT * pixelRatio);
     canvas.style.width = `${VRM_CANVAS_WIDTH}px`;
@@ -394,7 +424,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         // its limbs out of furniture, solved after pose blending (which rewrites limbs) and right
         // before the VRM update.
         frameActor.update(delta, now, {
-          afterMixer: frameActor === actor ? () => roomControllerRef.current?.step(delta) : undefined,
+          afterMixer:
+            frameActor === actor ? () => roomControllerRef.current?.step(delta) : undefined,
           beforeVrmUpdate:
             frameActor === actor
               ? () => roomControllerRef.current?.solveContact(delta)
@@ -406,7 +437,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       for (const frameActor of actors.values()) {
         frameActor.checkJump(roomControllerRef.current?.active ?? false);
       }
-      if (actor.getVrm() && !hiddenRef.current.has(DEFAULT_AVATAR_ID) && !groundMeasuredRef.current && !roomControllerRef.current?.active) {
+      if (
+        actor.getVrm() &&
+        !hiddenRef.current.has(DEFAULT_AVATAR_ID) &&
+        !groundMeasuredRef.current &&
+        !roomControllerRef.current?.active
+      ) {
         const fraction = renderedFootFraction(rendererInstance);
         if (fraction !== null) {
           groundMeasuredRef.current = true;
@@ -485,7 +521,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           isCancelled: () => cancelled,
           onBounds: (renderableBounds) => {
             if (renderableBounds) {
-              boundsRef.current.set(DEFAULT_AVATAR_ID, { size: renderableBounds.size.clone(), center: renderableBounds.center.clone() });
+              boundsRef.current.set(DEFAULT_AVATAR_ID, {
+                size: renderableBounds.size.clone(),
+                center: renderableBounds.center.clone(),
+              });
             } else {
               boundsRef.current.delete(DEFAULT_AVATAR_ID);
             }
@@ -514,7 +553,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         bodyReadyRef.current?.(DEFAULT_AVATAR_ID);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'Unable to load VRM model. Please check the console logs.';
+          error instanceof Error
+            ? error.message
+            : 'Unable to load VRM model. Please check the console logs.';
         console.error('[vrm-avatar-renderer] failed to load VRM model', error);
         unload();
         setStatus({ status: 'error', message });
@@ -526,14 +567,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     return () => {
       cancelled = true;
     };
-  }, [
-    actor,
-    model,
-    model?.id,
-    model?.fileSha,
-    rendererReady,
-    setStatus,
-  ]);
+  }, [actor, model, model?.id, model?.fileSha, rendererReady, setStatus]);
 
   useEffect(() => {
     actor.applyIdleOptions(idleOptions);
@@ -585,7 +619,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     if (!renderer || !canvas || !camera || roomRef.current) {
       return;
     }
-    const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1;
+    const pixelRatio = typeof window !== 'undefined' ? (window.devicePixelRatio ?? 1) : 1;
     const width = VRM_CANVAS_WIDTH * stageUnits;
     canvas.width = Math.floor(width * pixelRatio);
     canvas.height = Math.floor(VRM_CANVAS_HEIGHT * pixelRatio);
@@ -667,11 +701,15 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
             const controller = roomControllerRef.current;
             controller?.attachCompanion(entry.id, vrm.scene, vrm.humanoid, restSkeleton?.hips[1]);
             // The avatar's executor starts working in the room's env as soon as the avatar is there (not while it is on its way in).
-            if (!hiddenRef.current.has(entry.id)) sceneExecutorsRef.current?.(entry.id)?.setEnv(controller?.envFor(entry.id) ?? null);
+            if (!hiddenRef.current.has(entry.id))
+              sceneExecutorsRef.current?.(entry.id)?.setEnv(controller?.envFor(entry.id) ?? null);
           },
           onBounds: (bounds) => {
             if (bounds) {
-              boundsRef.current.set(entry.id, { size: bounds.size.clone(), center: bounds.center.clone() });
+              boundsRef.current.set(entry.id, {
+                size: bounds.size.clone(),
+                center: bounds.center.clone(),
+              });
             }
           },
         });
@@ -769,7 +807,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   }, [sceneExecutors, rendererReady, extraKey, hiddenKey]);
 
   // Names for the reasons avatars hear ("Sage is sitting on the sofa").
-  const stageNames = (avatars ?? []).map((entry) => `${entry.id}\u0000${entry.name ?? ''}`).join('\u0001');
+  const stageNames = (avatars ?? [])
+    .map((entry) => `${entry.id}\u0000${entry.name ?? ''}`)
+    .join('\u0001');
   useEffect(() => {
     const names: Record<string, string> = {};
     for (const entry of avatars ?? []) if (entry.name) names[entry.id] = entry.name;
@@ -784,15 +824,23 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
   const canvasElement = <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
   // The avatars on screen: the ones in another place are not drawn and have no label.
-  const shown = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)].filter((id) => !hiddenRef.current.has(id));
+  const shown = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)].filter(
+    (id) => !hiddenRef.current.has(id),
+  );
   const aloneEcho = shown.length === 1 && shown[0] === DEFAULT_AVATAR_ID;
   if (extraEntries.length === 0 || room || shown.length === 0 || aloneEcho) {
     // In a room the avatars stand in the scene; the 2D name labels don't apply.
     return canvasElement;
   }
   // Two or more avatars (or one that is not Echo): a small name label under each (the speaking one is marked).
-  const frames = new Map<string, VisemeFrame | null>([[DEFAULT_AVATAR_ID, echoFrame], ...extraEntries.map((entry) => [entry.id, entry.frame] as const)]);
-  const names = new Map<string, string>([[DEFAULT_AVATAR_ID, echoEntry?.name ?? 'Echo'], ...extraEntries.map((entry) => [entry.id, entry.name ?? entry.id] as const)]);
+  const frames = new Map<string, VisemeFrame | null>([
+    [DEFAULT_AVATAR_ID, echoFrame],
+    ...extraEntries.map((entry) => [entry.id, entry.frame] as const),
+  ]);
+  const names = new Map<string, string>([
+    [DEFAULT_AVATAR_ID, echoEntry?.name ?? 'Echo'],
+    ...extraEntries.map((entry) => [entry.id, entry.name ?? entry.id] as const),
+  ]);
   return (
     <>
       {canvasElement}
@@ -805,7 +853,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
               key={id}
               className="stageAvatarLabel"
               data-avatar-id={id}
-              data-speaking={frameOfAvatar !== null && frameOfAvatar.intensity > SPEAKING_INTENSITY ? 'true' : 'false'}
+              data-speaking={
+                frameOfAvatar !== null && frameOfAvatar.intensity > SPEAKING_INTENSITY
+                  ? 'true'
+                  : 'false'
+              }
               style={{ left: `${position?.leftPct ?? ((index + 0.5) / shown.length) * 100}%` }}
             >
               {names.get(id)}

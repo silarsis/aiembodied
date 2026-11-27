@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { PresenceBridge, PresenceUpdatePayload } from '../../../main/src/shared/presence/bridge-types.js';
+import type {
+  PresenceBridge,
+  PresenceUpdatePayload,
+} from '../../../main/src/shared/presence/bridge-types.js';
 import type { CameraBridge } from '../preload-api.js';
 
 export const PRESENCE_THROTTLE_MS = 1000;
 export const FACE_REPORT_MS = 5000;
 
 /** A greeting that bija sent for an avatar that walked in (it carries the avatar's id). It is not a sighting. */
-function isArrivalGreeting(event: { provider?: string; payload?: Record<string, unknown> | null }): boolean {
+function isArrivalGreeting(event: {
+  provider?: string;
+  payload?: Record<string, unknown> | null;
+}): boolean {
   return event.provider === 'arrival' || typeof event.payload?.avatarId === 'string';
 }
 
@@ -39,7 +45,8 @@ export function usePresenceReporter(
       const body = pending.current;
       pending.current = null;
       lastSentAt.current = Date.now();
-      if (body && apiRef.current) void Promise.resolve(apiRef.current.update(body)).catch(() => undefined);
+      if (body && apiRef.current)
+        void Promise.resolve(apiRef.current.update(body)).catch(() => undefined);
     }, wait);
   }, []);
 
@@ -58,7 +65,10 @@ export function usePresenceReporter(
     let lastFace = 0;
     const unsubscribe = camera.onDetection((event) => {
       if (event?.cue !== 'greet_face' || isArrivalGreeting(event)) return;
-      const at = typeof event.timestamp === 'number' && Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+      const at =
+        typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)
+          ? event.timestamp
+          : Date.now();
       if (at - lastFace < FACE_REPORT_MS) return;
       lastFace = at;
       send({ faceSeenAt: at });

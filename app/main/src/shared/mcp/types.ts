@@ -11,9 +11,7 @@ export interface JSONSchema {
   [key: string]: unknown;
 }
 
-
 export type MCPConnectionStatus = 'connected' | 'disconnected' | 'error' | 'needs-sign-in';
-
 
 // MCP Server Configuration (main process only: it holds decrypted secrets)
 export interface MCPServerConfig {
@@ -54,7 +52,6 @@ export interface MCPServerConfig {
   updatedAt: number;
 }
 
-
 // Input type for creating/updating servers (omits computed fields)
 export type MCPServerConfigInput = Omit<
   MCPServerConfig,
@@ -67,16 +64,17 @@ export type MCPServerConfigInput = Omit<
   | 'updatedAt'
 >;
 
-
 /**
  * What the renderer is allowed to see of a server: the same as MCPServerConfig but with every secret
  * (header tokens, program environment values) replaced by a flag or the names only.
  */
-export type MCPServerSummary = Omit<MCPServerConfig, 'sseAuthToken' | 'httpAuthToken' | 'stdioEnv'> & {
+export type MCPServerSummary = Omit<
+  MCPServerConfig,
+  'sseAuthToken' | 'httpAuthToken' | 'stdioEnv'
+> & {
   hasAuthToken: boolean; // A header token is stored (SSE or HTTP)
   stdioEnvKeys?: string[]; // Names of the environment variables, never their values
 };
-
 
 // MCP Tool Summary (for renderer)
 export interface MCPToolSummary {
@@ -95,7 +93,6 @@ export interface MCPToolSummary {
   readOnlyOverride: boolean | null;
 }
 
-
 // Tool execution result
 export interface MCPToolResult {
   success: boolean;
@@ -103,7 +100,6 @@ export interface MCPToolResult {
   error?: string;
   durationMs: number;
 }
-
 
 // Server connection result
 export interface MCPConnectionResult {

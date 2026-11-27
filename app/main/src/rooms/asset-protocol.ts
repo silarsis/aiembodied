@@ -8,7 +8,12 @@ import path from 'node:path';
 
 export const ASSET_SCHEME = 'aiembodied-asset';
 
-export const ASSET_SCHEME_PRIVILEGES = { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } as const;
+export const ASSET_SCHEME_PRIVILEGES = {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true,
+  corsEnabled: true,
+} as const;
 
 const MIME: Record<string, string> = {
   '.gltf': 'model/gltf+json',
@@ -64,7 +69,11 @@ export function registerAssetProtocol(protocol: ProtocolLike, root: string): voi
       const data = await readFile(file);
       return new Response(data, {
         status: 200,
-        headers: { 'Content-Type': mimeFor(file), 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' },
+        headers: {
+          'Content-Type': mimeFor(file),
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        },
       });
     } catch {
       return new Response('Not found', { status: 404 });

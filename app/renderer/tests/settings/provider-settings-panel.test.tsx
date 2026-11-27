@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../../../main/src/shared/config/provider-settings.js';
+import {
+  DEFAULT_PROVIDER_SETTINGS,
+  type ProviderSettings,
+} from '../../../main/src/shared/config/provider-settings.js';
 import type { LocalVoiceStatus } from '../../../main/src/shared/local-voice/types.js';
 import {
   ProviderSettingsPanel,
@@ -12,9 +15,21 @@ import { isTalkTapTarget } from '../../src/talk/tap-to-talk.js';
 import { describeServiceProblem } from '../../src/realtime/local-voice-client.js';
 
 const voiceStatus: LocalVoiceStatus = {
-  llm: { available: true, model: 'qwen-next-flash', baseUrl: 'http://127.0.0.1:1234/v1', provider: 'local' },
+  llm: {
+    available: true,
+    model: 'qwen-next-flash',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    provider: 'local',
+  },
   stt: { provider: 'local', available: true, model: 'qwen3-asr', url: 'http://127.0.0.1:1235/v1' },
-  tts: { provider: 'kokoro', available: true, ready: true, model: 'kokoro', voice: 'bf_lily', error: null },
+  tts: {
+    provider: 'kokoro',
+    available: true,
+    ready: true,
+    model: 'kokoro',
+    voice: 'bf_lily',
+    error: null,
+  },
   speech: {
     available: true,
     ready: true,
@@ -33,8 +48,18 @@ function defaults(): ProviderSettings {
 describe('ProviderSettingsPanel', () => {
   it('keeps the wake word and talk settings, saving only what changed', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    render(<ProviderSettingsPanel settings={defaults()} onSave={onSave}
-      renderLayout={({ devices, actions }) => <><section aria-label="Device controls">{devices}</section>{actions}</>} />);
+    render(
+      <ProviderSettingsPanel
+        settings={defaults()}
+        onSave={onSave}
+        renderLayout={({ devices, actions }) => (
+          <>
+            <section aria-label="Device controls">{devices}</section>
+            {actions}
+          </>
+        )}
+      />,
+    );
     // Models, voices and keys moved to the Models and servers pop-up.
     expect(screen.queryByLabelText('Voice')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Server URL')).not.toBeInTheDocument();
@@ -51,23 +76,38 @@ describe('provider settings helpers', () => {
     const draft = defaults();
     draft.stt.provider = 'openai';
     draft.speechServiceUrl = 'http://other:8192';
-    expect(diffProviderSettings(saved, draft)).toEqual({ stt: { provider: 'openai' }, speechServiceUrl: 'http://other:8192' });
+    expect(diffProviderSettings(saved, draft)).toEqual({
+      stt: { provider: 'openai' },
+      speechServiceUrl: 'http://other:8192',
+    });
     expect(diffProviderSettings(saved, defaults())).toEqual({});
   });
 
   it('only needs the speech service for the parts that use it', () => {
     const down = { ...voiceStatus.speech, available: false, ready: false };
-    expect(describeServiceProblem({ ...voiceStatus, speech: down })).toMatch(/Speech service is not running/);
+    expect(describeServiceProblem({ ...voiceStatus, speech: down })).toMatch(
+      /Speech service is not running/,
+    );
     expect(
       describeServiceProblem({
         ...voiceStatus,
         speech: down,
         stt: { provider: 'openai', available: true, model: 'gpt-4o-mini-transcribe', url: null },
-        tts: { provider: 'openai', available: true, ready: true, model: 'gpt-realtime-2.1-mini', voice: 'alloy', error: null },
+        tts: {
+          provider: 'openai',
+          available: true,
+          ready: true,
+          model: 'gpt-realtime-2.1-mini',
+          voice: 'alloy',
+          error: null,
+        },
       }),
     ).toBeNull();
     expect(
-      describeServiceProblem({ ...voiceStatus, llm: { ...voiceStatus.llm, provider: 'openai', available: false } }),
+      describeServiceProblem({
+        ...voiceStatus,
+        llm: { ...voiceStatus.llm, provider: 'openai', available: false },
+      }),
     ).toMatch(/OpenAI API key/);
   });
 
@@ -77,7 +117,11 @@ describe('provider settings helpers', () => {
       <ProviderSettingsPanel
         settings={defaults()}
         onSave={onSave}
-        pushToTalkStatus={{ shortcut: 'CommandOrControl+Shift+Space', registered: false, error: 'Taken by another app.' }}
+        pushToTalkStatus={{
+          shortcut: 'CommandOrControl+Shift+Space',
+          registered: false,
+          error: 'Taken by another app.',
+        }}
       />,
     );
 
@@ -92,16 +136,30 @@ describe('provider settings helpers', () => {
     fireEvent.click(screen.getByLabelText('Tap the conversation screen to talk'));
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ talk: { shortcut: 'Alt+F9', tapToTalk: false } }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ talk: { shortcut: 'Alt+F9', tapToTalk: false } }),
+    );
   });
 });
 
 describe('push-to-talk keys', () => {
-  const press = (code: string, modifiers: Partial<Record<'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey', boolean>> = {}) =>
-    acceleratorFromKeyEvent({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
+  const press = (
+    code: string,
+    modifiers: Partial<Record<'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey', boolean>> = {},
+  ) =>
+    acceleratorFromKeyEvent({
+      code,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      metaKey: false,
+      ...modifiers,
+    });
 
   it('turns key presses into Electron accelerators', () => {
-    expect(press('Space', { ctrlKey: true, shiftKey: true })).toEqual({ accelerator: 'Ctrl+Shift+Space' });
+    expect(press('Space', { ctrlKey: true, shiftKey: true })).toEqual({
+      accelerator: 'Ctrl+Shift+Space',
+    });
     expect(press('KeyT', { altKey: true })).toEqual({ accelerator: 'Alt+T' });
     expect(press('Digit1', { metaKey: true })).toEqual({ accelerator: 'Super+1' });
     expect(press('ArrowUp', { ctrlKey: true })).toEqual({ accelerator: 'Ctrl+Up' });
@@ -123,7 +181,8 @@ describe('push-to-talk keys', () => {
 
   it('starts talking on a tap anywhere except on a control', () => {
     const panel = document.createElement('section');
-    panel.innerHTML = '<div id="stage"><canvas></canvas><button><span id="inner">Go</span></button><select></select></div>';
+    panel.innerHTML =
+      '<div id="stage"><canvas></canvas><button><span id="inner">Go</span></button><select></select></div>';
     expect(isTalkTapTarget(panel.querySelector('canvas'))).toBe(true);
     expect(isTalkTapTarget(panel.querySelector('#stage'))).toBe(true);
     expect(isTalkTapTarget(panel.querySelector('#inner'))).toBe(false);

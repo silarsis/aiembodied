@@ -60,11 +60,16 @@ const DEFAULT_REST_AVATAR_ID = 'echo';
 const skeletons = new Map<string, AvatarRestSkeleton>();
 
 /** The skeleton of an avatar on screen (Echo's by default), or null before it loads (or when it could not be measured). */
-export function getAvatarRestSkeleton(avatarId: string = DEFAULT_REST_AVATAR_ID): AvatarRestSkeleton | null {
+export function getAvatarRestSkeleton(
+  avatarId: string = DEFAULT_REST_AVATAR_ID,
+): AvatarRestSkeleton | null {
   return skeletons.get(avatarId) ?? null;
 }
 
-export function setAvatarRestSkeleton(skeleton: AvatarRestSkeleton | null, avatarId: string = DEFAULT_REST_AVATAR_ID): void {
+export function setAvatarRestSkeleton(
+  skeleton: AvatarRestSkeleton | null,
+  avatarId: string = DEFAULT_REST_AVATAR_ID,
+): void {
   if (skeleton) {
     skeletons.set(avatarId, skeleton);
   } else {

@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
-import { VISIBLE_MARGIN, objectViewPoints, roomCamera, viewFrustum, visibleObjects } from '../../src/rooms/room-visibility.js';
+import {
+  VISIBLE_MARGIN,
+  objectViewPoints,
+  roomCamera,
+  viewFrustum,
+  visibleObjects,
+} from '../../src/rooms/room-visibility.js';
 import { builtInRoom } from './fixtures.js';
 
-const ids = (room: RoomFile, aspect: number) => visibleObjects(room, aspect).map((object) => object.id);
+const ids = (room: RoomFile, aspect: number) =>
+  visibleObjects(room, aspect).map((object) => object.id);
 
 describe('visibleObjects', () => {
   const reading = builtInRoom('reading-room');
@@ -23,7 +30,10 @@ describe('visibleObjects', () => {
   });
 
   it('needs the sit or stand spot in view too, not only the object', () => {
-    const points = objectViewPoints(reading, reading.objects.find((object) => object.id === 'sofa') ?? reading.objects[0]);
+    const points = objectViewPoints(
+      reading,
+      reading.objects.find((object) => object.id === 'sofa') ?? reading.objects[0],
+    );
     expect(points).toHaveLength(3); // middle, sit spot, stand spot
     // Move the sofa's stand spot (0, 0, 1 in front of it) out of view by turning the camera away.
     const away: RoomFile = { ...reading, camera: { ...reading.camera, target: [0, 1, 5] } };
@@ -35,7 +45,9 @@ describe('visibleObjects', () => {
     const frustum = viewFrustum(camera);
     const plain = viewFrustum(camera, 0);
     // A point at 98 % of the half height straight ahead is in the picture but inside the margin.
-    const ahead = camera.position.clone().add(camera.getWorldDirection(camera.position.clone()).multiplyScalar(3));
+    const ahead = camera.position
+      .clone()
+      .add(camera.getWorldDirection(camera.position.clone()).multiplyScalar(3));
     const up = camera.up.clone().applyQuaternion(camera.quaternion);
     const half = Math.tan((camera.fov / 2) * (Math.PI / 180)) * 3;
     const edge = ahead.clone().add(up.multiplyScalar(half * 0.98));
@@ -45,6 +57,8 @@ describe('visibleObjects', () => {
   });
 
   it('works for the studio flat', () => {
-    expect(ids(builtInRoom('studio-flat'), 16 / 9)).toEqual(expect.arrayContaining(['desk', 'desk-chair']));
+    expect(ids(builtInRoom('studio-flat'), 16 / 9)).toEqual(
+      expect.arrayContaining(['desk', 'desk-chair']),
+    );
   });
 });

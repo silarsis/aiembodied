@@ -1,6 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
-import type { AvatarMotionChunkEvent, AvatarMotionStreamRequest, AvatarMotionStreamResult } from '../../src/avatar/types.js';
+import type {
+  AvatarMotionChunkEvent,
+  AvatarMotionStreamRequest,
+  AvatarMotionStreamResult,
+} from '../../src/avatar/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import type { PlanWorld, StreamEvent } from '../../src/rooms/scene-actions.js';
 import {
@@ -66,10 +70,15 @@ class FakeBridge implements SceneBridge {
   requests: AvatarMotionStreamRequest[] = [];
   cancelled: string[] = [];
   played: PlayedChunk[] = [];
-  resolvers = new Map<string, { resolve: (r: AvatarMotionStreamResult) => void; reject: (e: unknown) => void }>();
+  resolvers = new Map<
+    string,
+    { resolve: (r: AvatarMotionStreamResult) => void; reject: (e: unknown) => void }
+  >();
   streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult> {
     this.requests.push(request);
-    return new Promise((resolve, reject) => this.resolvers.set(request.streamId, { resolve, reject }));
+    return new Promise((resolve, reject) =>
+      this.resolvers.set(request.streamId, { resolve, reject }),
+    );
   }
   cancelMotion(streamId: string): void {
     this.cancelled.push(streamId);
@@ -79,15 +88,33 @@ class FakeBridge implements SceneBridge {
     this.played.push({ chunk, hooks });
   }
   finish(streamId: string, chunks: number, session?: string): void {
-    this.resolvers.get(streamId)?.resolve({ streamId, chunks, firstChunkMs: 10, totalMs: 20, ...(session ? { session } : {}) });
+    this.resolvers.get(streamId)?.resolve({
+      streamId,
+      chunks,
+      firstChunkMs: 10,
+      totalMs: 20,
+      ...(session ? { session } : {}),
+    });
   }
   get last(): AvatarMotionStreamRequest {
     return this.requests[this.requests.length - 1]!;
   }
 }
 
-function chunk(streamId: string, index: number, endPose?: AvatarMotionChunkEvent['endPose']): AvatarMotionChunkEvent {
-  return { streamId, index, start: index * 2, name: `c${index}`, duration: 2, data: '', ...(endPose ? { endPose } : {}) };
+function chunk(
+  streamId: string,
+  index: number,
+  endPose?: AvatarMotionChunkEvent['endPose'],
+): AvatarMotionChunkEvent {
+  return {
+    streamId,
+    index,
+    start: index * 2,
+    name: `c${index}`,
+    duration: 2,
+    data: '',
+    ...(endPose ? { endPose } : {}),
+  };
 }
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -106,7 +133,9 @@ async function playStream(
   session?: string,
 ): Promise<ClipEndAction> {
   const before = bridge.played.length;
-  endPoses.forEach((pose, index) => expect(executor.handleChunk(chunk(streamId, index, pose))).toBe(true));
+  endPoses.forEach((pose, index) =>
+    expect(executor.handleChunk(chunk(streamId, index, pose))).toBe(true),
+  );
   bridge.finish(streamId, endPoses.length, session);
   await tick();
   const mine = bridge.played.slice(before);
@@ -153,7 +182,10 @@ describe('SceneActionExecutor', () => {
     expect(bridge.requests).toHaveLength(1);
 
     const end = bridge.requests[0]!.path!.points.at(-1)!;
-    const verdict = await playStream(executor, bridge, 's1', [undefined, { root: end, height: 0.95, heading: -1.5 }]);
+    const verdict = await playStream(executor, bridge, 's1', [
+      undefined,
+      { root: end, height: 0.95, heading: -1.5 },
+    ]);
     expect(verdict).toBe('release');
     // Baked at the pelvis end pose, in world space: start frame is (0,-0.3) facing +Z.
     const [wx, wz] = motionToWorld({ origin: { x: 0, z: -0.3, yaw: 0 }, scale: 1 }, end[0], end[1]);
@@ -161,7 +193,9 @@ describe('SceneActionExecutor', () => {
 
     await until(() => bridge.requests.length === 2);
     expect(bridge.requests[1]!.prompt).toBe('a person turns to look at something');
-    expect(activity.filter((a) => a.type === 'start').map((a) => (a as { label: string }).label)).toEqual(['bookshelf', 'sofa']);
+    expect(
+      activity.filter((a) => a.type === 'start').map((a) => (a as { label: string }).label),
+    ).toEqual(['bookshelf', 'sofa']);
   });
 
   it('does not bake until the last chunk has finished playing', async () => {
@@ -194,10 +228,19 @@ describe('SceneActionExecutor', () => {
   it('sits, holds, and keeps the session, then inserts a stand before walking', async () => {
     executor.submit([{ kind: 'sit', objectId: 'sofa' }]);
     await until(() => bridge.requests.length === 1);
-    const verdict = await playStream(executor, bridge, 's1', [undefined, { root: [0, -0.4], height: 0.58, heading: 0 }], 'sess-1');
+    const verdict = await playStream(
+      executor,
+      bridge,
+      's1',
+      [undefined, { root: [0, -0.4], height: 0.58, heading: 0 }],
+      'sess-1',
+    );
     expect(verdict).toBe('hold');
     await until(() => !executor.busy);
-    expect(executor.getState()).toMatchObject({ posture: 'seated', seat: { objectId: 'sofa', session: 'sess-1' } });
+    expect(executor.getState()).toMatchObject({
+      posture: 'seated',
+      seat: { objectId: 'sofa', session: 'sess-1' },
+    });
     expect(env.calls).toEqual([]); // no bake while seated
 
     executor.submit([{ kind: 'go', objectId: 'bookshelf' }]);
@@ -205,7 +248,9 @@ describe('SceneActionExecutor', () => {
     const stand = bridge.requests[1]!;
     expect(stand.prompt).toBe('a person stands up from the chair');
     expect(stand.continueFrom).toBe('sess-1');
-    const standVerdict = await playStream(executor, bridge, 's2', [{ root: [0, 0.4], height: 0.95, heading: 3.1 }]);
+    const standVerdict = await playStream(executor, bridge, 's2', [
+      { root: [0, 0.4], height: 0.95, heading: 3.1 },
+    ]);
     expect(standVerdict).toBe('release');
     expect(executor.getState().posture).toBe('standing');
     expect(env.calls).toHaveLength(1);
@@ -218,7 +263,9 @@ describe('SceneActionExecutor', () => {
   it('treats a sit without a session as standing', async () => {
     executor.submit([{ kind: 'sit', objectId: 'sofa' }]);
     await until(() => bridge.requests.length === 1);
-    const verdict = await playStream(executor, bridge, 's1', [{ root: [0, -0.4], height: 0.58, heading: 0 }]);
+    const verdict = await playStream(executor, bridge, 's1', [
+      { root: [0, -0.4], height: 0.58, heading: 0 },
+    ]);
     expect(verdict).toBe('release');
     expect(executor.getState().posture).toBe('standing');
   });
@@ -261,7 +308,10 @@ describe('SceneActionExecutor', () => {
     const table = room.objects.find((o) => o.id === 'coffee-table')!;
     env.pose = { x: table.position[0], z: table.position[2] + 0.8, yaw: Math.PI };
     // Pretend the mug is already in hand.
-    (executor as unknown as { state: unknown }).state = { posture: 'standing', held: { objectId: 'mug', hand: 'right' } };
+    (executor as unknown as { state: unknown }).state = {
+      posture: 'standing',
+      held: { objectId: 'mug', hand: 'right' },
+    };
     executor.submit([{ kind: 'put', objectId: 'mug', surfaceId: 'coffee-table' }]);
     await until(() => bridge.requests.length === 1);
     // No chunk ever starts playing here, so the leftover event fires when the stream ends.
@@ -282,7 +332,11 @@ describe('SceneActionExecutor', () => {
     ]);
     await until(() => bridge.requests.length === 1);
     expect(bridge.requests[0]!.prompt).toBe('a person turns to look at something');
-    expect(activity).toContainEqual({ type: 'skipped', label: 'sit rug', reason: 'rug cannot be sat on' });
+    expect(activity).toContainEqual({
+      type: 'skipped',
+      label: 'sit rug',
+      reason: 'rug cannot be sat on',
+    });
   });
 
   it('survives a failing motion stream and plays what arrived', async () => {
@@ -292,7 +346,9 @@ describe('SceneActionExecutor', () => {
     ]);
     await until(() => bridge.requests.length === 1);
     bridge.cancelled.length = 0;
-    (bridge as unknown as { resolvers: Map<string, { reject: (e: unknown) => void }> }).resolvers.get('s1')!.reject(new Error('boom'));
+    (bridge as unknown as { resolvers: Map<string, { reject: (e: unknown) => void }> }).resolvers
+      .get('s1')!
+      .reject(new Error('boom'));
     await until(() => bridge.requests.length === 2);
     expect(activity).toContainEqual({ type: 'failed', id: 's1', message: 'boom' });
     expect(executor.getState().posture).toBe('standing');
@@ -310,7 +366,13 @@ describe('SceneActionExecutor', () => {
     (executor as unknown as { state: unknown }).state = {
       posture: 'seated',
       held: null,
-      seat: { objectId: 'sofa', session: 'x', frame: env.planWorld().frame, approach: [0, 0, 0], facing: 0 },
+      seat: {
+        objectId: 'sofa',
+        session: 'x',
+        frame: env.planWorld().frame,
+        approach: [0, 0, 0],
+        facing: 0,
+      },
     };
     executor.submitGesture('wave', gesture);
     await tick();
@@ -346,7 +408,13 @@ describe('SceneActionExecutor', () => {
       (executor as unknown as { state: unknown }).state = {
         posture: 'seated',
         held: null,
-        seat: { objectId: 'sofa', session: 'x', frame: env.planWorld().frame, approach: [0, 0, 0], facing: 0 },
+        seat: {
+          objectId: 'sofa',
+          session: 'x',
+          frame: env.planWorld().frame,
+          approach: [0, 0, 0],
+          facing: 0,
+        },
       };
       const leave = vi.fn();
       executor.submitAfter('leave', leave);
@@ -396,7 +464,13 @@ describe('SceneActionExecutor', () => {
       await until(() => bridge.requests.length === 1);
       executor.interrupt();
       expect(bridge.cancelled).toEqual([]);
-      const verdict = await playStream(executor, bridge, 's1', [{ root: [0, -0.4], height: 0.58, heading: 0 }], 'sess');
+      const verdict = await playStream(
+        executor,
+        bridge,
+        's1',
+        [{ root: [0, -0.4], height: 0.58, heading: 0 }],
+        'sess',
+      );
       expect(verdict).toBe('hold');
       await tick();
       expect(bridge.requests).toHaveLength(1);
@@ -406,7 +480,13 @@ describe('SceneActionExecutor', () => {
     it('does not stand a seated avatar up', async () => {
       executor.submit([{ kind: 'sit', objectId: 'sofa' }]);
       await until(() => bridge.requests.length === 1);
-      await playStream(executor, bridge, 's1', [{ root: [0, -0.4], height: 0.58, heading: 0 }], 'sess');
+      await playStream(
+        executor,
+        bridge,
+        's1',
+        [{ root: [0, -0.4], height: 0.58, heading: 0 }],
+        'sess',
+      );
       executor.interrupt();
       expect(executor.getState().posture).toBe('seated');
     });
@@ -459,7 +539,10 @@ describe('SceneActionExecutor', () => {
     it('cancels streams, puts the held object back and forgets the state when the room changes', async () => {
       executor.submit([{ kind: 'go', objectId: 'bookshelf' }]);
       await until(() => bridge.requests.length === 1);
-      (executor as unknown as { state: unknown }).state = { posture: 'standing', held: { objectId: 'mug', hand: 'left' } };
+      (executor as unknown as { state: unknown }).state = {
+        posture: 'standing',
+        held: { objectId: 'mug', hand: 'left' },
+      };
       executor.setEnv(new FakeEnv());
       expect(bridge.cancelled).toEqual(['s1']);
       expect(env.calls).toContain('release');
@@ -492,7 +575,15 @@ describe('SceneActionExecutor', () => {
       planWorld(): PlanWorld {
         return {
           ...super.planWorld(),
-          seatGeometry: () => ({ seatTopY: 0.45, frontEdge: 0.2, depth: 0.6, backRest: null, footFloorY: 0, position: [0, 0.45, 0], facing: 0 }),
+          seatGeometry: () => ({
+            seatTopY: 0.45,
+            frontEdge: 0.2,
+            depth: 0.6,
+            backRest: null,
+            footFloorY: 0,
+            position: [0, 0.45, 0],
+            facing: 0,
+          }),
           restLegLengths: { thigh: 0.42, shin: 0.46, ankleHeight: 0.08 },
         };
       }
@@ -500,7 +591,14 @@ describe('SceneActionExecutor', () => {
         return [0, 0.55, -0.4];
       }
       miss(end: ContactReport['end'], objectId: string | null = 'sofa'): ContactReport {
-        const report: ContactReport = { end, objectId, distance: 0.12, seconds: 0.3, actual: [0.1, 0.49, -0.1], animated: [0.1, 0.52, 0.1] };
+        const report: ContactReport = {
+          end,
+          objectId,
+          distance: 0.12,
+          seconds: 0.3,
+          actual: [0.1, 0.49, -0.1],
+          animated: [0.1, 0.52, 0.1],
+        };
         this.misses = [report];
         for (const listener of [...this.listeners]) listener(report);
         return report;
@@ -513,7 +611,12 @@ describe('SceneActionExecutor', () => {
     beforeEach(() => {
       let n = 0;
       clock = 1_000_000;
-      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, settleRetries: () => true });
+      executor = new SceneActionExecutor({
+        newId: () => `s${(n += 1)}`,
+        setTimer: (fn) => setTimeout(fn, 0),
+        now: () => clock,
+        settleRetries: () => true,
+      });
       contactEnv = new ContactEnv();
       executor.setBridge(bridge);
       executor.setEnv(contactEnv);
@@ -606,7 +709,12 @@ describe('SceneActionExecutor', () => {
 
     it('plays no settle stream when the retry switch is off', async () => {
       let n = 0;
-      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, settleRetries: () => false });
+      executor = new SceneActionExecutor({
+        newId: () => `s${(n += 1)}`,
+        setTimer: (fn) => setTimeout(fn, 0),
+        now: () => clock,
+        settleRetries: () => false,
+      });
       executor.setBridge(bridge);
       executor.setEnv(contactEnv);
       await sitDown();
@@ -625,7 +733,14 @@ describe('SceneActionExecutor', () => {
         lines.push({ avatar, kind, data: build() });
       });
       let n = 0;
-      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, avatarId: 'rex', trace, tracing: () => on });
+      executor = new SceneActionExecutor({
+        newId: () => `s${(n += 1)}`,
+        setTimer: (fn) => setTimeout(fn, 0),
+        now: () => clock,
+        avatarId: 'rex',
+        trace,
+        tracing: () => on,
+      });
       executor.setBridge(bridge);
       executor.setEnv(contactEnv);
       await sitDown();
@@ -635,7 +750,15 @@ describe('SceneActionExecutor', () => {
 
       on = true;
       let m = 0;
-      executor = new SceneActionExecutor({ newId: () => `t${(m += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, avatarId: 'rex', trace, tracing: () => on, settleRetries: () => true });
+      executor = new SceneActionExecutor({
+        newId: () => `t${(m += 1)}`,
+        setTimer: (fn) => setTimeout(fn, 0),
+        now: () => clock,
+        avatarId: 'rex',
+        trace,
+        tracing: () => on,
+        settleRetries: () => true,
+      });
       contactEnv = new ContactEnv();
       executor.setBridge(bridge);
       executor.setEnv(contactEnv);
@@ -645,11 +768,23 @@ describe('SceneActionExecutor', () => {
       await playStream(executor, bridge, 't1', [undefined, hold], 'sess-2');
       await until(() => bridge.requests.length === 3);
       const kinds = lines.map((line) => line.kind);
-      for (const kind of ['plan', 'stream.start', 'stream.chunk', 'stream.done', 'stream.final', 'settle.check', 'settle.repair']) expect(kinds).toContain(kind);
+      for (const kind of [
+        'plan',
+        'stream.start',
+        'stream.chunk',
+        'stream.done',
+        'stream.final',
+        'settle.check',
+        'settle.repair',
+      ])
+        expect(kinds).toContain(kind);
       expect(lines.every((line) => line.avatar === 'rex')).toBe(true);
       const plan = lines.find((line) => line.kind === 'plan' && line.data.planType === 'stream')!;
       expect(plan.data.request).toBeDefined();
-      expect(plan.data.sitWorld).toMatchObject({ objectId: 'sofa', restHipsHeight: expect.any(Number) });
+      expect(plan.data.sitWorld).toMatchObject({
+        objectId: 'sofa',
+        restHipsHeight: expect.any(Number),
+      });
       expect(lines.find((line) => line.kind === 'settle.repair')!.data.observed).toBeDefined();
     });
 
@@ -669,7 +804,11 @@ describe('SceneActionExecutor', () => {
       await sitDown();
       // Hands are never settled; a foot with no target and a short miss is left alone.
       contactEnv.miss('leftHand');
-      const planned = (executor as unknown as { streams: Map<string, { planned: { request: { targets: Array<{ joint?: string }> } } }> }).streams.get('s1')!;
+      const planned = (
+        executor as unknown as {
+          streams: Map<string, { planned: { request: { targets: Array<{ joint?: string }> } } }>;
+        }
+      ).streams.get('s1')!;
       planned.planned.request.targets = planned.planned.request.targets.filter((t) => !t.joint);
       contactEnv.miss('leftFoot');
       await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');

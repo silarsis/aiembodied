@@ -11,7 +11,15 @@ const snapshot: GpuMemorySnapshot = {
   sharedTotal: 16 * GB,
   used: { dedicated: 95 * GB, shared: 3 * GB },
   servers: [
-    { id: 'local-llm', name: 'Language model', port: 1234, pid: 1, processName: 'llama-server', dedicated: 80 * GB, shared: 1 * GB },
+    {
+      id: 'local-llm',
+      name: 'Language model',
+      port: 1234,
+      pid: 1,
+      processName: 'llama-server',
+      dedicated: 80 * GB,
+      shared: 1 * GB,
+    },
     { id: 'local-comfy', name: 'ComfyUI', port: 8188, dedicated: 0, shared: 0 },
   ],
   others: [{ pid: 3, name: 'UnslothStudio', dedicated: 10 * GB, shared: 0 }],
@@ -41,7 +49,9 @@ describe('GpuMemoryView', () => {
   });
 
   it('explains when there are no numbers', () => {
-    render(<GpuMemoryView snapshot={{ ...snapshot, supported: false, reason: 'Only on Windows.' }} />);
+    render(
+      <GpuMemoryView snapshot={{ ...snapshot, supported: false, reason: 'Only on Windows.' }} />,
+    );
     expect(screen.getByText('Only on Windows.')).toBeTruthy();
   });
 });

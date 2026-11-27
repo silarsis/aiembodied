@@ -197,7 +197,9 @@ describe('avatar studio', () => {
     expect(mocks.setAvatarImageModel).not.toHaveBeenCalled();
     expect(screen.getByRole('option', { name: 'Custom XL' })).toBeEnabled();
     expect(screen.getByText(/Qwen-Image 2.1 then draws the side and back/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Avatar description'), { target: { value: 'An explorer' } });
+    fireEvent.change(screen.getByLabelText('Avatar description'), {
+      target: { value: 'An explorer' },
+    });
     expect(screen.getByRole('button', { name: 'Generate image' })).toBeEnabled();
   });
 
@@ -216,7 +218,9 @@ describe('avatar studio', () => {
     });
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
     await settle();
-    fireEvent.change(screen.getByLabelText('Avatar description'), { target: { value: 'An explorer' } });
+    fireEvent.change(screen.getByLabelText('Avatar description'), {
+      target: { value: 'An explorer' },
+    });
     expect(screen.getByText(/needs Qwen-Image 2.1 on the image server/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Generate image' })).toBeDisabled();
   });
@@ -251,11 +255,15 @@ describe('avatar studio', () => {
     const extra = mocks as unknown as Record<string, unknown>;
     extra.removeAvatarBackground = vi.fn(async (id: string) => {
       jobs.current = jobs.current.map((job) =>
-        job.jobId === id ? { ...job, backgroundRemoved: true, previewDataUrl: 'data:image/png;base64,CUT' } : job,
+        job.jobId === id
+          ? { ...job, backgroundRemoved: true, previewDataUrl: 'data:image/png;base64,CUT' }
+          : job,
       );
     });
     extra.restoreAvatarBackground = vi.fn(async (id: string) => {
-      jobs.current = jobs.current.map((job) => (job.jobId === id ? { ...job, backgroundRemoved: false } : job));
+      jobs.current = jobs.current.map((job) =>
+        job.jobId === id ? { ...job, backgroundRemoved: false } : job,
+      );
     });
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
     await settle();
@@ -274,13 +282,18 @@ describe('avatar studio', () => {
 
   it('shows the side and back views beside the front, and redraws them on request', async () => {
     const { api, mocks } = createApi([
-      take('job-1', { views: { left: 'data:image/png;base64,SIDE', back: 'data:image/png;base64,BACK' } }),
+      take('job-1', {
+        views: { left: 'data:image/png;base64,SIDE', back: 'data:image/png;base64,BACK' },
+      }),
     ]);
     const extra = mocks as unknown as Record<string, unknown>;
     extra.redrawAvatarViews = vi.fn(async () => undefined);
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
     await settle();
-    expect(screen.getByRole('img', { name: 'Take 1 side view' })).toHaveAttribute('src', 'data:image/png;base64,SIDE');
+    expect(screen.getByRole('img', { name: 'Take 1 side view' })).toHaveAttribute(
+      'src',
+      'data:image/png;base64,SIDE',
+    );
     expect(screen.getByRole('img', { name: 'Take 1 back view' })).toBeInTheDocument();
 
     // The enlarged image steps through front, side and back with arrows (buttons and keys).
@@ -304,13 +317,18 @@ describe('avatar studio', () => {
 
   it('says why a take has no side and back views', async () => {
     const { api, mocks } = createApi([
-      take('job-1', { views: {}, viewsMessage: 'Side and back views need Qwen-Image 2.1 in ComfyUI.' }),
+      take('job-1', {
+        views: {},
+        viewsMessage: 'Side and back views need Qwen-Image 2.1 in ComfyUI.',
+      }),
     ]);
     (mocks as unknown as Record<string, unknown>).redrawAvatarViews = vi.fn();
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
     await settle();
     expect(screen.queryByRole('img', { name: 'Take 1 side view' })).not.toBeInTheDocument();
-    expect(screen.getByText('Side and back views need Qwen-Image 2.1 in ComfyUI.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Side and back views need Qwen-Image 2.1 in ComfyUI.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Draw side and back views' })).toBeInTheDocument();
   });
 

@@ -273,7 +273,9 @@ describe('ConfigManager', () => {
 
     await manager.load();
 
-    await expect(manager.setSecret('realtimeApiKey', 'next')).rejects.toThrow('Secret store is not configured');
+    await expect(manager.setSecret('realtimeApiKey', 'next')).rejects.toThrow(
+      'Secret store is not configured',
+    );
   });
 
   it('tests realtime api keys using the configured OpenAI client', async () => {
@@ -324,7 +326,10 @@ describe('ConfigManager', () => {
     await manager.load();
 
     const result = await manager.testSecret('realtimeApiKey');
-    expect(result).toEqual({ ok: false, message: 'Secret testing is unavailable: no OpenAI client configured.' });
+    expect(result).toEqual({
+      ok: false,
+      message: 'Secret testing is unavailable: no OpenAI client configured.',
+    });
   });
 
   it('defaults the conversation to the local LLM and lets env or a saved choice override it', async () => {
@@ -336,10 +341,20 @@ describe('ConfigManager', () => {
       localModel: 'qwen-next-flash',
     });
     expect(defaults.providers.speechServiceUrl).toBe('http://127.0.0.1:8192');
-    expect(defaults.webSearch).toEqual({ provider: 'searxng', searxngUrl: undefined, braveApiKey: undefined });
-    expect(defaults.providers.tts).toMatchObject({ provider: 'kokoro', kokoroVoice: '', openaiVoice: 'alloy' });
+    expect(defaults.webSearch).toEqual({
+      provider: 'searxng',
+      searxngUrl: undefined,
+      braveApiKey: undefined,
+    });
+    expect(defaults.providers.tts).toMatchObject({
+      provider: 'kokoro',
+      kokoroVoice: '',
+      openaiVoice: 'alloy',
+    });
 
-    const fromEnv = await new ConfigManager({ env: { CONVERSATION_BACKEND: 'OpenAI' } as NodeJS.ProcessEnv }).load();
+    const fromEnv = await new ConfigManager({
+      env: { CONVERSATION_BACKEND: 'OpenAI' } as NodeJS.ProcessEnv,
+    }).load();
     expect(fromEnv.conversationBackend).toBe('openai');
 
     await expect(
@@ -364,7 +379,11 @@ describe('ConfigManager', () => {
     const preferencesStore = new InMemoryPreferencesStore();
     await preferencesStore.save({ audioInputDeviceId: 'mic-1' });
     const manager = new ConfigManager({
-      env: { LOCAL_LLM_MODEL: 'env-model', OPENAI_TTS_VOICE: 'nova', MOTION_BACKEND: 'kimodo' } as NodeJS.ProcessEnv,
+      env: {
+        LOCAL_LLM_MODEL: 'env-model',
+        OPENAI_TTS_VOICE: 'nova',
+        MOTION_BACKEND: 'kimodo',
+      } as NodeJS.ProcessEnv,
       preferencesStore,
     });
     const loaded = await manager.load();
@@ -376,7 +395,11 @@ describe('ConfigManager', () => {
       tts: { provider: 'openai', openaiVoice: 'coral' },
       llm: { provider: 'bogus' as never },
     });
-    expect(next.providers.tts).toMatchObject({ provider: 'openai', openaiVoice: 'coral', openaiModel: 'gpt-realtime-2.1-mini' });
+    expect(next.providers.tts).toMatchObject({
+      provider: 'openai',
+      openaiVoice: 'coral',
+      openaiModel: 'gpt-realtime-2.1-mini',
+    });
     expect(next.providers.llm.provider).toBe('local');
     expect(next.providers.llm.localModel).toBe('env-model');
 
@@ -386,16 +409,24 @@ describe('ConfigManager', () => {
 
     // Saving device preferences keeps the provider settings.
     await manager.setAudioDevicePreferences({ audioInputDeviceId: 'mic-2' });
-    expect((await preferencesStore.load()).providers).toEqual({ tts: { provider: 'openai', openaiVoice: 'coral' } });
+    expect((await preferencesStore.load()).providers).toEqual({
+      tts: { provider: 'openai', openaiVoice: 'coral' },
+    });
 
-    const reloaded = await new ConfigManager({ env: {} as NodeJS.ProcessEnv, preferencesStore }).load();
+    const reloaded = await new ConfigManager({
+      env: {} as NodeJS.ProcessEnv,
+      preferencesStore,
+    }).load();
     expect(reloaded.providers.tts.provider).toBe('openai');
     expect(reloaded.providers.tts.openaiVoice).toBe('coral');
   });
 
   it('defaults push-to-talk to Ctrl+Shift+Space with tap-to-talk on, overridable by env and Settings', async () => {
     const defaults = await new ConfigManager({ env: {} as NodeJS.ProcessEnv }).load();
-    expect(defaults.providers.talk).toEqual({ shortcut: 'CommandOrControl+Shift+Space', tapToTalk: true });
+    expect(defaults.providers.talk).toEqual({
+      shortcut: 'CommandOrControl+Shift+Space',
+      tapToTalk: true,
+    });
 
     const fromEnv = await new ConfigManager({
       env: { PUSH_TO_TALK_SHORTCUT: '', TAP_TO_TALK: 'off' } as NodeJS.ProcessEnv,
@@ -405,15 +436,22 @@ describe('ConfigManager', () => {
     const preferencesStore = new InMemoryPreferencesStore();
     const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv, preferencesStore });
     await manager.load();
-    const next = await manager.setProviderSettings({ talk: { shortcut: ' Alt+F9 ', tapToTalk: false } });
+    const next = await manager.setProviderSettings({
+      talk: { shortcut: ' Alt+F9 ', tapToTalk: false },
+    });
     expect(next.providers.talk).toEqual({ shortcut: 'Alt+F9', tapToTalk: false });
-    expect((await preferencesStore.load()).providers).toEqual({ talk: { shortcut: 'Alt+F9', tapToTalk: false } });
+    expect((await preferencesStore.load()).providers).toEqual({
+      talk: { shortcut: 'Alt+F9', tapToTalk: false },
+    });
   });
 
   it('reads the key from OPENAI_API_KEY and removes a saved key on request', async () => {
     const fromEnv = new ConfigManager({ env: { OPENAI_API_KEY: 'sk-env' } as NodeJS.ProcessEnv });
     await fromEnv.load();
-    expect(fromEnv.getRendererConfig()).toMatchObject({ hasRealtimeApiKey: true, realtimeApiKeyFromEnv: true });
+    expect(fromEnv.getRendererConfig()).toMatchObject({
+      hasRealtimeApiKey: true,
+      realtimeApiKeyFromEnv: true,
+    });
 
     const secretStore = new InMemorySecretStore();
     await secretStore.setSecret('REALTIME_API_KEY', 'sk-saved');
@@ -431,20 +469,39 @@ describe('ConfigManager', () => {
       preferencesStore,
     });
     const loaded = await manager.load();
-    expect(loaded.wakeWord).toMatchObject({ model: 'alexa', keywordLabel: 'Alexa', threshold: 0.6 });
+    expect(loaded.wakeWord).toMatchObject({
+      model: 'alexa',
+      keywordLabel: 'Alexa',
+      threshold: 0.6,
+    });
     expect(loaded.providers.wakeWord).toEqual({ model: 'alexa', threshold: 0.6 });
 
     const trained = path.resolve('wake-words/hey_computer.onnx');
-    const next = await manager.setProviderSettings({ wakeWord: { model: trained, threshold: 0.7 } });
-    expect(next.wakeWord).toMatchObject({ model: trained, keywordLabel: 'Hey Computer', threshold: 0.7 });
+    const next = await manager.setProviderSettings({
+      wakeWord: { model: trained, threshold: 0.7 },
+    });
+    expect(next.wakeWord).toMatchObject({
+      model: trained,
+      keywordLabel: 'Hey Computer',
+      threshold: 0.7,
+    });
     expect(manager.getConfig().wakeWord.model).toBe(trained);
-    expect((await preferencesStore.load()).providers).toEqual({ wakeWord: { model: trained, threshold: 0.7 } });
+    expect((await preferencesStore.load()).providers).toEqual({
+      wakeWord: { model: trained, threshold: 0.7 },
+    });
 
     await manager.setProviderSettings({ wakeWord: { model: 'Hey Mycroft' } });
-    expect(manager.getConfig().wakeWord).toMatchObject({ model: 'hey_mycroft', keywordLabel: 'Hey Mycroft' });
+    expect(manager.getConfig().wakeWord).toMatchObject({
+      model: 'hey_mycroft',
+      keywordLabel: 'Hey Mycroft',
+    });
 
     await manager.setProviderSettings({ wakeWord: { model: 'bumblebee', threshold: 3 } });
-    expect(manager.getConfig().wakeWord).toMatchObject({ model: 'alexa', keywordLabel: 'Alexa', threshold: 0.7 });
+    expect(manager.getConfig().wakeWord).toMatchObject({
+      model: 'alexa',
+      keywordLabel: 'Alexa',
+      threshold: 0.7,
+    });
     expect(manager.getConfig().providers.wakeWord.model).toBe('alexa');
   });
 });

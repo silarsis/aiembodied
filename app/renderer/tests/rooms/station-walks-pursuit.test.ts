@@ -3,7 +3,12 @@ import type { StationBody, StationUseEvent } from '../../../main/src/shared/stat
 import type { AvatarState, PlanWorld, SceneAction } from '../../src/rooms/scene-actions.js';
 import type { PlanBuilder } from '../../src/rooms/scene-executor.js';
 import { READ_REPEAT_MS } from '../../src/rooms/station-body.js';
-import { handleStationUse, resetStationBodies, type StationWalkDeps, type StationWalkExecutor } from '../../src/rooms/station-walks.js';
+import {
+  handleStationUse,
+  resetStationBodies,
+  type StationWalkDeps,
+  type StationWalkExecutor,
+} from '../../src/rooms/station-walks.js';
 import { builtInRoom } from './fixtures.js';
 
 const reading = builtInRoom('reading-room');
@@ -24,7 +29,10 @@ function setup(initial: AvatarState = { posture: 'standing', held: null }, room 
   const executor: StationWalkExecutor = {
     world: () => world,
     getState: () => state.current,
-    submit: (actions: SceneAction[]) => void log.push(`submit ${actions.map((a) => a.kind + ('objectId' in a ? `:${a.objectId}` : '')).join(',')}`),
+    submit: (actions: SceneAction[]) =>
+      void log.push(
+        `submit ${actions.map((a) => a.kind + ('objectId' in a ? `:${a.objectId}` : '')).join(',')}`,
+      ),
     submitAfter: (label, run) => {
       log.push(`after ${label}`);
       queue.push(() => void run());
@@ -33,7 +41,9 @@ function setup(initial: AvatarState = { posture: 'standing', held: null }, room 
       log.push(`plan ${label}`);
       queue.push(() => {
         const actions = build(world, state.current);
-        log.push(`  -> ${actions.map((a) => a.kind + ('objectId' in a ? `:${a.objectId}` : '') + ('surfaceId' in a ? `@${a.surfaceId}` : '')).join(',') || 'nothing'}`);
+        log.push(
+          `  -> ${actions.map((a) => a.kind + ('objectId' in a ? `:${a.objectId}` : '') + ('surfaceId' in a ? `@${a.surfaceId}` : '')).join(',') || 'nothing'}`,
+        );
       });
     },
   };
@@ -51,7 +61,10 @@ function setup(initial: AvatarState = { posture: 'standing', held: null }, room 
   return { deps, executor, log, state, drain };
 }
 
-function event(phase: StationUseEvent['phase'], extra: Partial<StationUseEvent> = {}): StationUseEvent {
+function event(
+  phase: StationUseEvent['phase'],
+  extra: Partial<StationUseEvent> = {},
+): StationUseEvent {
   return {
     useId: 'use-1',
     avatarId: 'echo',
@@ -65,7 +78,8 @@ function event(phase: StationUseEvent['phase'], extra: Partial<StationUseEvent> 
     ...extra,
   };
 }
-const step = (name: string, extra: Partial<StationUseEvent> = {}) => event('activity', { step: name, activity: `phase 2 text for ${name}`, ...extra });
+const step = (name: string, extra: Partial<StationUseEvent> = {}) =>
+  event('activity', { step: name, activity: `phase 2 text for ${name}`, ...extra });
 
 describe('reading with a body (pursuit)', () => {
   beforeEach(() => {
@@ -80,7 +94,11 @@ describe('reading with a body (pursuit)', () => {
   it('start: walks to the shelf and looks at it, then answers arrived', () => {
     const { deps, log, drain } = setup();
     handleStationUse(event('start'), deps);
-    expect(log).toEqual(['submit go:bookshelf', 'after reach the bookshelf', 'submit look:bookshelf']);
+    expect(log).toEqual([
+      'submit go:bookshelf',
+      'after reach the bookshelf',
+      'submit look:bookshelf',
+    ]);
     drain();
     expect(deps.arrived).toHaveBeenCalledWith('use-1');
   });
@@ -90,7 +108,9 @@ describe('reading with a body (pursuit)', () => {
     handleStationUse(step('want'), deps);
     handleStationUse(step('act'), deps);
     drain();
-    expect(log.filter((line) => line.startsWith('gesture'))).toEqual(['gesture {move:runs a finger along the book spines}']);
+    expect(log.filter((line) => line.startsWith('gesture'))).toEqual([
+      'gesture {move:runs a finger along the book spines}',
+    ]);
     vi.advanceTimersByTime(10_000);
     handleStationUse(step('choose'), deps);
     drain();
@@ -128,7 +148,10 @@ describe('reading with a body (pursuit)', () => {
   });
 
   it('note while seated plays nothing; the next step stops the repeat', () => {
-    const { deps, state, drain } = setup({ posture: 'seated', held: { objectId: 'book', hand: 'right' } });
+    const { deps, state, drain } = setup({
+      posture: 'seated',
+      held: { objectId: 'book', hand: 'right' },
+    });
     handleStationUse(step('note'), deps);
     drain();
     expect(deps.gesture).not.toHaveBeenCalled();
@@ -144,7 +167,10 @@ describe('reading with a body (pursuit)', () => {
   });
 
   it('another item while seated: nothing to do, the avatar stays seated with the book', () => {
-    const { deps, log, drain } = setup({ posture: 'seated', held: { objectId: 'book', hand: 'right' } });
+    const { deps, log, drain } = setup({
+      posture: 'seated',
+      held: { objectId: 'book', hand: 'right' },
+    });
     handleStationUse(step('act'), deps);
     handleStationUse(step('choose'), deps);
     drain();
@@ -153,26 +179,38 @@ describe('reading with a body (pursuit)', () => {
   });
 
   it('end: stands up and puts the book back on the shelf', () => {
-    const { deps, log, drain } = setup({ posture: 'seated', held: { objectId: 'book', hand: 'right' } });
+    const { deps, log, drain } = setup({
+      posture: 'seated',
+      held: { objectId: 'book', hand: 'right' },
+    });
     handleStationUse(event('end', { ok: true }), deps);
     drain();
     expect(log).toEqual(['plan put the book back', '  -> stand,put:book@bookshelf']);
   });
 
   it('end of a cut-short session also comes back to the spot', () => {
-    const { deps, log, drain } = setup({ posture: 'seated', held: { objectId: 'book', hand: 'right' } });
+    const { deps, log, drain } = setup({
+      posture: 'seated',
+      held: { objectId: 'book', hand: 'right' },
+    });
     handleStationUse(event('end', { ok: false }), deps);
     drain();
     expect(log[1]).toBe('  -> stand,put:book@bookshelf,come');
   });
 
   it('a room without the book or the armchair degrades to gestures at the shelf', () => {
-    const bare = { ...reading, objects: reading.objects.filter((o) => o.id !== 'book' && o.id !== 'armchair') };
+    const bare = {
+      ...reading,
+      objects: reading.objects.filter((o) => o.id !== 'book' && o.id !== 'armchair'),
+    };
     const { deps, log, drain } = setup(undefined, bare);
     handleStationUse(step('consume'), deps);
     drain();
     expect(log.filter((line) => line.startsWith('  ->'))).toEqual(['  -> nothing', '  -> nothing']);
-    expect(deps.gesture).toHaveBeenCalledWith('{move:reads a book, turning a page now and then}', 'echo');
+    expect(deps.gesture).toHaveBeenCalledWith(
+      '{move:reads a book, turning a page now and then}',
+      'echo',
+    );
   });
 
   it('an event without a body plan behaves as in phase 2 (gesture where it stands)', () => {
@@ -190,6 +228,10 @@ describe('voice tool use keeps phase 1 behaviour', () => {
     handleStationUse(tool, deps);
     handleStationUse({ ...tool, phase: 'end', ok: true }, deps);
     drain();
-    expect(log).toEqual(['submit go:bookshelf', 'after reach the bookshelf', 'gesture {move:pulls a book from the shelf and reads}']);
+    expect(log).toEqual([
+      'submit go:bookshelf',
+      'after reach the bookshelf',
+      'gesture {move:pulls a book from the shelf and reads}',
+    ]);
   });
 });

@@ -1,7 +1,6 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 import type { PlaceKind } from './place-kind.js';
 
-
 export interface Place {
   id: string;
   name: string;
@@ -29,7 +28,6 @@ export interface Place {
   /** Only in snapshots: Kevin closed this desktop room (the kill switch), so it takes nobody. */
   closed?: boolean;
 }
-
 
 export interface PlacesSnapshot {
   places: Place[];

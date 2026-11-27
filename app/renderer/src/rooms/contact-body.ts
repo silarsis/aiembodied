@@ -108,7 +108,8 @@ export interface ContactPhysics {
   surfaceAt(x: number, z: number, fromY: number, objectId?: string): number | null;
 }
 
-export type LimbEnd = 'leftFoot' | 'rightFoot' | 'leftKnee' | 'rightKnee' | 'leftHand' | 'rightHand';
+export type LimbEnd =
+  'leftFoot' | 'rightFoot' | 'leftKnee' | 'rightKnee' | 'leftHand' | 'rightHand';
 
 export interface ContactMiss {
   end: LimbEnd;
@@ -205,7 +206,12 @@ interface HeadBone {
 }
 
 function newHeadBone(bone: THREE.Object3D): HeadBone {
-  return { bone, anim: new THREE.Quaternion().copy(bone.quaternion), written: new THREE.Quaternion(), hasWritten: false };
+  return {
+    bone,
+    anim: new THREE.Quaternion().copy(bone.quaternion),
+    written: new THREE.Quaternion(),
+    hasWritten: false,
+  };
 }
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -240,7 +246,10 @@ function capsuleShape(halfHeight: number, radius: number): RAPIER.Capsule {
   const key = `${Math.round(halfHeight * 1000)}:${Math.round(radius * 1000)}`;
   let shape = shapes.get(key);
   if (!shape) {
-    shape = new RAPIER.Capsule(Math.round(halfHeight * 1000) / 1000, Math.round(radius * 1000) / 1000);
+    shape = new RAPIER.Capsule(
+      Math.round(halfHeight * 1000) / 1000,
+      Math.round(radius * 1000) / 1000,
+    );
     shapes.set(key, shape);
   }
   return shape;
@@ -302,10 +311,14 @@ export class ContactBody {
     const headBone = bone('head');
     this.neck = neckBone ? newHeadBone(neckBone) : null;
     this.head = headBone ? newHeadBone(headBone) : null;
-    this.pelvis = this.hips ? this.bodySegment(this.hips, bone('spine'), CAPSULE_RADII.pelvis) : null;
+    this.pelvis = this.hips
+      ? this.bodySegment(this.hips, bone('spine'), CAPSULE_RADII.pelvis)
+      : null;
     if (this.pelvis) this.pelvis.name = 'pelvis';
     const chestBone = bone('chest') ?? bone('spine');
-    this.chest = chestBone ? this.bodySegment(chestBone, bone('neck') ?? bone('head'), CAPSULE_RADII.chest) : null;
+    this.chest = chestBone
+      ? this.bodySegment(chestBone, bone('neck') ?? bone('head'), CAPSULE_RADII.chest)
+      : null;
     if (this.chest) this.chest.name = 'chest';
     for (const side of ['left', 'right'] as const) {
       this.addLimb(humanoid, side, true);
@@ -320,9 +333,21 @@ export class ContactBody {
       ['rightHand', false, 'right', 2],
     ];
     for (const [end, isLeg, side, joint] of labels) {
-      const limb = this.limbs.find((candidate) => candidate.isLeg === isLeg && candidate.side === side);
+      const limb = this.limbs.find(
+        (candidate) => candidate.isLeg === isLeg && candidate.side === side,
+      );
       if (limb) {
-        this.ends.push({ end, limb, joint, animated: new THREE.Vector3(), distance: 0, seconds: 0, reported: false, blocker: null, missing: false });
+        this.ends.push({
+          end,
+          limb,
+          joint,
+          animated: new THREE.Vector3(),
+          distance: 0,
+          seconds: 0,
+          reported: false,
+          blocker: null,
+          missing: false,
+        });
       }
     }
   }
@@ -432,12 +457,19 @@ export class ContactBody {
       },
       segments,
       joints,
-      misses: this.misses().map((miss) => ({ end: miss.end, objectId: miss.objectId, distance: r3(miss.distance), seconds: r3(miss.seconds) })),
+      misses: this.misses().map((miss) => ({
+        end: miss.end,
+        objectId: miss.objectId,
+        distance: r3(miss.distance),
+        seconds: r3(miss.seconds),
+      })),
     };
   }
 
   /** Where a limb end is now and where the animation put it this frame (world metres); null without that bone. */
-  endPositions(end: LimbEnd): { actual: [number, number, number]; animated: [number, number, number] } | null {
+  endPositions(
+    end: LimbEnd,
+  ): { actual: [number, number, number]; animated: [number, number, number] } | null {
     const track = this.ends.find((candidate) => candidate.end === end);
     if (!track) return null;
     const actual = positionOf(nth(track.limb.joints, track.joint).bone, TMP_A);
@@ -496,18 +528,21 @@ export class ContactBody {
 
     this.measureGrounded(physics);
     this.liftPelvis(rig.scene, physics, exclude, dt);
-    for (const track of this.ends) positionOf(nth(track.limb.joints, track.joint).bone, track.animated);
+    for (const track of this.ends)
+      positionOf(nth(track.limb.joints, track.joint).bone, track.animated);
 
     if (physics) {
       for (let pass = 0; pass < SOLVER_ITERATIONS; pass += 1) {
         // Planting every pass: pushing a thigh out of the cushion lifts the foot, and the foot must go back down.
         for (const limb of this.limbs) if (limb.isLeg) this.plantFoot(limb, physics, exclude);
         let any = false;
-        for (const limb of this.limbs) any = this.solveLimb(limb, physics, exclude, pass === 0) || any;
+        for (const limb of this.limbs)
+          any = this.solveLimb(limb, physics, exclude, pass === 0) || any;
         if (!any) break;
       }
       // Grounded feet get the last word: the legs may end up a hair into furniture rather than a foot floating.
-      for (const limb of this.limbs) if (limb.isLeg && limb.groundHeight !== null) this.plantFoot(limb, physics, exclude);
+      for (const limb of this.limbs)
+        if (limb.isLeg && limb.groundHeight !== null) this.plantFoot(limb, physics, exclude);
     }
 
     this.writeBlended(dt);
@@ -531,7 +566,13 @@ export class ContactBody {
 
   // ---- construction ---------------------------------------------------------------------------
 
-  private newSegment(joint: number, start: THREE.Object3D, end: THREE.Object3D | null, radius: number, fallbackLength = 0): Segment {
+  private newSegment(
+    joint: number,
+    start: THREE.Object3D,
+    end: THREE.Object3D | null,
+    radius: number,
+    fallbackLength = 0,
+  ): Segment {
     return {
       joint,
       start,
@@ -552,7 +593,11 @@ export class ContactBody {
     };
   }
 
-  private bodySegment(start: THREE.Object3D, end: THREE.Object3D | null, radius: number): Segment | null {
+  private bodySegment(
+    start: THREE.Object3D,
+    end: THREE.Object3D | null,
+    radius: number,
+  ): Segment | null {
     return end ? this.newSegment(-1, start, end, radius) : null;
   }
 
@@ -566,8 +611,16 @@ export class ContactBody {
     // The hinge axes assume the normalised rest pose: legs down, arms out along +/-X, model facing +Z.
     const hingeAxis = isLeg ? X_AXIS : side === 'left' ? NEG_Y_AXIS : Y_AXIS;
     const kinds: Array<[JointKind, number, number]> = isLeg
-      ? [['cone', HIP_CONE, HIP_MAX_OFFSET], ['hinge', KNEE_MAX_FLEXION, KNEE_MAX_OFFSET], ['cone', ANKLE_CONE, ANKLE_MAX_OFFSET]]
-      : [['cone', SHOULDER_CONE, SHOULDER_MAX_OFFSET], ['hinge', KNEE_MAX_FLEXION, ELBOW_MAX_OFFSET], ['cone', WRIST_CONE, WRIST_MAX_OFFSET]];
+      ? [
+          ['cone', HIP_CONE, HIP_MAX_OFFSET],
+          ['hinge', KNEE_MAX_FLEXION, KNEE_MAX_OFFSET],
+          ['cone', ANKLE_CONE, ANKLE_MAX_OFFSET],
+        ]
+      : [
+          ['cone', SHOULDER_CONE, SHOULDER_MAX_OFFSET],
+          ['hinge', KNEE_MAX_FLEXION, ELBOW_MAX_OFFSET],
+          ['cone', WRIST_CONE, WRIST_MAX_OFFSET],
+        ];
     const joints = bones.map((bone, i): Joint => ({
       bone,
       kind: nth(kinds, i)[0],
@@ -584,11 +637,19 @@ export class ContactBody {
     const radii = isLeg
       ? [CAPSULE_RADII.thigh, CAPSULE_RADII.shin, CAPSULE_RADII.foot]
       : [CAPSULE_RADII.upperArm, CAPSULE_RADII.forearm, CAPSULE_RADII.hand];
-    const toes = isLeg ? humanoid.getNormalizedBoneNode(`${side}Toes`) : humanoid.getNormalizedBoneNode(`${side}MiddleProximal`);
+    const toes = isLeg
+      ? humanoid.getNormalizedBoneNode(`${side}Toes`)
+      : humanoid.getNormalizedBoneNode(`${side}MiddleProximal`);
     const segments = [
       this.newSegment(0, nth(bones, 0), nth(bones, 1), nth(radii, 0)),
       this.newSegment(1, nth(bones, 1), nth(bones, 2), nth(radii, 1)),
-      this.newSegment(2, nth(bones, 2), toes ?? null, nth(radii, 2), isLeg ? FOOT_LENGTH : HAND_LENGTH),
+      this.newSegment(
+        2,
+        nth(bones, 2),
+        toes ?? null,
+        nth(radii, 2),
+        isLeg ? FOOT_LENGTH : HAND_LENGTH,
+      ),
     ];
     const segmentNames = isLeg ? ['Thigh', 'Shin', 'Foot'] : ['UpperArm', 'Forearm', 'Hand'];
     segments.forEach((segment, i) => {
@@ -596,7 +657,17 @@ export class ContactBody {
     });
     nth(segments, 2).isFoot = isLeg;
     nth(segments, 2).isHand = !isLeg;
-    const limb: Limb = { side, isLeg, joints, segments, blocker: null, hit: false, refused: false, groundHeight: null, groundAt: new THREE.Vector3() };
+    const limb: Limb = {
+      side,
+      isLeg,
+      joints,
+      segments,
+      blocker: null,
+      hit: false,
+      refused: false,
+      groundHeight: null,
+      groundAt: new THREE.Vector3(),
+    };
     for (const segment of segments) segment.limb = limb;
     this.limbs.push(limb);
   }
@@ -608,7 +679,8 @@ export class ContactBody {
     for (const limb of this.limbs) {
       for (const joint of limb.joints) {
         // A bone the mixer rewrote holds the new animated pose; one it left alone still holds our last write.
-        if (!(joint.hasWritten && joint.bone.quaternion.equals(joint.written))) joint.anim.copy(joint.bone.quaternion);
+        if (!(joint.hasWritten && joint.bone.quaternion.equals(joint.written)))
+          joint.anim.copy(joint.bone.quaternion);
         else joint.bone.quaternion.copy(joint.anim);
         joint.hasWritten = false;
       }
@@ -619,7 +691,8 @@ export class ContactBody {
   private restoreHead(): void {
     for (const part of [this.neck, this.head]) {
       if (!part) continue;
-      if (!(part.hasWritten && part.bone.quaternion.equals(part.written))) part.anim.copy(part.bone.quaternion);
+      if (!(part.hasWritten && part.bone.quaternion.equals(part.written)))
+        part.anim.copy(part.bone.quaternion);
       else part.bone.quaternion.copy(part.anim);
       part.hasWritten = false;
     }
@@ -639,24 +712,36 @@ export class ContactBody {
     const first = neck ?? head;
     const hipsW = worldQuaternionOf(this.hips, TMP_QW);
     const headW = worldQuaternionOf(head.bone, TMP_PW);
-    const parentW = worldQuaternionOf(first.bone, TMP_QL).multiply(TMP_Q2.copy(first.anim).invert());
+    const parentW = worldQuaternionOf(first.bone, TMP_QL).multiply(
+      TMP_Q2.copy(first.anim).invert(),
+    );
     // Head orientation relative to the hips, and the correction needed in the hips' frame.
     const inverseHips = TMP_Q1.copy(hipsW).invert();
     const combined = TMP_Q3.copy(inverseHips).multiply(headW);
-    const excess = headExcessCorrection(combined, HEAD_YAW_LIMIT, HEAD_PITCH_LIMIT, HEAD_ROLL_LIMIT, TMP_Q4, this.headSeen);
+    const excess = headExcessCorrection(
+      combined,
+      HEAD_YAW_LIMIT,
+      HEAD_PITCH_LIMIT,
+      HEAD_ROLL_LIMIT,
+      TMP_Q4,
+      this.headSeen,
+    );
     // Move it into the frame the neck is corrected in (its parent, the chest): parent^-1 * hips * c * hips^-1 * parent.
     const toParent = inverseHips.multiply(parentW);
     TMP_Q4.premultiply(TMP_Q2.copy(toParent).invert()).multiply(toParent);
     // Same sign as last frame's, so a correction near 180 degrees does not flip direction between frames.
     if (!excess) TMP_Q4.identity();
-    else if (TMP_Q4.dot(this.headCorrection) < 0) TMP_Q4.set(-TMP_Q4.x, -TMP_Q4.y, -TMP_Q4.z, -TMP_Q4.w);
+    else if (TMP_Q4.dot(this.headCorrection) < 0)
+      TMP_Q4.set(-TMP_Q4.x, -TMP_Q4.y, -TMP_Q4.z, -TMP_Q4.w);
     this.headCorrection.copy(TMP_Q4);
     const wanted = active && excess;
     this.headWeight = wanted
       ? easeTowards(this.headWeight, 1, dt, HEAD_SETTLE_IN_TAU)
       : easeTowards(this.headWeight, 0, dt, HEAD_SETTLE_OUT_TAU);
     const toDeg = (r: number) => Math.round(((r * 180) / Math.PI) * 10) / 10;
-    this.headAnimDeg = excess ? [toDeg(this.headSeen.yaw), toDeg(this.headSeen.pitch), toDeg(this.headSeen.roll)] : [0, 0, 0];
+    this.headAnimDeg = excess
+      ? [toDeg(this.headSeen.yaw), toDeg(this.headSeen.pitch), toDeg(this.headSeen.roll)]
+      : [0, 0, 0];
     this.headReset = excess && this.headSeen.reset;
     if (this.headWeight === 0 || !excess) {
       if (!excess) this.headWeight = 0;
@@ -697,7 +782,11 @@ export class ContactBody {
       this.endOf(segment, segment.p1);
       const halfHeight = segment.p0.distanceTo(segment.p1) / 2;
       const radius = segment.radius * factor;
-      if (!segment.shape || Math.abs(halfHeight - segment.halfHeight) > 0.0005 || Math.abs(radius - segment.shapeRadius) > 0.0005) {
+      if (
+        !segment.shape ||
+        Math.abs(halfHeight - segment.halfHeight) > 0.0005 ||
+        Math.abs(radius - segment.shapeRadius) > 0.0005
+      ) {
         segment.shape = capsuleShape(halfHeight, radius);
         segment.halfHeight = halfHeight;
         segment.shapeRadius = radius;
@@ -730,7 +819,12 @@ export class ContactBody {
   }
 
   /** Deepest overlap of a segment's capsule, with the whole capsule shifted down by `dy`. */
-  private probe(segment: Segment, physics: ContactPhysics, exclude: readonly string[], dy = 0): PenetrationHit | null {
+  private probe(
+    segment: Segment,
+    physics: ContactPhysics,
+    exclude: readonly string[],
+    dy = 0,
+  ): PenetrationHit | null {
     if (!segment.shape) return null;
     TMP_DIR.subVectors(segment.p1, segment.p0);
     const length = TMP_DIR.length();
@@ -747,7 +841,12 @@ export class ContactBody {
    * measured as if the current lift were not applied, so the target does not depend on the lift itself and
    * falls back to zero once the contact is gone.
    */
-  private liftPelvis(scene: THREE.Object3D, physics: ContactPhysics | null, exclude: readonly string[], dt: number): void {
+  private liftPelvis(
+    scene: THREE.Object3D,
+    physics: ContactPhysics | null,
+    exclude: readonly string[],
+    dt: number,
+  ): void {
     let target = 0;
     if (physics) {
       const dy = this.lift.value;
@@ -792,7 +891,10 @@ export class ContactBody {
       const surface = physics.surfaceAt(TMP_C.x, TMP_C.z, TMP_C.y + PLANT_RAY_LIFT * this.factor);
       if (surface === null) continue;
       const height = TMP_C.y - surface;
-      if (height >= GROUNDED_MIN_HEIGHT * this.factor && height <= GROUNDED_MAX_HEIGHT * this.factor) {
+      if (
+        height >= GROUNDED_MIN_HEIGHT * this.factor &&
+        height <= GROUNDED_MAX_HEIGHT * this.factor
+      ) {
         limb.groundHeight = height;
         limb.groundAt.copy(TMP_C);
       }
@@ -822,7 +924,15 @@ export class ContactBody {
     }
     // The knee keeps bending the way the animation bent it.
     TMP_E.subVectors(TMP_B, TMP_A);
-    solveTwoBone(TMP_A, TMP_D, TMP_E, TMP_A.distanceTo(TMP_B), TMP_B.distanceTo(TMP_C), TMP_F, TMP_G);
+    solveTwoBone(
+      TMP_A,
+      TMP_D,
+      TMP_E,
+      TMP_A.distanceTo(TMP_B),
+      TMP_B.distanceTo(TMP_C),
+      TMP_F,
+      TMP_G,
+    );
     // Seated: a foot is not worth a thigh in the cushion. Where the pin would swing the thigh into the seat,
     // the thigh keeps its clearance and the foot floats (recorded as a miss).
     if (this.seatId !== null && this.thighWouldSink(limb, physics, exclude, TMP_A, TMP_F)) {
@@ -843,7 +953,13 @@ export class ContactBody {
   }
 
   /** True when a thigh from `hip` to `knee` (same length and radius as the real one) would sink into the seat being sat on. */
-  private thighWouldSink(limb: Limb, physics: ContactPhysics, exclude: readonly string[], hip: THREE.Vector3, knee: THREE.Vector3): boolean {
+  private thighWouldSink(
+    limb: Limb,
+    physics: ContactPhysics,
+    exclude: readonly string[],
+    hip: THREE.Vector3,
+    knee: THREE.Vector3,
+  ): boolean {
     const thigh = limb.segments[0];
     if (!thigh?.shape) return false;
     TMP_N.subVectors(knee, hip);
@@ -857,7 +973,12 @@ export class ContactBody {
   }
 
   /** One pass over a limb's segments; true when any needed a correction. */
-  private solveLimb(limb: Limb, physics: ContactPhysics, exclude: readonly string[], first: boolean): boolean {
+  private solveLimb(
+    limb: Limb,
+    physics: ContactPhysics,
+    exclude: readonly string[],
+    first: boolean,
+  ): boolean {
     let any = false;
     for (const segment of limb.segments) {
       this.pose(segment);
@@ -867,7 +988,12 @@ export class ContactBody {
       if (segment.isFoot && hit.objectId === null && hit.depth <= segment.shapeRadius) continue;
       // The rounded hip end of a thigh sitting on its seat is the buttocks resting, which rotating the hip
       // cannot change (seat fit places the pelvis): leave it, or the hip would be driven to its cap for nothing.
-      if (limb.isLeg && segment.joint === 0 && this.seatId !== null && hit.objectId === this.seatId) {
+      if (
+        limb.isLeg &&
+        segment.joint === 0 &&
+        this.seatId !== null &&
+        hit.objectId === this.seatId
+      ) {
         TMP_DIR.subVectors(segment.p1, segment.p0).normalize();
         TMP_B.set(hit.point.x, hit.point.y, hit.point.z).sub(segment.p0);
         if (TMP_B.dot(TMP_DIR) < segment.shapeRadius) continue;
@@ -908,7 +1034,10 @@ export class ContactBody {
     const hips = this.hips;
     const hip = limb.joints[0]?.bone;
     if (!hips || !hip) return false;
-    const side = TMP_A.subVectors(positionOf(hip, TMP_A), positionOf(hips, TMP_B)).dot(this.lateral) >= 0 ? 1 : -1;
+    const side =
+      TMP_A.subVectors(positionOf(hip, TMP_A), positionOf(hips, TMP_B)).dot(this.lateral) >= 0
+        ? 1
+        : -1;
     const along = normal.dot(this.lateral) * side;
     const horizontal = Math.hypot(normal.x, normal.z);
     if (horizontal < 0.3) return false; // mostly vertical: a lift, not an abduction
@@ -917,7 +1046,10 @@ export class ContactBody {
 
   private pushUp(limb: Limb, joint: number, depth: number): void {
     const parent = nth(limb.joints, joint - 1);
-    TMP_DIR.subVectors(positionOf(nth(limb.joints, joint).bone, TMP_A), positionOf(parent.bone, TMP_B)).normalize();
+    TMP_DIR.subVectors(
+      positionOf(nth(limb.joints, joint).bone, TMP_A),
+      positionOf(parent.bone, TMP_B),
+    ).normalize();
     // Any perpendicular lets the parent swing the whole limb clear.
     // A leg swings forward or back about the body's lateral axis, never sideways.
     TMP_N.crossVectors(TMP_DIR, limb.isLeg ? this.lateral : Y_AXIS);
@@ -958,7 +1090,14 @@ export class ContactBody {
     // Limits apply to the whole local rotation, animation included.
     const total = TMP_QL.copy(next).multiply(joint.anim);
     if (joint.kind === 'hinge') {
-      clampHinge(total, joint.axis, HINGE_MIN, joint.limit, hingeAngle(joint.anim, joint.axis), total);
+      clampHinge(
+        total,
+        joint.axis,
+        HINGE_MIN,
+        joint.limit,
+        hingeAngle(joint.anim, joint.axis),
+        total,
+      );
     } else {
       clampCone(total, joint.limit, rotationAngle(joint.anim), total);
     }
@@ -968,7 +1107,13 @@ export class ContactBody {
     if (limb.isLeg && index === 0 && this.seatId !== null) {
       // Seated: the hip may flex (knee up) further than it may move any other way. Negative about the
       // lateral axis (X in the hips' frame) raises the knee.
-      capped = capDirectional(joint.offset, X_AXIS, HIP_FLEXION_MAX_OFFSET, joint.cap, joint.offset);
+      capped = capDirectional(
+        joint.offset,
+        X_AXIS,
+        HIP_FLEXION_MAX_OFFSET,
+        joint.cap,
+        joint.offset,
+      );
     } else {
       const offsetAngle = rotationAngle(joint.offset);
       capped = offsetAngle > joint.cap;
@@ -1006,7 +1151,8 @@ export class ContactBody {
           const wanted = rotationAngle(joint.offset);
           const allowed = previous + MAX_OFFSET_RATE * dt;
           joint.target.copy(joint.offset);
-          if (joint.target.w < 0) joint.target.set(-joint.target.x, -joint.target.y, -joint.target.z, -joint.target.w);
+          if (joint.target.w < 0)
+            joint.target.set(-joint.target.x, -joint.target.y, -joint.target.z, -joint.target.w);
           if (wanted > allowed) {
             TMP_Q1.copy(joint.target);
             joint.target.copy(IDENTITY).slerp(TMP_Q1, allowed / wanted);
@@ -1052,7 +1198,12 @@ export class ContactBody {
   }
 
   private missOf(track: EndTrack): ContactMiss {
-    return { end: track.end, objectId: track.blocker, distance: track.distance, seconds: track.seconds };
+    return {
+      end: track.end,
+      objectId: track.blocker,
+      distance: track.distance,
+      seconds: track.seconds,
+    };
   }
 
   // ---- debug ----------------------------------------------------------------------------------
@@ -1062,7 +1213,11 @@ export class ContactBody {
   }
 
   /** Wireframe capsules: red while a capsule overlaps something, green otherwise. */
-  private drawDebug(parent: THREE.Object3D, physics: ContactPhysics | null, exclude: readonly string[]): void {
+  private drawDebug(
+    parent: THREE.Object3D,
+    physics: ContactPhysics | null,
+    exclude: readonly string[],
+  ): void {
     const all: Segment[] = [];
     if (this.pelvis) all.push(this.pelvis);
     if (this.chest) all.push(this.chest);
@@ -1071,9 +1226,17 @@ export class ContactBody {
       this.debugLines?.geometry.dispose();
       this.debugCapacity = all.length;
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(all.length * WIRE_VERTICES * 3), 3));
-      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(all.length * WIRE_VERTICES * 3), 3));
-      const material = this.debugLines?.material ?? new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true });
+      geometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(all.length * WIRE_VERTICES * 3), 3),
+      );
+      geometry.setAttribute(
+        'color',
+        new THREE.BufferAttribute(new Float32Array(all.length * WIRE_VERTICES * 3), 3),
+      );
+      const material =
+        this.debugLines?.material ??
+        new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true });
       this.debugLines = new THREE.LineSegments(geometry, material);
       this.debugLines.name = 'debug:body-capsules';
       this.debugLines.frustumCulled = false;
@@ -1081,8 +1244,10 @@ export class ContactBody {
     }
     const lines = this.debugLines;
     if (lines.parent !== parent) parent.add(lines);
-    const positions = (lines.geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array;
-    const colors = (lines.geometry.getAttribute('color') as THREE.BufferAttribute).array as Float32Array;
+    const positions = (lines.geometry.getAttribute('position') as THREE.BufferAttribute)
+      .array as Float32Array;
+    const colors = (lines.geometry.getAttribute('color') as THREE.BufferAttribute)
+      .array as Float32Array;
     all.forEach((segment, index) => {
       this.pose(segment);
       let contact = segment.contact;
@@ -1090,7 +1255,15 @@ export class ContactBody {
         const hit = this.probe(segment, physics, exclude);
         contact = !!hit && hit.depth > CONTACT_TOLERANCE;
       }
-      writeCapsuleWire(positions, colors, index * WIRE_VERTICES * 3, segment.p0, segment.p1, segment.shapeRadius, contact);
+      writeCapsuleWire(
+        positions,
+        colors,
+        index * WIRE_VERTICES * 3,
+        segment.p0,
+        segment.p1,
+        segment.shapeRadius,
+        contact,
+      );
     });
     lines.geometry.setDrawRange(0, all.length * WIRE_VERTICES);
     (lines.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;

@@ -6,21 +6,40 @@ import type { FacePresenceDeps } from '../../src/camera/face-presence.js';
 
 function fakeDeps() {
   const tracks: Array<{ stop: ReturnType<typeof vi.fn> }> = [];
-  const make = (base: Pick<FacePresenceDeps, 'emit' | 'onFaceSeen' | 'onLive'>): FacePresenceDeps => ({
+  const make = (
+    base: Pick<FacePresenceDeps, 'emit' | 'onFaceSeen' | 'onLive'>,
+  ): FacePresenceDeps => ({
     ...base,
     getStream: async () => {
       const track = { stop: vi.fn() };
       tracks.push(track);
       return { getTracks: () => [track] } as unknown as MediaStream;
     },
-    createVideo: () => ({ srcObject: null, muted: false, playsInline: false, readyState: 4, play: async () => undefined, pause: vi.fn() }),
+    createVideo: () => ({
+      srcObject: null,
+      muted: false,
+      playsInline: false,
+      readyState: 4,
+      play: async () => undefined,
+      pause: vi.fn(),
+    }),
     createDetector: async () => ({ countFaces: () => 1, close: vi.fn() }),
   });
   return { tracks, make };
 }
 
-function Probe(props: { enabled: boolean; deviceId?: string; make: ReturnType<typeof fakeDeps>['make']; onStop?: (stop: () => Promise<void>) => void }) {
-  const result = useFacePresence({ enabled: props.enabled, deviceId: props.deviceId, camera: undefined, makeDeps: props.make });
+function Probe(props: {
+  enabled: boolean;
+  deviceId?: string;
+  make: ReturnType<typeof fakeDeps>['make'];
+  onStop?: (stop: () => Promise<void>) => void;
+}) {
+  const result = useFacePresence({
+    enabled: props.enabled,
+    deviceId: props.deviceId,
+    camera: undefined,
+    makeDeps: props.make,
+  });
   props.onStop?.(result.stopNow);
   return (
     <>

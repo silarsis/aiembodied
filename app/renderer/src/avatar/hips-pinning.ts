@@ -7,7 +7,10 @@ import * as THREE from 'three';
  *
  * Mutates and returns the clip. `hipsNodeName` is the name of the animated hips node.
  */
-export function pinHipsHorizontal(clip: THREE.AnimationClip, hipsNodeName: string | undefined | null): THREE.AnimationClip {
+export function pinHipsHorizontal(
+  clip: THREE.AnimationClip,
+  hipsNodeName: string | undefined | null,
+): THREE.AnimationClip {
   if (!hipsNodeName) return clip;
   const trackName = `${hipsNodeName}.position`;
   for (const track of clip.tracks) {

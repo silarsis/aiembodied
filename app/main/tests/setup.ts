@@ -23,7 +23,10 @@ vi.mock('prom-client', () => {
     public name: string;
     private count = 0;
 
-    constructor(configuration: { name: string; registers?: Array<{ registerMetric: (histogram: MockHistogram) => void }> }) {
+    constructor(configuration: {
+      name: string;
+      registers?: Array<{ registerMetric: (histogram: MockHistogram) => void }>;
+    }) {
       this.name = configuration.name;
       for (const registry of configuration.registers ?? []) {
         registry.registerMetric(this);

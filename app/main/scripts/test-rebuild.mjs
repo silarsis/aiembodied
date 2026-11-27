@@ -11,7 +11,9 @@ function getRepoRoot() {
 }
 
 function ensureDir(dir) {
-  try { mkdirSync(dir, { recursive: true }); } catch {}
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {}
 }
 
 function resolveIsolatedStore(repoRoot) {
@@ -25,7 +27,10 @@ function getPnpmStorePath(env = process.env) {
   if (out.status !== 0) {
     throw new Error(`Failed to resolve pnpm store path: ${out.stderr || out.stdout || out.status}`);
   }
-  const lines = `${out.stdout || ''}${out.stderr || ''}`.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = `${out.stdout || ''}${out.stderr || ''}`
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
   return lines.at(-1);
 }
 
@@ -67,7 +72,11 @@ function main() {
   env.npm_config_runtime = 'node';
   env.npm_config_target = nodeVer;
 
-  const result = spawnSync('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3'], { stdio: 'inherit', env, shell: true });
+  const result = spawnSync('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3'], {
+    stdio: 'inherit',
+    env,
+    shell: true,
+  });
   if (result.status !== 0) {
     process.exit(result.status || 1);
   }

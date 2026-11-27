@@ -30,7 +30,13 @@ function useRoomThumbnails(backgrounds: BackgroundController): Record<string, st
   return thumbnails;
 }
 
-export function RoomCards({ backgrounds, onPickDescription }: { backgrounds: BackgroundController; onPickDescription?: (description: string) => void }) {
+export function RoomCards({
+  backgrounds,
+  onPickDescription,
+}: {
+  backgrounds: BackgroundController;
+  onPickDescription?: (description: string) => void;
+}) {
   const thumbnails = useRoomThumbnails(backgrounds);
   const selected = backgrounds.rooms.find((room) => room.id === backgrounds.activeId);
   return (
@@ -40,31 +46,42 @@ export function RoomCards({ backgrounds, onPickDescription }: { backgrounds: Bac
           const thumbnail = thumbnails[`${room.id}#${backgrounds.roomRevisions[room.id] ?? 0}`];
           const making = backgrounds.roomMaking?.roomId === room.id;
           return (
-          <div className="backgroundCard__entry" key={room.id}>
-            <button
-              type="button"
-              className="backgroundCard"
-              aria-pressed={room.id === backgrounds.activeId}
-              onClick={() => {
-                if (room.description && !room.builtIn && !backgrounds.roomBuilding) onPickDescription?.(room.description);
-                void backgrounds.select(room.id);
-              }}
-            >
-              {thumbnail ? <img src={thumbnail} alt="" /> : <span className="backgroundCard__plain backgroundCard__room" />}
-              <span>{room.name}</span>
-              {making ? <span className="backgroundCard__making" role="status" aria-label={`Making new objects for ${room.name}`} /> : null}
-            </button>
-            {!room.builtIn ? (
+            <div className="backgroundCard__entry" key={room.id}>
               <button
                 type="button"
-                className="backgroundCard__delete"
-                aria-label={`Delete ${room.name}`}
-                onClick={() => void backgrounds.removeRoom(room.id)}
+                className="backgroundCard"
+                aria-pressed={room.id === backgrounds.activeId}
+                onClick={() => {
+                  if (room.description && !room.builtIn && !backgrounds.roomBuilding)
+                    onPickDescription?.(room.description);
+                  void backgrounds.select(room.id);
+                }}
               >
-                Delete
+                {thumbnail ? (
+                  <img src={thumbnail} alt="" />
+                ) : (
+                  <span className="backgroundCard__plain backgroundCard__room" />
+                )}
+                <span>{room.name}</span>
+                {making ? (
+                  <span
+                    className="backgroundCard__making"
+                    role="status"
+                    aria-label={`Making new objects for ${room.name}`}
+                  />
+                ) : null}
               </button>
-            ) : null}
-          </div>
+              {!room.builtIn ? (
+                <button
+                  type="button"
+                  className="backgroundCard__delete"
+                  aria-label={`Delete ${room.name}`}
+                  onClick={() => void backgrounds.removeRoom(room.id)}
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
           );
         })}
       </div>

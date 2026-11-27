@@ -26,7 +26,11 @@ export function readingFactText(note: ReadingNote, avatarName: string): string {
   return clip(parts.filter(Boolean).join(' '), 1000);
 }
 
-export function readingFact(note: ReadingNote, avatarName: string, model: string | null = null): MemoryEngineFact {
+export function readingFact(
+  note: ReadingNote,
+  avatarName: string,
+  model: string | null = null,
+): MemoryEngineFact {
   return {
     text: readingFactText(note, avatarName),
     subject: 'reading',
@@ -39,14 +43,22 @@ export function readingFact(note: ReadingNote, avatarName: string, model: string
 }
 
 /** The outbox item for a note (written first, sent when the engine is up). */
-export function readingOutboxItem(note: ReadingNote, avatarName: string, model: string | null = null): OutboxItem {
+export function readingOutboxItem(
+  note: ReadingNote,
+  avatarName: string,
+  model: string | null = null,
+): OutboxItem {
   return { kind: 'fact', id: randomUUID(), fact: readingFact(note, avatarName, model) };
 }
 
 export const READING_NOTES_TOOL_ID = 'builtin:my_reading_notes';
 
 function formatDay(at: number): string {
-  return new Date(at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(at).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 /** The notes as text for the model, newest first, within `limit` characters. */
@@ -77,7 +89,10 @@ export function formatReadingNotes(notes: ReadingNote[], limit = 4000): string {
  * `my_reading_notes`: the calling character's own recent reading notes, so "what have you been reading?" is
  * answered from what it wrote down. Read-only. Each avatar's voice calls it with its own id (ToolContext).
  */
-export function createReadingNotesTool(options: { notes: Pick<ReadingNoteStore, 'listReadingNotes'>; defaultAvatarId?: string }): RegisteredTool {
+export function createReadingNotesTool(options: {
+  notes: Pick<ReadingNoteStore, 'listReadingNotes'>;
+  defaultAvatarId?: string;
+}): RegisteredTool {
   return {
     id: READING_NOTES_TOOL_ID,
     serverId: 'builtin',
@@ -88,7 +103,10 @@ export function createReadingNotesTool(options: { notes: Pick<ReadingNoteStore, 
     inputSchema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: 'Optional. How many of the latest notes to read, 1 to 20. Default 5.' },
+        limit: {
+          type: 'number',
+          description: 'Optional. How many of the latest notes to read, 1 to 20. Default 5.',
+        },
       },
     },
     enabled: true,
@@ -97,9 +115,17 @@ export function createReadingNotesTool(options: { notes: Pick<ReadingNoteStore, 
     spokenNotice: 'Let me think back.',
     describeCall: () => 'my reading notes',
     execute: async (params, context) => {
-      const raw = params && typeof params === 'object' ? Number((params as Record<string, unknown>).limit) : Number.NaN;
+      const raw =
+        params && typeof params === 'object'
+          ? Number((params as Record<string, unknown>).limit)
+          : Number.NaN;
       const limit = Number.isFinite(raw) ? Math.min(20, Math.max(1, Math.round(raw))) : 5;
-      return formatReadingNotes(options.notes.listReadingNotes(context?.avatarId ?? options.defaultAvatarId ?? 'echo', limit));
+      return formatReadingNotes(
+        options.notes.listReadingNotes(
+          context?.avatarId ?? options.defaultAvatarId ?? 'echo',
+          limit,
+        ),
+      );
     },
   };
 }

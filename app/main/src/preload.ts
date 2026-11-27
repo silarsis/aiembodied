@@ -28,7 +28,11 @@ function logPreloadMessage(
   }
 }
 
-function forwardPreloadDiagnostics(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
+function forwardPreloadDiagnostics(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  meta?: Record<string, unknown>,
+) {
   try {
     ipcRenderer.send('diagnostics:preload-log', {
       level,

@@ -35,7 +35,7 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 15. **Never weaken, skip or delete a test to get green.** Fix the code, or say plainly why the test is wrong.
 
 ### Formatting
-16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns) and `eslint.config.js`. Python follows `ruff.toml` (`ruff check` and `ruff format`).
+16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns; run `pnpm format`) and `eslint.config.js`. Python follows `ruff.toml` (`ruff check` and `ruff format`).
 
 ### React
 17. **Effects live in named hooks.** Components don't call `useEffect`/`useLayoutEffect` directly; put each effect in a `useX` hook named for what it does, in the feature folder. Prefer no effect at all: derive values during render, and do event work in the handler. ESLint enforces this for new code; existing direct effects are listed in `app/renderer/eslint-suppressions.json`. Remove entries as you fix them (`pnpm --filter ./app/renderer exec eslint "src/**/*.{ts,tsx}" --prune-suppressions`).
@@ -56,6 +56,7 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 ## Testing & Verification
 Run these from the repository root:
 - `pnpm install` — dependencies resolve from a clean checkout.
+- `pnpm format:check` — Prettier (`pnpm format` fixes it).
 - `pnpm lint` — ESLint across packages.
 - `pnpm typecheck` — TypeScript across packages.
 - `pnpm test` — typecheck, then unit/integration tests. Main's tests run in groups in separate processes (`app/main/scripts/test-split.mjs`); add a new test folder to a group there.

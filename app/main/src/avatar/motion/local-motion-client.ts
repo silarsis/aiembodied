@@ -46,7 +46,8 @@ export interface MotionRequest {
 
 /** The JSON body the service expects: the camelCase control fields become snake_case. */
 export function toWireRequest(request: MotionRequest): Record<string, unknown> {
-  const { phases, path, targets, constraintWeight, continueFrom, observed, snapS, ...rest } = request;
+  const { phases, path, targets, constraintWeight, continueFrom, observed, snapS, ...rest } =
+    request;
   const wire: Record<string, unknown> = { ...rest };
   if (phases?.length) {
     wire.phases = phases.map((phase) => ({ prompt: phase.prompt, start_s: phase.startS }));
@@ -99,14 +100,20 @@ function parseEndPose(value: unknown): AvatarMotionEndPose | undefined {
     root: [rootX, rootZ],
     height: raw.height,
     heading: raw.heading,
-    ...(lx !== undefined && ly !== undefined && lz !== undefined ? { leftHand: [lx, ly, lz] as [number, number, number] } : {}),
-    ...(rx !== undefined && ry !== undefined && rz !== undefined ? { rightHand: [rx, ry, rz] as [number, number, number] } : {}),
+    ...(lx !== undefined && ly !== undefined && lz !== undefined
+      ? { leftHand: [lx, ly, lz] as [number, number, number] }
+      : {}),
+    ...(rx !== undefined && ry !== undefined && rz !== undefined
+      ? { rightHand: [rx, ry, rz] as [number, number, number] }
+      : {}),
   };
 }
 
 function numberTuple(value: unknown, length: number): number[] | null {
   if (!Array.isArray(value) || value.length !== length) return null;
-  return value.every((entry) => typeof entry === 'number' && Number.isFinite(entry)) ? (value as number[]) : null;
+  return value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+    ? (value as number[])
+    : null;
 }
 
 export type MotionTimings = Record<string, number>;
@@ -188,8 +195,16 @@ export class LocalMotionClient {
     } catch (error) {
       // The service keeps continuation sessions for 10 minutes (and only the last few), and forgets them
       // all when it restarts. Start fresh rather than fail: the avatar may jump slightly, but it moves.
-      if (!request.continueFrom || !/HTTP 404 unknown session/.test(error instanceof Error ? error.message : '')) throw error;
-      response = await this.post('/v1/motion/stream', { ...request, continueFrom: undefined }, options);
+      if (
+        !request.continueFrom ||
+        !/HTTP 404 unknown session/.test(error instanceof Error ? error.message : '')
+      )
+        throw error;
+      response = await this.post(
+        '/v1/motion/stream',
+        { ...request, continueFrom: undefined },
+        options,
+      );
     }
     if (!response.body) {
       throw new Error('Motion service returned an empty stream.');
@@ -215,7 +230,9 @@ export class LocalMotionClient {
         return {
           chunks: typeof message.chunks === 'number' ? message.chunks : 0,
           timings: normalizeTimings(message.timings),
-          ...(typeof message.session === 'string' && message.session ? { session: message.session } : {}),
+          ...(typeof message.session === 'string' && message.session
+            ? { session: message.session }
+            : {}),
         };
       } else if (message.type === 'error') {
         throw new Error(`Motion service failed: ${String(message.message ?? 'unknown error')}`);
@@ -225,7 +242,11 @@ export class LocalMotionClient {
     throw new Error('Motion stream ended before it finished.');
   }
 
-  private async post(pathName: string, request: MotionRequest, options: MotionCallOptions): Promise<Response> {
+  private async post(
+    pathName: string,
+    request: MotionRequest,
+    options: MotionCallOptions,
+  ): Promise<Response> {
     const body = JSON.stringify(toWireRequest(request));
     this.trace('service.request', () => ({ path: pathName, body: JSON.parse(body) as unknown }));
     const started = Date.now();
@@ -238,12 +259,23 @@ export class LocalMotionClient {
         signal: options.signal,
       });
     } catch (error) {
-      this.trace('service.response', () => ({ path: pathName, error: error instanceof Error ? error.message : String(error), ms: Date.now() - started }));
+      this.trace('service.response', () => ({
+        path: pathName,
+        error: error instanceof Error ? error.message : String(error),
+        ms: Date.now() - started,
+      }));
       throw error;
     }
-    this.trace('service.response', () => ({ path: pathName, status: response.status, ok: response.ok, ms: Date.now() - started }));
+    this.trace('service.response', () => ({
+      path: pathName,
+      status: response.status,
+      ok: response.ok,
+      ms: Date.now() - started,
+    }));
     if (!response.ok) {
-      throw new Error(`Motion service request failed: HTTP ${response.status} ${await errorText(response)}`);
+      throw new Error(
+        `Motion service request failed: HTTP ${response.status} ${await errorText(response)}`,
+      );
     }
     return response;
   }

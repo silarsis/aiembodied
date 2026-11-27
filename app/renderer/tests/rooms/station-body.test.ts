@@ -2,14 +2,23 @@ import { describe, expect, it } from 'vitest';
 import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { validateRoomFile } from '../../../main/src/shared/rooms/validate.js';
 import type { AvatarState, PlanWorld } from '../../src/rooms/scene-actions.js';
-import { chooseSurface, planRelease, planSit, planTake, resolveBodyPlan } from '../../src/rooms/station-body.js';
+import {
+  chooseSurface,
+  planRelease,
+  planSit,
+  planTake,
+  resolveBodyPlan,
+} from '../../src/rooms/station-body.js';
 import { builtInRoom } from './fixtures.js';
 
 const reading = builtInRoom('reading-room');
 const body = { prop: 'book', seat: 'armchair', browse: 'browses', read: 'reads', note: 'notes' };
 const standing: AvatarState = { posture: 'standing', held: null };
 const holdingBook: AvatarState = { posture: 'standing', held: { objectId: 'book', hand: 'right' } };
-const seatedWithBook: AvatarState = { posture: 'seated', held: { objectId: 'book', hand: 'right' } };
+const seatedWithBook: AvatarState = {
+  posture: 'seated',
+  held: { objectId: 'book', hand: 'right' },
+};
 
 function worldAt(room: RoomFile, x: number, z: number): PlanWorld {
   return { room, frame: { origin: { x, z, yaw: 0 } } } as unknown as PlanWorld;
@@ -41,8 +50,18 @@ describe('resolveBodyPlan', () => {
   });
 
   it('drops a prop or seat the room lacks, and a seat without a book; texts fall back', () => {
-    expect(resolveBodyPlan(reading, 'bookshelf', { prop: 'tome', seat: 'armchair' }, 'activity')).toMatchObject({ prop: null, seat: null, browse: 'activity', read: 'reads', note: 'jots down notes' });
-    expect(resolveBodyPlan(reading, 'bookshelf', { prop: 'book', seat: 'rug' }, 'a')).toMatchObject({ prop: 'book', seat: null });
+    expect(
+      resolveBodyPlan(reading, 'bookshelf', { prop: 'tome', seat: 'armchair' }, 'activity'),
+    ).toMatchObject({
+      prop: null,
+      seat: null,
+      browse: 'activity',
+      read: 'reads',
+      note: 'jots down notes',
+    });
+    expect(resolveBodyPlan(reading, 'bookshelf', { prop: 'book', seat: 'rug' }, 'a')).toMatchObject(
+      { prop: 'book', seat: null },
+    );
     // The mug is dynamic with a grab tag, the sofa is not dynamic.
     expect(resolveBodyPlan(reading, 'bookshelf', { prop: 'sofa' }, 'a')?.prop).toBeNull();
     expect(resolveBodyPlan(reading, 'nothing', body, 'a')).toBeNull();
@@ -82,7 +101,10 @@ describe('planRelease', () => {
   });
 
   it('adds {come} when the session was cut short', () => {
-    expect(planRelease(plan, world, holdingBook, true)).toEqual([{ kind: 'put', objectId: 'book', surfaceId: 'bookshelf' }, { kind: 'come' }]);
+    expect(planRelease(plan, world, holdingBook, true)).toEqual([
+      { kind: 'put', objectId: 'book', surfaceId: 'bookshelf' },
+      { kind: 'come' },
+    ]);
   });
 
   it('does nothing when the avatar stands with empty hands', () => {
@@ -90,10 +112,17 @@ describe('planRelease', () => {
   });
 
   it('uses the nearest surface when the station object has none', () => {
-    const noSurface: RoomFile = { ...reading, objects: reading.objects.map((o) => (o.id === 'bookshelf' ? { ...o, tags: { ...o.tags, surface: undefined } } : o)) };
+    const noSurface: RoomFile = {
+      ...reading,
+      objects: reading.objects.map((o) =>
+        o.id === 'bookshelf' ? { ...o, tags: { ...o.tags, surface: undefined } } : o,
+      ),
+    };
     const bare = resolveBodyPlan(noSurface, 'bookshelf', body, 'a')!;
     expect(bare.surfaceId).toBeNull();
     const table = reading.objects.find((o) => o.id === 'coffee-table')!;
-    expect(chooseSurface(worldAt(noSurface, table.position[0], table.position[2]), bare)).toBe('coffee-table');
+    expect(chooseSurface(worldAt(noSurface, table.position[0], table.position[2]), bare)).toBe(
+      'coffee-table',
+    );
   });
 });

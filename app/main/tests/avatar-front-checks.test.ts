@@ -42,7 +42,16 @@ async function setup(checks: FrontCheck[], faces: (string | null)[], rigFace?: '
     comfy: comfy as unknown as ComfyUIClient,
     characterRunner,
     ...(rigFace
-      ? { characterModels: { resolveGeometry: vi.fn(), resolveRig: vi.fn(async () => ({ id: 'stylised', name: 'Stylised face', face: rigFace })) } }
+      ? {
+          characterModels: {
+            resolveGeometry: vi.fn(),
+            resolveRig: vi.fn(async () => ({
+              id: 'stylised',
+              name: 'Stylised face',
+              face: rigFace,
+            })),
+          },
+        }
       : {}),
     models: { uploadModel: vi.fn(), setActiveModel: vi.fn() },
     runner: { prepare: vi.fn(), score: vi.fn(), assemble: vi.fn() },
@@ -60,32 +69,46 @@ async function review(service: AvatarGenerationService, jobId: string) {
 
 describe('checks on a new front', () => {
   it('cuts a grey background away and finds the face once, for the build to reuse', async () => {
-    const { service, run, characterRunner } = await setup([{ backgroundOk: false, figures: null }], [null]);
+    const { service, run, characterRunner } = await setup(
+      [{ backgroundOk: false, figures: null }],
+      [null],
+    );
     const { jobId } = await service.startJob({ prompt: 'Chef' });
     const { status, image } = await review(service, jobId);
     expect(image).toBe('front-1-cutout');
-    expect(status).toMatchObject({ backgroundRemoved: true, frontCheck: { attempts: 1, problem: null } });
+    expect(status).toMatchObject({
+      backgroundRemoved: true,
+      frontCheck: { attempts: 1, problem: null },
+    });
     expect(run).toHaveBeenCalledTimes(1);
     expect(characterRunner.checkFront).toHaveBeenCalledTimes(2);
     const directory = path.dirname(characterRunner.removeBackground.mock.calls[0][0].imagePath);
     expect(await readFile(path.join(directory, 'concept-original.png'), 'utf8')).toBe('front-1');
     await service.confirmConcept(jobId);
     // The build keeps writing into the work folder; let it end before afterEach removes the folder.
-    await vi.waitFor(() => expect(['completed', 'failed', 'cancelled']).toContain(service.getStatus(jobId).status));
+    await vi.waitFor(() =>
+      expect(['completed', 'failed', 'cancelled']).toContain(service.getStatus(jobId).status),
+    );
     // The face found while checking is the one the build uses.
     expect(characterRunner.prepareReference).toHaveBeenCalledTimes(1);
   });
 
   it('draws again with another seed when a front shows several characters or no face', async () => {
     const { service, run } = await setup(
-      [{ backgroundOk: true, figures: 3 }, { backgroundOk: true, figures: 1 }, { backgroundOk: true, figures: 1 }],
+      [
+        { backgroundOk: true, figures: 3 },
+        { backgroundOk: true, figures: 1 },
+        { backgroundOk: true, figures: 1 },
+      ],
       ['Need one clearly visible human face.', null],
     );
     const { jobId } = await service.startJob({ prompt: 'Explorer' });
     const { status, image } = await review(service, jobId);
     expect(image).toBe('front-3');
     expect(status.frontCheck).toEqual({ attempts: 3, problem: null });
-    const seeds = run.mock.calls.map((call) => (call[0] as Record<string, { inputs: { seed?: number } }>).sample?.inputs.seed);
+    const seeds = run.mock.calls.map(
+      (call) => (call[0] as Record<string, { inputs: { seed?: number } }>).sample?.inputs.seed,
+    );
     expect(new Set(seeds).size).toBe(3);
   });
 
@@ -97,7 +120,10 @@ describe('checks on a new front', () => {
     const { jobId } = await service.startJob({ prompt: 'Explorer' });
     const { status } = await review(service, jobId);
     expect(run).toHaveBeenCalledTimes(3);
-    expect(status.frontCheck).toEqual({ attempts: 3, problem: 'It shows 2 characters instead of one.' });
+    expect(status.frontCheck).toEqual({
+      attempts: 3,
+      problem: 'It shows 2 characters instead of one.',
+    });
   });
 
   it('checks an upload but never redraws it', async () => {
@@ -109,12 +135,19 @@ describe('checks on a new front', () => {
     });
     const { status } = await review(service, jobId);
     expect(run).not.toHaveBeenCalled();
-    expect(status.frontCheck).toEqual({ attempts: 1, problem: 'Use a front-facing face rather than a profile.' });
+    expect(status.frontCheck).toEqual({
+      attempts: 1,
+      problem: 'Use a front-facing face rather than a profile.',
+    });
   });
 
   it('leaves the face to a stylised-face rig, but still checks the background and figures', async () => {
     const { service, run, characterRunner } = await setup(
-      [{ backgroundOk: true, figures: 2 }, { backgroundOk: false, figures: null }, { backgroundOk: true, figures: 1 }],
+      [
+        { backgroundOk: true, figures: 2 },
+        { backgroundOk: false, figures: null },
+        { backgroundOk: true, figures: 1 },
+      ],
       ['Need one clearly visible human face.'],
       'stylised',
     );

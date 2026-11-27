@@ -21,7 +21,13 @@ type Tool = { name: string; description?: string; inputSchema: unknown };
 // What each fake client does. Tests change these before connecting.
 const state = vi.hoisted(() => ({
   tools: [] as Tool[],
-  clients: [] as Array<{ url: string; auth: any; disconnect: any; callTool: any; closed?: () => void }>,
+  clients: [] as Array<{
+    url: string;
+    auth: any;
+    disconnect: any;
+    callTool: any;
+    closed?: () => void;
+  }>,
   httpConnect: null as null | ((auth: any) => Promise<void>),
   stdioConnect: null as null | (() => Promise<void>),
   finishAuth: null as null | ((code: string) => Promise<void>),
@@ -92,7 +98,11 @@ const SCHEMA = `
   );
 `;
 
-const tool = (name: string): Tool => ({ name, description: `the ${name} tool`, inputSchema: { type: 'object', properties: {} } });
+const tool = (name: string): Tool => ({
+  name,
+  description: `the ${name} tool`,
+  inputSchema: { type: 'object', properties: {} },
+});
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -125,7 +135,11 @@ describe('MCPManager (stdio, http, OAuth)', () => {
     openExternal.mockResolvedValue(undefined);
     port = await freePort();
     registry = new ToolRegistry();
-    manager = new MCPManager(db, registry, { openExternal, oauthCallbackPort: port, oauthTimeoutMs: 2000 });
+    manager = new MCPManager(db, registry, {
+      openExternal,
+      oauthCallbackPort: port,
+      oauthTimeoutMs: 2000,
+    });
   });
 
   afterEach(() => {
@@ -134,7 +148,13 @@ describe('MCPManager (stdio, http, OAuth)', () => {
   });
 
   const addSse = (name: string) =>
-    manager.addServer({ name, transportType: 'sse', sseUrl: `https://${name.replace(/\W/g, '')}.example/sse`, enabled: true, autoStart: false });
+    manager.addServer({
+      name,
+      transportType: 'sse',
+      sseUrl: `https://${name.replace(/\W/g, '')}.example/sse`,
+      enabled: true,
+      autoStart: false,
+    });
 
   describe('tool names for the assistant', () => {
     it('replaces invalid characters and still calls the server with the original name', async () => {
@@ -149,19 +169,31 @@ describe('MCPManager (stdio, http, OAuth)', () => {
 
       await registry.execute(registered[0].id, { q: 1 });
       expect(state.clients[0].callTool).toHaveBeenCalledWith('search.papers v2', { q: 1 });
-      expect(manager.listTools(server.id)[0]).toMatchObject({ toolName: 'search.papers v2', llmName: 'search_papers_v2' });
+      expect(manager.listTools(server.id)[0]).toMatchObject({
+        toolName: 'search.papers v2',
+        llmName: 'search_papers_v2',
+      });
     });
 
     it('prefixes with the server name when a built-in tool has the same name', async () => {
       registry.register({
-        id: 'builtin:web_search', serverId: 'builtin', toolName: 'web_search', description: '', inputSchema: {},
-        enabled: true, confirmationLevel: 'none', execute: async () => null,
+        id: 'builtin:web_search',
+        serverId: 'builtin',
+        toolName: 'web_search',
+        description: '',
+        inputSchema: {},
+        enabled: true,
+        confirmationLevel: 'none',
+        execute: async () => null,
       });
       state.tools = [tool('web_search')];
       const server = await addSse('DAIR Academy');
       await manager.connectServer(server.id);
 
-      const names = registry.list().map((t) => t.toolName).sort();
+      const names = registry
+        .list()
+        .map((t) => t.toolName)
+        .sort();
       expect(names).toEqual(['dair_academy__web_search', 'web_search']);
     });
 
@@ -171,7 +203,12 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       const second = await addSse('Second');
       await manager.connectServer(first.id);
       await manager.connectServer(second.id);
-      expect(registry.list().map((t) => t.toolName).sort()).toEqual(['search_papers', 'second__search_papers']);
+      expect(
+        registry
+          .list()
+          .map((t) => t.toolName)
+          .sort(),
+      ).toEqual(['search_papers', 'second__search_papers']);
 
       const long = 'x'.repeat(80);
       state.tools = [tool(long)];
@@ -189,7 +226,12 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       await manager.connectServer(first.id);
       await manager.connectServer(second.id);
       await manager.connectServer(second.id);
-      expect(registry.list().map((t) => t.toolName).sort()).toEqual(['search_papers', 'second__search_papers']);
+      expect(
+        registry
+          .list()
+          .map((t) => t.toolName)
+          .sort(),
+      ).toEqual(['search_papers', 'second__search_papers']);
     });
   });
 
@@ -212,8 +254,13 @@ describe('MCPManager (stdio, http, OAuth)', () => {
         throw new UnauthorizedError();
       };
       const server = await manager.addServer({
-        name: 'Papers', transportType: 'http', httpUrl: 'https://papers.example/mcp', oauth: true, oauthScope: 'papers:read',
-        enabled: true, autoStart: true,
+        name: 'Papers',
+        transportType: 'http',
+        httpUrl: 'https://papers.example/mcp',
+        oauth: true,
+        oauthScope: 'papers:read',
+        enabled: true,
+        autoStart: true,
       });
       const events: unknown[] = [];
       manager.on('server-status-changed', (e) => events.push(e));
@@ -232,7 +279,12 @@ describe('MCPManager (stdio, http, OAuth)', () => {
         throw new Error('spawn nope ENOENT');
       };
       const server = await manager.addServer({
-        name: 'Prog', transportType: 'stdio', stdioCommand: 'nope', stdioArgs: [], enabled: true, autoStart: false,
+        name: 'Prog',
+        transportType: 'stdio',
+        stdioCommand: 'nope',
+        stdioArgs: [],
+        enabled: true,
+        autoStart: false,
       });
       const result = await manager.connectServer(server.id);
       expect(result).toEqual({ success: false, error: 'spawn nope ENOENT' });
@@ -245,7 +297,11 @@ describe('MCPManager (stdio, http, OAuth)', () => {
     it('unregisters the tools, records an error and emits a status event', async () => {
       state.tools = [tool('a'), tool('b')];
       const server = await manager.addServer({
-        name: 'Prog', transportType: 'stdio', stdioCommand: 'prog', enabled: true, autoStart: false,
+        name: 'Prog',
+        transportType: 'stdio',
+        stdioCommand: 'prog',
+        enabled: true,
+        autoStart: false,
       });
       await manager.connectServer(server.id);
       expect(registry.list()).toHaveLength(2);
@@ -291,10 +347,15 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       const first = await manager.addPreset(DAIR_ACADEMY_PAPERS_PRESET_ID);
       const second = await manager.addPreset(DAIR_ACADEMY_PAPERS_PRESET_ID);
       expect(second.id).toBe(first.id);
-      expect((await manager.listServers())).toHaveLength(1);
+      expect(await manager.listServers()).toHaveLength(1);
       expect(first).toMatchObject({
-        name: 'DAIR Academy papers', transportType: 'http', httpUrl: 'https://academy.dair.ai/api/mcp',
-        oauth: true, oauthScope: 'papers:read', enabled: true, autoStart: true,
+        name: 'DAIR Academy papers',
+        transportType: 'http',
+        httpUrl: 'https://academy.dair.ai/api/mcp',
+        oauth: true,
+        oauthScope: 'papers:read',
+        enabled: true,
+        autoStart: true,
       });
     });
 
@@ -306,8 +367,13 @@ describe('MCPManager (stdio, http, OAuth)', () => {
   describe('sign in and out', () => {
     async function addOauthServer() {
       return manager.addServer({
-        name: 'Papers', transportType: 'http', httpUrl: 'https://papers.example/mcp', oauth: true, oauthScope: 'papers:read',
-        enabled: true, autoStart: false,
+        name: 'Papers',
+        transportType: 'http',
+        httpUrl: 'https://papers.example/mcp',
+        oauth: true,
+        oauthScope: 'papers:read',
+        enabled: true,
+        autoStart: false,
       });
     }
 
@@ -318,7 +384,9 @@ describe('MCPManager (stdio, http, OAuth)', () => {
         if (signedIn) return;
         // Like the SDK: make a state, send the person to the browser, fail until they come back.
         const stateValue = await auth.authProvider.state();
-        await auth.authProvider.redirectToAuthorization(new URL(`https://auth.example/authorize?state=${stateValue}`));
+        await auth.authProvider.redirectToAuthorization(
+          new URL(`https://auth.example/authorize?state=${stateValue}`),
+        );
         throw new UnauthorizedError();
       };
       state.finishAuth = async (code) => {
@@ -346,7 +414,11 @@ describe('MCPManager (stdio, http, OAuth)', () => {
         await auth.authProvider.redirectToAuthorization(new URL('https://auth.example/authorize'));
         throw new UnauthorizedError();
       };
-      manager = new MCPManager(db, registry, { openExternal, oauthCallbackPort: port, oauthTimeoutMs: 50 });
+      manager = new MCPManager(db, registry, {
+        openExternal,
+        oauthCallbackPort: port,
+        oauthTimeoutMs: 50,
+      });
       const server = await addOauthServer();
 
       const result = await manager.signIn(server.id);
@@ -379,7 +451,10 @@ describe('MCPManager (stdio, http, OAuth)', () => {
 
     it('deleting a server also deletes its sign-in data', async () => {
       const server = await addOauthServer();
-      await new McpOAuthStore(db).saveTokens(server.id, { access_token: 'at', token_type: 'Bearer' });
+      await new McpOAuthStore(db).saveTokens(server.id, {
+        access_token: 'at',
+        token_type: 'Bearer',
+      });
       await manager.deleteServer(server.id);
       expect(db.prepare('SELECT COUNT(*) AS n FROM mcp_oauth').get()).toEqual({ n: 0 });
     });

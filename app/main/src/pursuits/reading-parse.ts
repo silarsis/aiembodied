@@ -15,7 +15,10 @@ export function firstUrl(text: string): string | null {
 /** The text after `LABEL:` up to the next label or the end, one line or more. Null when the label is missing. */
 function field(text: string, label: string, labels: readonly string[]): string | null {
   const others = labels.filter((other) => other !== label).join('|');
-  const pattern = new RegExp(`(?:^|\\n)[\\s>*#-]*\\**${label}\\**\\s*:\\**\\s*([\\s\\S]*?)(?=\\n[\\s>*#-]*\\**(?:${others})\\**\\s*:|$)`, 'i');
+  const pattern = new RegExp(
+    `(?:^|\\n)[\\s>*#-]*\\**${label}\\**\\s*:\\**\\s*([\\s\\S]*?)(?=\\n[\\s>*#-]*\\**(?:${others})\\**\\s*:|$)`,
+    'i',
+  );
   const match = pattern.exec(text);
   const value = match?.[1]?.replace(/\s+/g, ' ').trim();
   return value ? value : null;
@@ -38,15 +41,34 @@ export function parseChoice(reply: string): Choice {
   const pick = field(text, 'PICK', labels);
   if (pick) {
     const link = firstUrl(pick);
-    const parts = pick.split('|').map((part) => part.trim()).filter(Boolean);
-    const title = (parts[0] ?? pick).replace(URL_PATTERN, '').replace(/^["“]|["”]$/g, '').trim();
-    const why = parts.slice(1).filter((part) => !URL_PATTERN.test(part) || part.length > (link?.length ?? 0) + 3).join(' ').replace(URL_PATTERN, '').trim();
+    const parts = pick
+      .split('|')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const title = (parts[0] ?? pick)
+      .replace(URL_PATTERN, '')
+      .replace(/^["“]|["”]$/g, '')
+      .trim();
+    const why = parts
+      .slice(1)
+      .filter((part) => !URL_PATTERN.test(part) || part.length > (link?.length ?? 0) + 3)
+      .join(' ')
+      .replace(URL_PATTERN, '')
+      .trim();
     if (title) return { kind: 'pick', title, link, why };
   }
   if (refine) return { kind: 'refine', idea: refine };
   if (/^\W*nothing\b/i.test(text)) return { kind: 'nothing' };
-  const first = text.split('\n')[0]?.replace(/^[\s>*#-]+/, '').replace(URL_PATTERN, '').replace(/^["“]|["”]$/g, '').trim() ?? '';
-  return first ? { kind: 'pick', title: first.slice(0, 200), link: firstUrl(text), why: '' } : { kind: 'nothing' };
+  const first =
+    text
+      .split('\n')[0]
+      ?.replace(/^[\s>*#-]+/, '')
+      .replace(URL_PATTERN, '')
+      .replace(/^["“]|["”]$/g, '')
+      .trim() ?? '';
+  return first
+    ? { kind: 'pick', title: first.slice(0, 200), link: firstUrl(text), why: '' }
+    : { kind: 'nothing' };
 }
 
 export interface ParsedNote {
@@ -98,7 +120,8 @@ export function splitChunks(text: string, size: number): string[] {
     const window = rest.slice(0, size);
     const paragraph = window.lastIndexOf('\n\n');
     const sentence = Math.max(window.lastIndexOf('. '), window.lastIndexOf('.\n'));
-    const cut = paragraph > size * 0.5 ? paragraph + 2 : sentence > size * 0.5 ? sentence + 2 : size;
+    const cut =
+      paragraph > size * 0.5 ? paragraph + 2 : sentence > size * 0.5 ? sentence + 2 : size;
     chunks.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }
@@ -110,5 +133,8 @@ export function splitChunks(text: string, size: number): string[] {
 export function linkNear(results: string, title: string): string | null {
   const at = results.toLowerCase().indexOf(title.toLowerCase());
   if (at < 0) return null;
-  return firstUrl(results.slice(at, at + title.length + 300)) ?? firstUrl(results.slice(Math.max(0, at - 150), at));
+  return (
+    firstUrl(results.slice(at, at + title.length + 300)) ??
+    firstUrl(results.slice(Math.max(0, at - 150), at))
+  );
 }

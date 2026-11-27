@@ -16,15 +16,15 @@ vi.mock('electron', () => ({
 describe('initializeLogger', () => {
   let tmpDir: string;
 
-beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'logger-test-'));
-  getPath.mockReturnValue(tmpDir);
-  isReady.mockReturnValue(true);
-});
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'logger-test-'));
+    getPath.mockReturnValue(tmpDir);
+    isReady.mockReturnValue(true);
+  });
 
-afterEach(() => {
-  vi.clearAllMocks();
-});
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
 
   it('creates a logger with console and file transports', async () => {
     const module = await import('../src/logging/logger.js');

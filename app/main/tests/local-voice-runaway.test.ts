@@ -24,9 +24,19 @@ describe('isRunawayOutput', () => {
 
   it('does not stop ordinary replies, markdown rules or numbers', () => {
     expect(isRunawayOutput('')).toBe(false);
-    expect(isRunawayOutput('The latest papers this week cover agents, evaluation and a new way of training small models. '.repeat(5))).toBe(false);
+    expect(
+      isRunawayOutput(
+        'The latest papers this week cover agents, evaluation and a new way of training small models. '.repeat(
+          5,
+        ),
+      ),
+    ).toBe(false);
     expect(isRunawayOutput(`Title\n${'-'.repeat(60)}\nBody`)).toBe(false);
-    expect(isRunawayOutput('1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30')).toBe(false);
+    expect(
+      isRunawayOutput(
+        '1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30',
+      ),
+    ).toBe(false);
   });
 
   it('has a short fallback line', () => {

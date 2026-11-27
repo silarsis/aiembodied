@@ -11,11 +11,14 @@ export function visionStatusLine(status: VisionStatus | null): string {
   const download = status.download;
   if (download && ACTIVE.has(download.state)) {
     if (download.state === 'verifying') return 'Checking the files…';
-    const percent = download.total > 0 ? Math.min(99, Math.floor((download.received / download.total) * 100)) : 0;
+    const percent =
+      download.total > 0 ? Math.min(99, Math.floor((download.received / download.total) * 100)) : 0;
     return `Downloading ${percent}%`;
   }
   if (status.ready && status.pick) {
-    const names = [status.pick.model, status.pick.mmproj].map((file) => file.split(/[\\/]/).at(-1) ?? file).join(' + ');
+    const names = [status.pick.model, status.pick.mmproj]
+      .map((file) => file.split(/[\\/]/).at(-1) ?? file)
+      .join(' + ');
     return `Ready: ${names}, ${formatBytes(status.sizeBytes)}`;
   }
   if (download?.state === 'failed') return `Download failed: ${download.error ?? 'unknown error'}`;
@@ -74,15 +77,19 @@ export function VisionDownload({ api, busy: parentBusy }: { api: ModelsBridge; b
     <div className="modelsDialog__list modelsDialog__downloads">
       <span className="modelsDialog__group">Vision model on this PC</span>
       <p className="kiosk__helper">
-        Qwen3-VL 8B reads the avatar screenshot. The app starts it when a description is requested and stops it after ten idle minutes, so it
-        never sits beside the language model.
+        Qwen3-VL 8B reads the avatar screenshot. The app starts it when a description is requested
+        and stops it after ten idle minutes, so it never sits beside the language model.
       </p>
       <p role="status" aria-label="Vision model status">
         {visionStatusLine(status)}
       </p>
       {downloading && status?.download ? (
         <div className="modelsDialog__download">
-          <progress max={status.download.total || undefined} value={status.download.received} aria-label="Downloading the vision model" />
+          <progress
+            max={status.download.total || undefined}
+            value={status.download.received}
+            aria-label="Downloading the vision model"
+          />
           <small>
             {formatBytes(status.download.received)} of {formatBytes(status.download.total)}
           </small>
@@ -97,7 +104,12 @@ export function VisionDownload({ api, busy: parentBusy }: { api: ModelsBridge; b
         </p>
       ) : null}
       <span className="modelsDialog__actions">
-        <button type="button" className="modelsDialog__primary" onClick={() => void start()} disabled={disabled}>
+        <button
+          type="button"
+          className="modelsDialog__primary"
+          onClick={() => void start()}
+          disabled={disabled}
+        >
           {status?.ready ? 'Download again' : 'Download vision model (~6 GB)'}
         </button>
       </span>

@@ -19,27 +19,49 @@ export async function probeModelServer(
   try {
     switch (server.type) {
       case 'openai': {
-        if (!key) return { status: 'needs-key', message: 'Add your OpenAI API key.', models: {}, checkedAt };
+        if (!key)
+          return {
+            status: 'needs-key',
+            message: 'Add your OpenAI API key.',
+            models: {},
+            checkedAt,
+          };
         const ids = await listModels(server.url, key, fetchFn);
         return { status: 'up', models: openAiRoles(ids), checkedAt };
       }
       case 'chat':
       case 'transcribe': {
         const ids = await listModels(server.url, key, fetchFn);
-        return { status: 'up', models: server.type === 'chat' ? { chat: ids } : { transcribe: ids }, checkedAt };
+        return {
+          status: 'up',
+          models: server.type === 'chat' ? { chat: ids } : { transcribe: ids },
+          checkedAt,
+        };
       }
       case 'speech': {
-        const health = await new SpeechServiceClient({ baseUrl: server.url, fetchFn, healthTimeoutMs: TIMEOUT_MS }).health();
+        const health = await new SpeechServiceClient({
+          baseUrl: server.url,
+          fetchFn,
+          healthTimeoutMs: TIMEOUT_MS,
+        }).health();
         if (!health) return down('The speech service is not answering.', checkedAt);
         return {
           status: health.ready ? 'up' : 'error',
-          ...(health.ready ? {} : { message: health.error ?? 'The speech service is still loading.' }),
-          models: { voices: health.voices, ...(health.sttModel ? { transcribe: [health.sttModel] } : {}) },
+          ...(health.ready
+            ? {}
+            : { message: health.error ?? 'The speech service is still loading.' }),
+          models: {
+            voices: health.voices,
+            ...(health.sttModel ? { transcribe: [health.sttModel] } : {}),
+          },
           checkedAt,
         };
       }
       case 'motion': {
-        const body = (await getJson(`${server.url}/health`, key, fetchFn)) as { backend?: unknown; ready?: unknown };
+        const body = (await getJson(`${server.url}/health`, key, fetchFn)) as {
+          backend?: unknown;
+          ready?: unknown;
+        };
         const backend = typeof body.backend === 'string' ? body.backend : null;
         return {
           status: body.ready === false ? 'error' : 'up',
@@ -66,51 +88,108 @@ export async function probeModelServer(
         };
       }
       case 'search': {
-        const response = await fetchFn(`${server.url}/healthz`, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: auth(key) });
-        if (!response.ok) return { status: 'error', message: `SearXNG answered ${response.status}.`, models: {}, checkedAt };
+        const response = await fetchFn(`${server.url}/healthz`, {
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          headers: auth(key),
+        });
+        if (!response.ok)
+          return {
+            status: 'error',
+            message: `SearXNG answered ${response.status}.`,
+            models: {},
+            checkedAt,
+          };
         return { status: 'up', models: {}, checkedAt };
       }
       case 'brave':
         return key
           ? { status: 'up', models: {}, checkedAt }
-          : { status: 'needs-key', message: 'Add your Brave Search API key.', models: {}, checkedAt };
+          : {
+              status: 'needs-key',
+              message: 'Add your Brave Search API key.',
+              models: {},
+              checkedAt,
+            };
       case 'memory':
         // Only the memory engine can reach its databases: see probeMemoryDatabase.
-        return { status: 'error', message: 'The memory engine checks this database.', models: {}, checkedAt };
+        return {
+          status: 'error',
+          message: 'The memory engine checks this database.',
+          models: {},
+          checkedAt,
+        };
       case 'civitai':
         // Optional: public models download without a key, many need one.
         return key
           ? { status: 'up', models: {}, checkedAt }
-          : { status: 'needs-key', message: 'Many Civitai downloads need an API key (civitai.com → Account settings → API keys).', models: {}, checkedAt };
+          : {
+              status: 'needs-key',
+              message:
+                'Many Civitai downloads need an API key (civitai.com → Account settings → API keys).',
+              models: {},
+              checkedAt,
+            };
       case 'homeassistant': {
         // GET /api/ answers 200 {"message": "API running."} for a valid long-lived token.
         if (!key) return down('no token', checkedAt);
-        const response = await fetchFn(`${server.url}/api/`, { headers: auth(key), signal: AbortSignal.timeout(TIMEOUT_MS) });
-        if (response.status === 401 || response.status === 403) return down('token refused', checkedAt);
-        if (!response.ok) return { status: 'error', message: `Home Assistant answered ${response.status}.`, models: {}, checkedAt };
+        const response = await fetchFn(`${server.url}/api/`, {
+          headers: auth(key),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (response.status === 401 || response.status === 403)
+          return down('token refused', checkedAt);
+        if (!response.ok)
+          return {
+            status: 'error',
+            message: `Home Assistant answered ${response.status}.`,
+            models: {},
+            checkedAt,
+          };
         return { status: 'up', models: {}, checkedAt };
       }
       case 'anthropic': {
-        if (!key) return { status: 'needs-key', message: 'Add your Anthropic API key.', models: {}, checkedAt };
+        if (!key)
+          return {
+            status: 'needs-key',
+            message: 'Add your Anthropic API key.',
+            models: {},
+            checkedAt,
+          };
         const body = (await getJson(`${server.url}/v1/models?limit=100`, undefined, fetchFn, {
           'x-api-key': key,
           'anthropic-version': '2023-06-01',
         })) as { data?: unknown };
         const ids = Array.isArray(body.data)
-          ? body.data.map((entry) => (entry as { id?: unknown })?.id).filter((id): id is string => typeof id === 'string')
+          ? body.data
+              .map((entry) => (entry as { id?: unknown })?.id)
+              .filter((id): id is string => typeof id === 'string')
           : [];
         return { status: 'up', models: { chat: ids.sort() }, checkedAt };
       }
       case 'github': {
         // A token for opening pull requests. GET /user answers 200 for a valid one.
-        if (!key) return { status: 'needs-key', message: 'Add a GitHub token that can push and open pull requests.', models: {}, checkedAt };
+        if (!key)
+          return {
+            status: 'needs-key',
+            message: 'Add a GitHub token that can push and open pull requests.',
+            models: {},
+            checkedAt,
+          };
         await getJson(`${server.url}/user`, key, fetchFn);
         return { status: 'up', models: {}, checkedAt };
       }
       case 'coder': {
-        const body = (await getJson(`${server.url}/v1/health`, undefined, fetchFn)) as { pi?: { found?: unknown } };
+        const body = (await getJson(`${server.url}/v1/health`, undefined, fetchFn)) as {
+          pi?: { found?: unknown };
+        };
         if (body.pi?.found === false) {
-          return { status: 'error', message: 'The runner is up, but it cannot find pi. Install it with: npm install -g @earendil-works/pi-coding-agent', models: {}, checkedAt };
+          return {
+            status: 'error',
+            message:
+              'The runner is up, but it cannot find pi. Install it with: npm install -g @earendil-works/pi-coding-agent',
+            models: {},
+            checkedAt,
+          };
         }
         return { status: 'up', models: {}, checkedAt };
       }
@@ -125,10 +204,20 @@ export async function probeModelServer(
     }
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
-      return { status: 'needs-key', message: key ? 'The server refused the API key.' : 'This server needs an API key.', models: {}, checkedAt };
+      return {
+        status: 'needs-key',
+        message: key ? 'The server refused the API key.' : 'This server needs an API key.',
+        models: {},
+        checkedAt,
+      };
     }
     if (error instanceof HttpError) {
-      return { status: 'error', message: `The server answered ${error.status}.`, models: {}, checkedAt };
+      return {
+        status: 'error',
+        message: `The server answered ${error.status}.`,
+        models: {},
+        checkedAt,
+      };
     }
     return down(`Not reachable at ${server.url}.`, checkedAt);
   }
@@ -149,19 +238,35 @@ export async function probeMemoryDatabase(
   engine: MemoryDatabaseTester | null,
 ): Promise<ServerProbe> {
   const checkedAt = Date.now();
-  if (!engine) return { status: 'error', message: 'Long-term memory is turned off (MEMORY_ENABLED).', models: {}, checkedAt };
+  if (!engine)
+    return {
+      status: 'error',
+      message: 'Long-term memory is turned off (MEMORY_ENABLED).',
+      models: {},
+      checkedAt,
+    };
   try {
     if (target.local) {
       const health = await engine.health();
       return health.database === 'ready'
         ? { status: 'up', models: {}, checkedAt }
-        : { status: 'error', message: 'The memory engine is running, but its database is not ready yet.', models: {}, checkedAt };
+        : {
+            status: 'error',
+            message: 'The memory engine is running, but its database is not ready yet.',
+            models: {},
+            checkedAt,
+          };
     }
     const result = await engine.testStorage(target.url);
     if (result.ok) return { status: 'up', models: {}, checkedAt };
     const reason = result.error ?? 'the connection failed';
     const message = `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
-    return { status: /password/.test(reason) ? 'needs-key' : 'error', message, models: {}, checkedAt };
+    return {
+      status: /password/.test(reason) ? 'needs-key' : 'error',
+      message,
+      models: {},
+      checkedAt,
+    };
   } catch {
     return down('The memory engine is not answering, so it can’t check the database.', checkedAt);
   }
@@ -171,8 +276,10 @@ export async function probeMemoryDatabase(
 export function comfyQueueLength(body: unknown): number {
   if (!body || typeof body !== 'object') return 0;
   const record = body as { queue_running?: unknown; queue_pending?: unknown };
-  return (Array.isArray(record.queue_running) ? record.queue_running.length : 0) +
-    (Array.isArray(record.queue_pending) ? record.queue_pending.length : 0);
+  return (
+    (Array.isArray(record.queue_running) ? record.queue_running.length : 0) +
+    (Array.isArray(record.queue_pending) ? record.queue_pending.length : 0)
+  );
 }
 
 /** Split OpenAI's model list into what each use can pick. */
@@ -198,22 +305,49 @@ function auth(key: string | undefined): Record<string, string> {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
-async function getJson(url: string, key: string | undefined, fetchFn: typeof fetch, extraHeaders: Record<string, string> = {}): Promise<unknown> {
-  const response = await fetchFn(url, { headers: { Accept: 'application/json', ...auth(key), ...extraHeaders }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+async function getJson(
+  url: string,
+  key: string | undefined,
+  fetchFn: typeof fetch,
+  extraHeaders: Record<string, string> = {},
+): Promise<unknown> {
+  const response = await fetchFn(url, {
+    headers: { Accept: 'application/json', ...auth(key), ...extraHeaders },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
   if (!response.ok) throw new HttpError(response.status);
   return response.json();
 }
 
-async function listModels(baseUrl: string, key: string | undefined, fetchFn: typeof fetch): Promise<string[]> {
-  const body = (await getJson(`${baseUrl}/models`, key, fetchFn)) as { data?: unknown; models?: unknown };
-  const entries = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : [];
+async function listModels(
+  baseUrl: string,
+  key: string | undefined,
+  fetchFn: typeof fetch,
+): Promise<string[]> {
+  const body = (await getJson(`${baseUrl}/models`, key, fetchFn)) as {
+    data?: unknown;
+    models?: unknown;
+  };
+  const entries = Array.isArray(body.data)
+    ? body.data
+    : Array.isArray(body.models)
+      ? body.models
+      : [];
   return entries
-    .map((entry) => (typeof entry === 'string' ? entry : entry && typeof entry === 'object' ? ((entry as { id?: unknown; name?: unknown }).id ?? (entry as { name?: unknown }).name) : null))
+    .map((entry) =>
+      typeof entry === 'string'
+        ? entry
+        : entry && typeof entry === 'object'
+          ? ((entry as { id?: unknown; name?: unknown }).id ?? (entry as { name?: unknown }).name)
+          : null,
+    )
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
 function strings(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
 }
 
 function down(message: string, checkedAt: number): ServerProbe {

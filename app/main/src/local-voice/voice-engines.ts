@@ -12,7 +12,12 @@ import {
   type ModelServer,
   type RouteOverride,
 } from '../shared/config/model-routing.js';
-import { LocalLlmClient, type ChatMessage, type LlmStreamPart, type LlmToolDefinition } from './local-llm-client.js';
+import {
+  LocalLlmClient,
+  type ChatMessage,
+  type LlmStreamPart,
+  type LlmToolDefinition,
+} from './local-llm-client.js';
 import { OpenAiAudioClient } from './openai-audio-client.js';
 import { OpenAiRealtimeTts, type RealtimeSocketFactory } from './openai-realtime-tts.js';
 import { OpenAiStt, SpeechServiceStt, SpeechServiceTts } from './speech-engines.js';
@@ -26,7 +31,10 @@ export interface ChatClient {
   readonly model: string;
   readonly flavor: 'llama-server' | 'openai';
   isAvailable(): Promise<boolean>;
-  streamChat(messages: ChatMessage[], options?: { signal?: AbortSignal; tools?: LlmToolDefinition[] }): AsyncGenerator<LlmStreamPart>;
+  streamChat(
+    messages: ChatMessage[],
+    options?: { signal?: AbortSignal; tools?: LlmToolDefinition[] },
+  ): AsyncGenerator<LlmStreamPart>;
 }
 
 export interface VoiceEngines {
@@ -40,7 +48,11 @@ export type ServerKeyLookup = (serverId: string) => string | undefined;
 
 type Logger = Pick<Console, 'warn'>;
 
-export const DEFAULT_OPENAI_MODELS = { llm: 'gpt-4.1-mini', stt: 'gpt-4o-mini-transcribe', tts: 'gpt-realtime-2.1-mini' };
+export const DEFAULT_OPENAI_MODELS = {
+  llm: 'gpt-4.1-mini',
+  stt: 'gpt-4o-mini-transcribe',
+  tts: 'gpt-realtime-2.1-mini',
+};
 
 export function buildVoiceEngines(
   routing: ModelRouting,
@@ -64,14 +76,15 @@ export function buildVoiceEngines(
     return client;
   };
 
-  const chats = routeTargetsWithOverride(routing, 'llm', options.llmOverride).map(({ server, model }) =>
-    new LocalLlmClient({
-      baseUrl: server.url,
-      model: model || (server.type === 'openai' ? DEFAULT_OPENAI_MODELS.llm : 'default'),
-      apiKey: keyFor(server.id),
-      flavor: server.type === 'openai' ? 'openai' : 'llama-server',
-      fetchFn,
-    }),
+  const chats = routeTargetsWithOverride(routing, 'llm', options.llmOverride).map(
+    ({ server, model }) =>
+      new LocalLlmClient({
+        baseUrl: server.url,
+        model: model || (server.type === 'openai' ? DEFAULT_OPENAI_MODELS.llm : 'default'),
+        apiKey: keyFor(server.id),
+        flavor: server.type === 'openai' ? 'openai' : 'llama-server',
+        fetchFn,
+      }),
   );
 
   const stts = routeTargets(routing, 'stt').map(({ server, model }): SpeechToTextEngine =>
@@ -100,15 +113,18 @@ export function buildVoiceEngines(
 
   // The status panel reports one speech service: the first one hearing or speaking uses.
   const speechServer =
-    [...routeTargets(routing, 'stt'), ...routeTargets(routing, 'tts')].find(({ server }) => server.type === 'speech')?.server ??
-    routing.servers.find((server) => server.id === BUILT_IN_SERVER_IDS.speech);
-  const speech = speechServer ? speechFor(speechServer) : new SpeechServiceClient({ baseUrl: 'http://127.0.0.1:8192', fetchFn });
+    [...routeTargets(routing, 'stt'), ...routeTargets(routing, 'tts')].find(
+      ({ server }) => server.type === 'speech',
+    )?.server ?? routing.servers.find((server) => server.id === BUILT_IN_SERVER_IDS.speech);
+  const speech = speechServer
+    ? speechFor(speechServer)
+    : new SpeechServiceClient({ baseUrl: 'http://127.0.0.1:8192', fetchFn });
 
   return {
-    llm: chats.length > 1 ? new FailoverChatClient(chats, logger) : chats[0] ?? missingChat(),
+    llm: chats.length > 1 ? new FailoverChatClient(chats, logger) : (chats[0] ?? missingChat()),
     speech,
-    stt: stts.length > 1 ? new FailoverStt(stts, logger) : stts[0] ?? missingStt(),
-    tts: ttses.length > 1 ? new FailoverTts(ttses, logger) : ttses[0] ?? missingTts(),
+    stt: stts.length > 1 ? new FailoverStt(stts, logger) : (stts[0] ?? missingStt()),
+    tts: ttses.length > 1 ? new FailoverTts(ttses, logger) : (ttses[0] ?? missingTts()),
   };
 }
 
@@ -117,9 +133,17 @@ function isOpenAiVoice(voice: string | undefined): voice is string {
 }
 
 /** A speech-service Speaking target: the engine its model names, with the route's voice as default. */
-function speechTts(speech: SpeechServiceClient, model: string | undefined, voice: string | undefined): SpeechServiceTts {
+function speechTts(
+  speech: SpeechServiceClient,
+  model: string | undefined,
+  voice: string | undefined,
+): SpeechServiceTts {
   const parsed = parseSpeakingModel(model);
-  return new SpeechServiceTts(speech, { engine: parsed.engine, model: parsed.model, voice: parsed.legacyVoice ?? voice });
+  return new SpeechServiceTts(speech, {
+    engine: parsed.engine,
+    model: parsed.model,
+    voice: parsed.legacyVoice ?? voice,
+  });
 }
 
 function isAbort(error: unknown, signal?: AbortSignal): boolean {
@@ -192,7 +216,10 @@ export class FailoverStt implements SpeechToTextEngine {
     private readonly logger?: Logger,
   ) {}
 
-  async transcribe(wav: Uint8Array, options?: { signal?: AbortSignal }): Promise<LocalVoiceTranscribeResult> {
+  async transcribe(
+    wav: Uint8Array,
+    options?: { signal?: AbortSignal },
+  ): Promise<LocalVoiceTranscribeResult> {
     let lastError: unknown;
     for (const engine of this.engines) {
       try {
@@ -277,6 +304,13 @@ function missingTts(): TextToSpeechEngine {
     synthesize: async () => {
       throw new Error('No server is set for Speaking. Choose one in Models and servers.');
     },
-    status: () => ({ provider: 'kokoro', available: false, ready: false, model: null, voice: null, error: 'No server is set for Speaking.' }),
+    status: () => ({
+      provider: 'kokoro',
+      available: false,
+      ready: false,
+      model: null,
+      voice: null,
+      error: 'No server is set for Speaking.',
+    }),
   };
 }

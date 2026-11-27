@@ -9,18 +9,35 @@ export interface ArrivalGreetingDeps {
   /** When a face was last seen at a place (bija's clock), or null. */
   faceSeenAt: (placeId: string) => number | null;
   /** Sends the camera cue to the screen that shows the avatar. */
-  send: (avatarId: string, payload: { cue: 'greet_face'; timestamp: number; confidence: number; provider: string; payload: { avatarId: string; origin: string } }) => void;
+  send: (
+    avatarId: string,
+    payload: {
+      cue: 'greet_face';
+      timestamp: number;
+      confidence: number;
+      provider: string;
+      payload: { avatarId: string; origin: string };
+    },
+  ) => void;
   now?: () => number;
   freshMs?: number;
 }
 
 /** Returns the arrival listener. It answers true when it sent a greeting. */
-export function createArrivalGreeting(deps: ArrivalGreetingDeps): (avatarId: string, placeId: string) => boolean {
+export function createArrivalGreeting(
+  deps: ArrivalGreetingDeps,
+): (avatarId: string, placeId: string) => boolean {
   return (avatarId, placeId) => {
     const now = (deps.now ?? Date.now)();
     const seen = deps.faceSeenAt(placeId);
     if (seen === null || now - seen > (deps.freshMs ?? FACE_FRESH_MS)) return false;
-    deps.send(avatarId, { cue: 'greet_face', timestamp: now, confidence: 1, provider: 'arrival', payload: { avatarId, origin: 'places:arrival' } });
+    deps.send(avatarId, {
+      cue: 'greet_face',
+      timestamp: now,
+      confidence: 1,
+      provider: 'arrival',
+      payload: { avatarId, origin: 'places:arrival' },
+    });
     return true;
   };
 }

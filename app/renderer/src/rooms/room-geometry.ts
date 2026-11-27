@@ -1,5 +1,11 @@
 /** Shared by the visual builder and the physics world so walls and colliders always agree. */
-import type { RoomFile, RoomObject, RoomOpening, RoomShell, Vec3 } from '../../../main/src/shared/rooms/types.js';
+import type {
+  RoomFile,
+  RoomObject,
+  RoomOpening,
+  RoomShell,
+  Vec3,
+} from '../../../main/src/shared/rooms/types.js';
 
 export const WALL_THICKNESS = 0.1;
 
@@ -37,7 +43,9 @@ export function wallPieces(shell: RoomShell, wall: WallName): WorldBox[] {
     }))
     .filter((hole) => hole.u1 > hole.u0 && hole.v1 > hole.v0);
 
-  const cuts = [...new Set([min, max, ...holes.flatMap((hole) => [hole.u0, hole.u1])])].sort((a, b) => a - b);
+  const cuts = [...new Set([min, max, ...holes.flatMap((hole) => [hole.u0, hole.u1])])].sort(
+    (a, b) => a - b,
+  );
   const pieces: WorldBox[] = [];
   for (let i = 0; i < cuts.length - 1; i += 1) {
     const a = cuts[i];
@@ -60,7 +68,14 @@ export function wallPieces(shell: RoomShell, wall: WallName): WorldBox[] {
   return pieces;
 }
 
-function toWorld(shell: RoomShell, wall: WallName, u0: number, u1: number, v0: number, v1: number): WorldBox {
+function toWorld(
+  shell: RoomShell,
+  wall: WallName,
+  u0: number,
+  u1: number,
+  v0: number,
+  v1: number,
+): WorldBox {
   const t = WALL_THICKNESS;
   const u = (u0 + u1) / 2;
   const v = (v0 + v1) / 2;
@@ -96,7 +111,10 @@ export function windowBlockers(shell: RoomShell): WorldBox[] {
 }
 
 /** Local object-space point to world space (rotation about Y only). */
-export function objectToWorld(object: Pick<RoomObject, 'position' | 'rotationY'>, local: Vec3): Vec3 {
+export function objectToWorld(
+  object: Pick<RoomObject, 'position' | 'rotationY'>,
+  local: Vec3,
+): Vec3 {
   const angle = degToRad(object.rotationY ?? 0);
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -107,6 +125,9 @@ export function objectToWorld(object: Pick<RoomObject, 'position' | 'rotationY'>
   ];
 }
 
-export function colliderObjects(room: RoomFile, filter: (object: RoomObject) => boolean): RoomObject[] {
+export function colliderObjects(
+  room: RoomFile,
+  filter: (object: RoomObject) => boolean,
+): RoomObject[] {
   return room.objects.filter((object) => (object.collider ?? 'box') === 'box' && filter(object));
 }

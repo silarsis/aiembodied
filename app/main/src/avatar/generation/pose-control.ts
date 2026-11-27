@@ -18,9 +18,16 @@ export function poseSupport(family: ImageFamily): PoseSupport {
 }
 
 /** The size the skeleton is drawn at for a model's front, when that model takes one. */
-export function poseImageSize(model: { family: ImageFamily; poseControlNet?: string }): { width: number; height: number } | undefined {
+export function poseImageSize(model: {
+  family: ImageFamily;
+  poseControlNet?: string;
+}): { width: number; height: number } | undefined {
   if (model.family === 'sd1' || model.family === 'sdxl')
-    return model.poseControlNet ? (model.family === 'sd1' ? { width: 512, height: 768 } : { width: 1024, height: 1024 }) : undefined;
+    return model.poseControlNet
+      ? model.family === 'sd1'
+        ? { width: 512, height: 768 }
+        : { width: 1024, height: 1024 }
+      : undefined;
   return poseSupport(model.family) === 'reference' ? { width: 1024, height: 1024 } : undefined;
 }
 
@@ -59,7 +66,12 @@ export function poseControlNetPlan(family: 'sd1' | 'sdxl'): DownloadPlan {
   return {
     title: net.title,
     folder: 'controlnet',
-    file: { name: net.filename, downloadUrl: net.url, sha256: net.sha256, sizeKB: net.bytes / 1024 },
+    file: {
+      name: net.filename,
+      downloadUrl: net.url,
+      sha256: net.sha256,
+      sizeKB: net.bytes / 1024,
+    },
     info: { name: net.title, type: 'Controlnet', baseModel: net.baseModel, family },
   };
 }
@@ -91,13 +103,43 @@ const A_POSE: [number, number][] = [
 ];
 /** OpenPose's limb pairs (keypoint indices) and its colour order, as its annotator draws them. */
 const LIMBS: [number, number][] = [
-  [1, 2], [1, 5], [2, 3], [3, 4], [5, 6], [6, 7], [1, 8], [8, 9], [9, 10],
-  [1, 11], [11, 12], [12, 13], [1, 0], [0, 14], [14, 16], [0, 15], [15, 17],
+  [1, 2],
+  [1, 5],
+  [2, 3],
+  [3, 4],
+  [5, 6],
+  [6, 7],
+  [1, 8],
+  [8, 9],
+  [9, 10],
+  [1, 11],
+  [11, 12],
+  [12, 13],
+  [1, 0],
+  [0, 14],
+  [14, 16],
+  [0, 15],
+  [15, 17],
 ];
 const COLOURS: [number, number, number][] = [
-  [255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
-  [0, 255, 0], [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255],
-  [0, 0, 255], [85, 0, 255], [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85],
+  [255, 0, 0],
+  [255, 85, 0],
+  [255, 170, 0],
+  [255, 255, 0],
+  [170, 255, 0],
+  [85, 255, 0],
+  [0, 255, 0],
+  [0, 255, 85],
+  [0, 255, 170],
+  [0, 255, 255],
+  [0, 170, 255],
+  [0, 85, 255],
+  [0, 0, 255],
+  [85, 0, 255],
+  [170, 0, 255],
+  [255, 0, 255],
+  [255, 0, 170],
+  [255, 0, 85],
 ];
 
 /**
@@ -124,12 +166,27 @@ export function drawPoseSkeleton(width: number, height: number): Buffer {
   for (let i = 3; i < png.data.length; i += 4) png.data[i] = 255;
   const points = poseKeypoints(width, height);
   const stroke = Math.max(4, Math.round(Math.min(width, height) / 128));
-  const paint = (x0: number, y0: number, x1: number, y1: number, radius: number, colour: number[]) => {
+  const paint = (
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    radius: number,
+    colour: number[],
+  ) => {
     const dx = x1 - x0;
     const dy = y1 - y0;
     const lengthSquared = dx * dx + dy * dy || 1;
-    for (let y = Math.floor(Math.min(y0, y1) - radius); y <= Math.ceil(Math.max(y0, y1) + radius); y++) {
-      for (let x = Math.floor(Math.min(x0, x1) - radius); x <= Math.ceil(Math.max(x0, x1) + radius); x++) {
+    for (
+      let y = Math.floor(Math.min(y0, y1) - radius);
+      y <= Math.ceil(Math.max(y0, y1) + radius);
+      y++
+    ) {
+      for (
+        let x = Math.floor(Math.min(x0, x1) - radius);
+        x <= Math.ceil(Math.max(x0, x1) + radius);
+        x++
+      ) {
         if (x < 0 || y < 0 || x >= width || y >= height) continue;
         const t = Math.min(1, Math.max(0, ((x - x0) * dx + (y - y0) * dy) / lengthSquared));
         if (Math.hypot(x - x0 - t * dx, y - y0 - t * dy) > radius) continue;
@@ -144,7 +201,14 @@ export function drawPoseSkeleton(width: number, height: number): Buffer {
   LIMBS.forEach(([a, b], index) => {
     const [x0, y0] = points[a];
     const [x1, y1] = points[b];
-    paint(x0, y0, x1, y1, stroke, COLOURS[index].map((channel) => Math.floor(channel * 0.6)));
+    paint(
+      x0,
+      y0,
+      x1,
+      y1,
+      stroke,
+      COLOURS[index].map((channel) => Math.floor(channel * 0.6)),
+    );
   });
   points.forEach(([x, y], index) => paint(x, y, x, y, stroke, COLOURS[index]));
   // Mostly black: the fastest deflate is nearly as small, and this runs on every new front.

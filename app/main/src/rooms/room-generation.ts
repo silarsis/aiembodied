@@ -18,20 +18,36 @@ import { placeRoom, type ResolvedModel } from './room-placer.js';
 import { refitObject } from './room-refit.js';
 import type { GeneratedObjectSummary, ObjectSettings } from '../shared/rooms/object-settings.js';
 import { validateRoomFile } from '../shared/rooms/validate.js';
-import type { RoomGenerationResult, RoomGenerationProgress } from '../shared/rooms/room-generation-types.js';
+import type {
+  RoomGenerationResult,
+  RoomGenerationProgress,
+} from '../shared/rooms/room-generation-types.js';
 
 /** Makes objects the sources had nothing for; see `GeneratedSource`. */
 export interface ObjectGenerator {
   /** An object made earlier, or null. */
   resolve(object: LayoutObject, signal?: AbortSignal): Promise<ResolvedModel | null>;
   /** Makes (or reuses) an object; throws when it cannot. */
-  generate(object: LayoutObject, signal: AbortSignal): Promise<{ resolved: ResolvedModel; reused: boolean }>;
+  generate(
+    object: LayoutObject,
+    signal: AbortSignal,
+  ): Promise<{ resolved: ResolvedModel; reused: boolean }>;
   list(): Promise<GeneratedObjectSummary[]>;
   remove(id: string): Promise<void>;
 }
 
 /** Most important first: things the avatar sits at, then what it stands at, then decoration. */
-const MAKE_ORDER: Record<ObjectCategory, number> = { bed: 0, seat: 1, table: 2, storage: 3, appliance: 4, lamp: 5, plant: 6, decor: 7, prop: 8 };
+const MAKE_ORDER: Record<ObjectCategory, number> = {
+  bed: 0,
+  seat: 1,
+  table: 2,
+  storage: 3,
+  appliance: 4,
+  lamp: 5,
+  plant: 6,
+  decor: 7,
+  prop: 8,
+};
 /** Flat things (rugs) do not make good meshes. */
 const MIN_MADE_HEIGHT = 0.06;
 
@@ -39,7 +55,12 @@ export function makeOrder(objects: LayoutObject[]): LayoutObject[] {
   const volume = (o: LayoutObject) => o.size[0] * o.size[1] * o.size[2];
   return objects
     .map((object, index) => ({ object, index }))
-    .sort((a, b) => MAKE_ORDER[a.object.category] - MAKE_ORDER[b.object.category] || volume(b.object) - volume(a.object) || a.index - b.index)
+    .sort(
+      (a, b) =>
+        MAKE_ORDER[a.object.category] - MAKE_ORDER[b.object.category] ||
+        volume(b.object) - volume(a.object) ||
+        a.index - b.index,
+    )
     .map((entry) => entry.object);
 }
 
@@ -84,10 +105,14 @@ export class RoomGenerationService {
     return true;
   }
 
-  async generate(description: string, onProgress: (event: RoomGenerationProgress) => void = () => undefined): Promise<RoomGenerationResult> {
+  async generate(
+    description: string,
+    onProgress: (event: RoomGenerationProgress) => void = () => undefined,
+  ): Promise<RoomGenerationResult> {
     const text = typeof description === 'string' ? description.trim() : '';
     if (!text) throw new Error('Describe the room first.');
-    if (text.length > 1000) throw new Error('The description is too long (1000 characters at most).');
+    if (text.length > 1000)
+      throw new Error('The description is too long (1000 characters at most).');
     if (this.controller) throw new Error('A room is already being built.');
     const controller = new AbortController();
     this.controller = controller;
@@ -102,19 +127,31 @@ export class RoomGenerationService {
 
       const total = layout.objects.length;
       let done = 0;
-      onProgress({ phase: 'finding', message: `Finding furniture (0/${total})`, current: 0, total });
+      onProgress({
+        phase: 'finding',
+        message: `Finding furniture (0/${total})`,
+        current: 0,
+        total,
+      });
       const resolved: Record<string, ResolvedModel | undefined> = {};
       const fellBack: string[] = [];
       await Promise.all(
         layout.objects.map(async (object) => {
-          const found = await resolveObject(this.options.sources, object, signal).catch((error: unknown) => {
-            if (signal.aborted) throw error;
-            return null;
-          });
+          const found = await resolveObject(this.options.sources, object, signal).catch(
+            (error: unknown) => {
+              if (signal.aborted) throw error;
+              return null;
+            },
+          );
           if (found) resolved[object.id] = found;
           else fellBack.push(object.id);
           done += 1;
-          onProgress({ phase: 'finding', message: `Finding furniture (${done}/${total})`, current: done, total });
+          onProgress({
+            phase: 'finding',
+            message: `Finding furniture (${done}/${total})`,
+            current: done,
+            total,
+          });
         }),
       );
       if (signal.aborted) throw cancelled();
@@ -128,15 +165,30 @@ export class RoomGenerationService {
 
       // Objects nothing found: made in the background when that is set up, else simple shapes now.
       const settings = this.options.objectSettings?.();
-      const canMake = Boolean(this.options.generator && settings?.enabled && settings.available && settings.maxPerRoom > 0);
+      const canMake = Boolean(
+        this.options.generator &&
+        settings?.enabled &&
+        settings.available &&
+        settings.maxPerRoom > 0,
+      );
       const placedIds = new Set(room.objects.map((o) => o.id));
-      const missing = layout.objects.filter((o) => fellBack.includes(o.id) && !placed.dropped.includes(o.id));
+      const missing = layout.objects.filter(
+        (o) => fellBack.includes(o.id) && !placed.dropped.includes(o.id),
+      );
       const toMake = canMake
-        ? makeOrder(missing.filter((o) => placedIds.has(o.id) && (room.objects.find((r) => r.id === o.id)?.size[1] ?? 0) >= MIN_MADE_HEIGHT))
+        ? makeOrder(
+            missing.filter(
+              (o) =>
+                placedIds.has(o.id) &&
+                (room.objects.find((r) => r.id === o.id)?.size[1] ?? 0) >= MIN_MADE_HEIGHT,
+            ),
+          )
         : [];
       const toMakeIds = new Set(toMake.map((o) => o.id));
       const warnings = [
-        ...missing.filter((o) => !toMakeIds.has(o.id)).map((o) => `Couldn't find a ${o.name}, used a simple shape.`),
+        ...missing
+          .filter((o) => !toMakeIds.has(o.id))
+          .map((o) => `Couldn't find a ${o.name}, used a simple shape.`),
         ...placed.warnings,
       ];
       const folder = path.join(this.options.roomsDirectory, uuid);
@@ -146,7 +198,18 @@ export class RoomGenerationService {
         await writeFile(
           path.join(folder, 'generation.json'),
           JSON.stringify(
-            { description: text, createdAt: (this.options.now?.() ?? new Date()).toISOString(), seed, warnings, fellBack, dropped: placed.dropped, models: Object.fromEntries(Object.entries(resolved).map(([id, r]) => [id, r?.model.asset])), making: toMake.map((o) => o.id) },
+            {
+              description: text,
+              createdAt: (this.options.now?.() ?? new Date()).toISOString(),
+              seed,
+              warnings,
+              fellBack,
+              dropped: placed.dropped,
+              models: Object.fromEntries(
+                Object.entries(resolved).map(([id, r]) => [id, r?.model.asset]),
+              ),
+              making: toMake.map((o) => o.id),
+            },
             null,
             2,
           ),
@@ -156,15 +219,33 @@ export class RoomGenerationService {
         await rm(folder, { recursive: true, force: true });
         throw error;
       }
-      const summary = { id: `room:${uuid}`, name: room.name, builtIn: false, description: room.description };
+      const summary = {
+        id: `room:${uuid}`,
+        name: room.name,
+        builtIn: false,
+        description: room.description,
+      };
       if (toMake.length > 0 && settings && this.options.generator) {
         handedOver = true;
         this.makingRoom = uuid;
         const cap = settings.maxPerRoom;
-        void this.makeObjects({ uuid, folder, toMake, cap, generator: this.options.generator, signal, controller, onProgress });
+        void this.makeObjects({
+          uuid,
+          folder,
+          toMake,
+          cap,
+          generator: this.options.generator,
+          signal,
+          controller,
+          onProgress,
+        });
         return { room: summary, warnings, making: toMake.length };
       }
-      onProgress({ phase: 'done', message: warnings.length ? 'Done, with notes' : 'Done', warnings });
+      onProgress({
+        phase: 'done',
+        message: warnings.length ? 'Done, with notes' : 'Done',
+        warnings,
+      });
       return { room: summary, warnings };
     } catch (error) {
       if (signal.aborted) throw cancelled();
@@ -202,19 +283,30 @@ export class RoomGenerationService {
         let newlyMade = false;
         if (!model) {
           if (started >= cap) {
-            notes.push(`Couldn't make a ${object.name} (the limit is ${cap} new object${cap === 1 ? '' : 's'} per room), used a simple shape.`);
+            notes.push(
+              `Couldn't make a ${object.name} (the limit is ${cap} new object${cap === 1 ? '' : 's'} per room), used a simple shape.`,
+            );
             failed.push(object.id);
             continue;
           }
           started += 1;
-          job.onProgress({ phase: 'making', roomId, message: `Making the ${object.name} (${started}/${total})…`, current: started, total });
+          job.onProgress({
+            phase: 'making',
+            roomId,
+            message: `Making the ${object.name} (${started}/${total})…`,
+            current: started,
+            total,
+          });
           try {
             const result = await generator.generate(object, signal);
             model = result.resolved;
             newlyMade = !result.reused;
           } catch (error) {
             if (signal.aborted) break;
-            this.options.logger?.warn('Could not make a room object.', { object: object.id, message: error instanceof Error ? error.message : String(error) });
+            this.options.logger?.warn('Could not make a room object.', {
+              object: object.id,
+              message: error instanceof Error ? error.message : String(error),
+            });
             notes.push(`Couldn't make a ${object.name}, used a simple shape.`);
             failed.push(object.id);
             continue;
@@ -233,11 +325,14 @@ export class RoomGenerationService {
       }
       if (signal.aborted) {
         const left = job.toMake.filter((o) => !made.includes(o.id) && !failed.includes(o.id));
-        for (const o of left) notes.push(`Stopped before making the ${o.name}, used a simple shape.`);
+        for (const o of left)
+          notes.push(`Stopped before making the ${o.name}, used a simple shape.`);
       }
       await this.recordMaking(folder, { made, failed, notes }).catch(() => undefined);
     } catch (error) {
-      this.options.logger?.warn('Making room objects stopped.', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Making room objects stopped.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       notes.push('Stopped making new objects.');
     } finally {
       this.makingRoom = null;
@@ -245,14 +340,22 @@ export class RoomGenerationService {
       job.onProgress({
         phase: 'done',
         roomId,
-        message: signal.aborted ? 'Stopped making objects' : notes.length ? 'Done, with notes' : 'Done',
+        message: signal.aborted
+          ? 'Stopped making objects'
+          : notes.length
+            ? 'Done, with notes'
+            : 'Done',
         warnings: notes,
       });
     }
   }
 
   /** Swaps one object's shapes for its model in room.json. Returns 'ok', 'gone' (the room was deleted) or the reason it was not done. */
-  private async applyModel(folder: string, objectId: string, resolved: ResolvedModel): Promise<string> {
+  private async applyModel(
+    folder: string,
+    objectId: string,
+    resolved: ResolvedModel,
+  ): Promise<string> {
     const file = path.join(folder, 'room.json');
     let current;
     try {
@@ -269,10 +372,25 @@ export class RoomGenerationService {
     return 'ok';
   }
 
-  private async recordMaking(folder: string, outcome: { made: string[]; failed: string[]; notes: string[] }): Promise<void> {
+  private async recordMaking(
+    folder: string,
+    outcome: { made: string[]; failed: string[]; notes: string[] },
+  ): Promise<void> {
     const file = path.join(folder, 'generation.json');
     const generation = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
-    await writeFile(file, JSON.stringify({ ...generation, madeObjects: outcome.made, couldNotMake: outcome.failed, makingNotes: outcome.notes }, null, 2));
+    await writeFile(
+      file,
+      JSON.stringify(
+        {
+          ...generation,
+          madeObjects: outcome.made,
+          couldNotMake: outcome.failed,
+          makingNotes: outcome.notes,
+        },
+        null,
+        2,
+      ),
+    );
   }
 
   /** Removes a saved room's folder. Built-in rooms and anything that is not a saved room id are refused. */

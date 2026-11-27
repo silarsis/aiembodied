@@ -9,7 +9,13 @@ import type { RunnerEvent } from '../shared/coding/runner-client-types.js';
 import type { LocalVoiceToolRecord } from '../local-voice/local-voice-service.js';
 import type { ApprovalOutcome } from '../tools/approvals.js';
 import type { PendingApproval } from '../shared/tools/approvals-types.js';
-import type { Address, ActorKind, SwitchboardEventInput, SwitchboardProducer, TxnState } from './types.js';
+import type {
+  Address,
+  ActorKind,
+  SwitchboardEventInput,
+  SwitchboardProducer,
+  TxnState,
+} from './types.js';
 
 export const DEFAULT_AVATAR_ID = 'echo';
 export const DEFAULT_PERSON_ID = 'kevin';
@@ -45,7 +51,8 @@ function clip(text: string, limit: number): string {
 function clipDeep(value: unknown, limit: number, depth = 0): unknown {
   if (typeof value === 'string') return value.length <= limit ? value : `${value.slice(0, limit)}…`;
   if (depth > 6 || value === null || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.slice(0, 50).map((item) => clipDeep(item, limit, depth + 1));
+  if (Array.isArray(value))
+    return value.slice(0, 50).map((item) => clipDeep(item, limit, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) out[key] = clipDeep(item, limit, depth + 1);
   return out;
@@ -112,22 +119,53 @@ export class SwitchboardMirror {
   }
 
   /** A turn begins: Kevin spoke or typed, or the app is running a system turn. Previews are skipped. */
-  turnStarted(requestId: string, turn: { text: string; system?: boolean; preview?: boolean }): void {
+  turnStarted(
+    requestId: string,
+    turn: { text: string; system?: boolean; preview?: boolean },
+  ): void {
     if (turn.preview) return;
-    const txn = { id: `turn:${requestId}`, state: 'open' as const, title: clip(turn.text, TITLE_LIMIT) || undefined };
+    const txn = {
+      id: `turn:${requestId}`,
+      state: 'open' as const,
+      title: clip(turn.text, TITLE_LIMIT) || undefined,
+    };
     if (turn.system) {
-      this.send({ type: 'avatar.note', producer: this.service(), to: [this.toAvatar()], txn, audience: 'household', payload: { system: true } });
+      this.send({
+        type: 'avatar.note',
+        producer: this.service(),
+        to: [this.toAvatar()],
+        txn,
+        audience: 'household',
+        payload: { system: true },
+      });
       return;
     }
-    this.send({ type: 'speech.heard', producer: this.person(), to: [this.toAvatar()], txn, audience: 'household', payload: { text: clip(turn.text, TEXT_LIMIT) } });
+    this.send({
+      type: 'speech.heard',
+      producer: this.person(),
+      to: [this.toAvatar()],
+      txn,
+      audience: 'household',
+      payload: { text: clip(turn.text, TEXT_LIMIT) },
+    });
   }
 
   /** The turn ended with a reply, a cancel or an error. */
-  turnFinished(requestId: string, outcome: { text: string; cancelled?: boolean; error?: string }): void {
+  turnFinished(
+    requestId: string,
+    outcome: { text: string; cancelled?: boolean; error?: string },
+  ): void {
     const state: TxnState = outcome.cancelled ? 'cancelled' : outcome.error ? 'failed' : 'done';
     const payload: Record<string, unknown> = { text: clip(outcome.text, TEXT_LIMIT) };
     if (outcome.error) payload.error = clip(outcome.error, 500);
-    this.send({ type: 'avatar.utterance', producer: this.avatar(), to: [this.toPerson()], txn: { id: `turn:${requestId}`, state }, audience: 'household', payload });
+    this.send({
+      type: 'avatar.utterance',
+      producer: this.avatar(),
+      to: [this.toPerson()],
+      txn: { id: `turn:${requestId}`, state },
+      audience: 'household',
+      payload,
+    });
   }
 
   /** A tool call finished. requestId is the turn it belongs to, if known. */
@@ -137,7 +175,8 @@ export class SwitchboardMirror {
     if (requestId) {
       const n = (this.toolCounts.get(requestId) ?? 0) + 1;
       this.toolCounts.set(requestId, n);
-      if (this.toolCounts.size > 200) this.toolCounts.delete(this.toolCounts.keys().next().value as string);
+      if (this.toolCounts.size > 200)
+        this.toolCounts.delete(this.toolCounts.keys().next().value as string);
       txnId = `tool:${requestId}:${n}`;
       parent = `turn:${requestId}`;
     } else {
@@ -148,7 +187,8 @@ export class SwitchboardMirror {
       const taskId = /Started task (\S+) in/.exec(record.result)?.[1];
       if (taskId) {
         this.taskParents.set(taskId, txnId);
-        if (this.taskParents.size > TASK_PARENT_LIMIT) this.taskParents.delete(this.taskParents.keys().next().value as string);
+        if (this.taskParents.size > TASK_PARENT_LIMIT)
+          this.taskParents.delete(this.taskParents.keys().next().value as string);
       }
     }
     this.send({
@@ -157,7 +197,11 @@ export class SwitchboardMirror {
       to: [this.toAvatar()],
       txn: { id: txnId, parent, state: record.ok ? 'done' : 'failed', title: record.name },
       audience: record.name.startsWith('home_') ? 'private' : 'household',
-      payload: { arguments: clipDeep(record.arguments, TEXT_LIMIT), result: clip(record.result, TEXT_LIMIT), ok: record.ok },
+      payload: {
+        arguments: clipDeep(record.arguments, TEXT_LIMIT),
+        result: clip(record.result, TEXT_LIMIT),
+        ok: record.ok,
+      },
     });
   }
 
@@ -166,9 +210,18 @@ export class SwitchboardMirror {
       type: 'approval.requested',
       producer: addressProducer(approval.requestedBy ?? `avatar:${this.avatarId}`, this.node),
       to: (approval.approvers ?? [`person:${this.personId}`]) as Address[],
-      txn: { id: `approval:${approval.id}`, state: 'waiting', title: clip(approval.summary, TITLE_LIMIT), deadline: new Date(approval.expiresAt).toISOString() },
+      txn: {
+        id: `approval:${approval.id}`,
+        state: 'waiting',
+        title: clip(approval.summary, TITLE_LIMIT),
+        deadline: new Date(approval.expiresAt).toISOString(),
+      },
       audience: 'household',
-      payload: { tool: approval.toolName, summary: clip(approval.summary, TEXT_LIMIT), cardOnly: approval.cardOnly },
+      payload: {
+        tool: approval.toolName,
+        summary: clip(approval.summary, TEXT_LIMIT),
+        cardOnly: approval.cardOnly,
+      },
     });
   }
 
@@ -219,10 +272,24 @@ export class SwitchboardMirror {
         type: 'tool.question',
         producer: { kind: 'tool', id: 'coding', node: this.node },
         to: [this.toAvatar()],
-        txn: { id: `question:${taskId}:${q.id}`, parent: txnId, state: 'waiting', title: clip(q.title ?? q.message ?? q.method, TITLE_LIMIT) },
+        txn: {
+          id: `question:${taskId}:${q.id}`,
+          parent: txnId,
+          state: 'waiting',
+          title: clip(q.title ?? q.message ?? q.method, TITLE_LIMIT),
+        },
         audience: 'household',
         priority: 'high',
-        payload: clipDeep({ kind: q.kind, method: q.method, title: q.title, message: q.message, options: q.options }, TEXT_LIMIT) as Record<string, unknown>,
+        payload: clipDeep(
+          {
+            kind: q.kind,
+            method: q.method,
+            title: q.title,
+            message: q.message,
+            options: q.options,
+          },
+          TEXT_LIMIT,
+        ) as Record<string, unknown>,
       });
     }
   }

@@ -13,15 +13,20 @@ const WEIGHTS = 'mvadapter_ig2mv_sdxl.safetensors';
 const WEIGHTS_SHA256 = 'e89a40d81c3977d946183c419690d62bd2d62c6b6683c683e2981776e2e17be7';
 
 const local = process.env.AIEMBODIED_HOST_LOCALAPPDATA || process.env.LOCALAPPDATA || '';
-const comfyDir = process.env.COMFYUI_DIR || path.join(local, 'Comfy-Desktop', 'ComfyUI-Installs', 'ComfyUI', 'ComfyUI');
+const comfyDir =
+  process.env.COMFYUI_DIR ||
+  path.join(local, 'Comfy-Desktop', 'ComfyUI-Installs', 'ComfyUI', 'ComfyUI');
 const python = process.env.COMFYUI_PYTHON || path.join(comfyDir, '.venv', 'Scripts', 'python.exe');
-if (!existsSync(python)) throw new Error(`ComfyUI's Python wasn't found at ${python}. Set COMFYUI_PYTHON.`);
+if (!existsSync(python))
+  throw new Error(`ComfyUI's Python wasn't found at ${python}. Set COMFYUI_PYTHON.`);
 
 function run(command, args, env = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: 'inherit', windowsHide: true, env });
     child.on('error', reject);
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`Setup failed (${code}).`))));
+    child.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`Setup failed (${code}).`)),
+    );
   });
 }
 
@@ -48,17 +53,32 @@ await run('git', ['-C', repo, 'fetch', '-q', '--depth', '1', 'origin', COMMIT]);
 await run('git', ['-C', repo, 'checkout', '-q', 'FETCH_HEAD']);
 
 // --no-deps: accelerate would otherwise pull a CPU PyTorch in front of ComfyUI's GPU one.
-await run(python, ['-m', 'pip', 'install', '-q', '--no-deps', '--upgrade', '--target', deps, '-r', path.join(root, 'requirements.txt')]);
+await run(python, [
+  '-m',
+  'pip',
+  'install',
+  '-q',
+  '--no-deps',
+  '--upgrade',
+  '--target',
+  deps,
+  '-r',
+  path.join(root, 'requirements.txt'),
+]);
 
 const env = { ...process.env, PYTHONPATH: deps };
 const file = path.join(models, WEIGHTS);
 if (!existsSync(file) || (await sha256(file)) !== WEIGHTS_SHA256) {
   await run(
     python,
-    ['-c', `from huggingface_hub import hf_hub_download; hf_hub_download('huanngzh/mv-adapter', '${WEIGHTS}', local_dir=r'${models}', force_download=True)`],
+    [
+      '-c',
+      `from huggingface_hub import hf_hub_download; hf_hub_download('huanngzh/mv-adapter', '${WEIGHTS}', local_dir=r'${models}', force_download=True)`,
+    ],
     env,
   );
-  if ((await sha256(file)) !== WEIGHTS_SHA256) throw new Error('MV-Adapter weights checksum mismatch.');
+  if ((await sha256(file)) !== WEIGHTS_SHA256)
+    throw new Error('MV-Adapter weights checksum mismatch.');
 }
 // SDXL's config files only (a few MB), so a checkpoint loads offline.
 await run(
@@ -69,4 +89,6 @@ await run(
   ],
   env,
 );
-console.log('The avatar head close-up is ready. It runs without a network connection and needs an SDXL checkpoint in ComfyUI.');
+console.log(
+  'The avatar head close-up is ready. It runs without a network connection and needs an SDXL checkpoint in ComfyUI.',
+);

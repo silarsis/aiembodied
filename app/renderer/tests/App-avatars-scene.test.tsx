@@ -19,7 +19,9 @@ const rendererProps = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/realtime/local-voice-client.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/realtime/local-voice-client.js')>('../src/realtime/local-voice-client.js');
+  const actual = await vi.importActual<typeof import('../src/realtime/local-voice-client.js')>(
+    '../src/realtime/local-voice-client.js',
+  );
   class FakeLocalVoiceClient {
     callbacks: FakeCallbacks;
     constructor(options: { callbacks?: FakeCallbacks }) {
@@ -40,7 +42,9 @@ vi.mock('../src/realtime/local-voice-client.js', async () => {
 
 // The WebGL renderer cannot run here; the stub only exposes the executors App hands it.
 vi.mock('../src/avatar/vrm-avatar-renderer.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/avatar/vrm-avatar-renderer.js')>('../src/avatar/vrm-avatar-renderer.js');
+  const actual = await vi.importActual<typeof import('../src/avatar/vrm-avatar-renderer.js')>(
+    '../src/avatar/vrm-avatar-renderer.js',
+  );
   return {
     ...actual,
     VrmAvatarRenderer: (props: NonNullable<typeof rendererProps.current>) => {
@@ -61,19 +65,46 @@ class MockAudioContext {
   currentTime = 0;
   state = 'running';
   createMediaStreamSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
-  createGain = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 0, setTargetAtTime: vi.fn(), setValueAtTime: vi.fn() } }));
-  createMediaStreamDestination = vi.fn(() => ({ stream: new MockMediaStream(), connect: vi.fn(), disconnect: vi.fn() }));
-  createAnalyser = vi.fn(() => ({ fftSize: 2048, smoothingTimeConstant: 0, connect: vi.fn(), disconnect: vi.fn(), getFloatTimeDomainData: vi.fn() }));
+  createGain = vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    gain: { value: 0, setTargetAtTime: vi.fn(), setValueAtTime: vi.fn() },
+  }));
+  createMediaStreamDestination = vi.fn(() => ({
+    stream: new MockMediaStream(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }));
+  createAnalyser = vi.fn(() => ({
+    fftSize: 2048,
+    smoothingTimeConstant: 0,
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    getFloatTimeDomainData: vi.fn(),
+  }));
   resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
 }
 
-const model = (id: string): AvatarModelSummary => ({ id, name: id, createdAt: 1, version: '1.0', fileSha: id, thumbnailDataUrl: null, description: null });
+const model = (id: string): AvatarModelSummary => ({
+  id,
+  name: id,
+  createdAt: 1,
+  version: '1.0',
+  fileSha: id,
+  thumbnailDataUrl: null,
+  description: null,
+});
 
 describe('App scene actions from another avatar', () => {
   const originalAudioContext = window.AudioContext;
   const originalMediaDevices = navigator.mediaDevices;
-  const originalConsole = { error: console.error, warn: console.warn, info: console.info, debug: console.debug };
+  const originalConsole = {
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+    debug: console.debug,
+  };
 
   beforeEach(() => {
     localClients.length = 0;
@@ -99,7 +130,7 @@ describe('App scene actions from another avatar', () => {
     Object.assign(console, originalConsole);
   });
 
-  it('sends {go:} and {sit:} from Sage to Sage\'s executor only, and puts the room in the prompts', async () => {
+  it("sends {go:} and {sit:} from Sage to Sage's executor only, and puts the room in the prompts", async () => {
     const room = builtInRoom('reading-room');
     const setTagInstructions = vi.fn().mockResolvedValue(undefined);
     const config = {
@@ -111,7 +142,13 @@ describe('App scene actions from another avatar', () => {
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       realtimeVoice: 'shimmer',
       metrics: { enabled: false, host: '127.0.0.1', port: 9090, path: '/metrics' },
-      wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+      wakeWord: {
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
+        cooldownMs: 1500,
+        deviceIndex: undefined,
+      },
     };
     (window as unknown as { aiembodied: unknown }).aiembodied = {
       ping: () => 'pong',
@@ -140,7 +177,9 @@ describe('App scene actions from another avatar', () => {
         {
           get: (target, key) => {
             if (key in target) return (target as Record<string | symbol, unknown>)[key];
-            return typeof key === 'string' && /^on[A-Z]/.test(key) ? () => () => undefined : vi.fn().mockResolvedValue([]);
+            return typeof key === 'string' && /^on[A-Z]/.test(key)
+              ? () => () => undefined
+              : vi.fn().mockResolvedValue([]);
           },
         },
       ),
@@ -152,13 +191,19 @@ describe('App scene actions from another avatar', () => {
       },
       models: {
         get: vi.fn(async () => ({
-          servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({ ...server, hasKey: false })),
+          servers: builtInServers({
+            providers: DEFAULT_PROVIDER_SETTINGS,
+            comfyUiBaseUrl: 'http://127.0.0.1:8188',
+          }).map((server) => ({ ...server, hasKey: false })),
           routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
         })),
         probe: vi.fn(async () => ({ status: 'up', models: {}, checkedAt: 0 })),
       },
       conversation: {
-        getHistory: vi.fn().mockResolvedValue({ currentSessionId: 'session-1', sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }] }),
+        getHistory: vi.fn().mockResolvedValue({
+          currentSessionId: 'session-1',
+          sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }],
+        }),
         appendMessage: vi.fn(),
         onSessionStarted: () => () => undefined,
         onMessageAppended: () => () => undefined,
@@ -171,7 +216,8 @@ describe('App scene actions from another avatar', () => {
     await waitFor(() => expect(localClients.length).toBeGreaterThan(0));
     // The scene text reaches main for the other avatars, naming who else is in the room.
     await waitFor(() => {
-      const last = setTagInstructions.mock.calls.at(-1)?.[0] as { scene?: string; sceneFor?: Record<string, string> } | undefined;
+      const last = setTagInstructions.mock.calls.at(-1)?.[0] as
+        { scene?: string; sceneFor?: Record<string, string> } | undefined;
       expect(last?.scene).toContain('{go:object}');
       expect(last?.sceneFor?.sage).toContain('Echo is in the room with you.');
       expect(last?.scene).not.toContain('is in the room with you');
@@ -179,7 +225,9 @@ describe('App scene actions from another avatar', () => {
 
     await waitFor(() => expect(rendererProps.current?.sceneExecutors).toBeTruthy());
     const echoExecutor = rendererProps.current?.sceneActions as SceneActionExecutor;
-    const sageExecutor = (rendererProps.current?.sceneExecutors as (id: string) => SceneActionExecutor)('sage');
+    const sageExecutor = (
+      rendererProps.current?.sceneExecutors as (id: string) => SceneActionExecutor
+    )('sage');
     expect(sageExecutor).not.toBe(echoExecutor);
     const echoSubmit = vi.spyOn(echoExecutor, 'submit').mockImplementation(() => undefined);
     const sageSubmit = vi.spyOn(sageExecutor, 'submit').mockImplementation(() => undefined);
@@ -203,14 +251,23 @@ describe('App scene actions from another avatar', () => {
     expect(sageSubmit).toHaveBeenCalledTimes(1);
 
     // A failed reach recorded after the last repair refreshes that avatar's own scene text (not Echo's).
-    vi.spyOn(sageExecutor, 'recentFailures').mockReturnValue(["couldn't reach its left hand target"]);
+    vi.spyOn(sageExecutor, 'recentFailures').mockReturnValue([
+      "couldn't reach its left hand target",
+    ]);
     vi.spyOn(sageExecutor, 'nextFailureExpiryMs').mockReturnValue(null);
     await act(async () => {
-      (sageExecutor as unknown as { emit: (activity: unknown) => void }).emit({ type: 'skipped', label: 'sit on sofa', reason: 'x' });
+      (sageExecutor as unknown as { emit: (activity: unknown) => void }).emit({
+        type: 'skipped',
+        label: 'sit on sofa',
+        reason: 'x',
+      });
     });
     await waitFor(() => {
-      const last = setTagInstructions.mock.calls.at(-1)?.[0] as { sceneFor?: Record<string, string> } | undefined;
-      expect(last?.sceneFor?.sage).toContain("Just now your body couldn't reach its left hand target.");
+      const last = setTagInstructions.mock.calls.at(-1)?.[0] as
+        { sceneFor?: Record<string, string> } | undefined;
+      expect(last?.sceneFor?.sage).toContain(
+        "Just now your body couldn't reach its left hand target.",
+      );
     });
     const lastScene = setTagInstructions.mock.calls.at(-1)?.[0] as { scene?: string };
     expect(lastScene.scene).not.toContain('Just now your body');

@@ -17,7 +17,10 @@ import { chooseSummon, summon } from './summon.js';
 type SummonPlaces = Parameters<typeof summon>[0] & Pick<PlaceManager, 'avatarsAt' | 'get'>;
 
 /** Whether the wake word should hold the microphone at a place: an avatar is there to hear, or the doorbell is on. */
-export function wakeShouldListen(places: Pick<PlaceManager, 'get' | 'avatarsAt'>, placeId: string): boolean {
+export function wakeShouldListen(
+  places: Pick<PlaceManager, 'get' | 'avatarsAt'>,
+  placeId: string,
+): boolean {
   return places.avatarsAt(placeId).length > 0 || doorbellOn(places.get(placeId));
 }
 
@@ -34,7 +37,9 @@ export interface DoorbellOptions {
 export type DoorbellOutcome = 'here' | 'arrived' | 'failed' | 'busy' | 'off';
 
 /** One doorbell for a place. A ring while an avatar is on its way is ignored. */
-export function createDoorbell(options: DoorbellOptions): { onWake(onHeard?: () => void): Promise<DoorbellOutcome> } {
+export function createDoorbell(options: DoorbellOptions): {
+  onWake(onHeard?: () => void): Promise<DoorbellOutcome>;
+} {
   let ringing = false;
   return {
     /** `onHeard` runs when somebody is here to hear the wake word: at once, or when the avatar that was called has arrived. */

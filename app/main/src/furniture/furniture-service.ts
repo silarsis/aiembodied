@@ -37,7 +37,12 @@ export interface FurnitureServiceOptions {
   /** The 3D model for a single picture; throws, saying what to install, when there is none. */
   geometryModel: () => Promise<GeometryModel>;
   /** Paints a picture onto an untextured shape (Hunyuan3D makes shapes only). Without it such a model stays plain. */
-  paint?: (input: { meshPath: string; outputPath: string; front: string; signal: AbortSignal }) => Promise<void>;
+  paint?: (input: {
+    meshPath: string;
+    outputPath: string;
+    front: string;
+    signal: AbortSignal;
+  }) => Promise<void>;
   /** The helper model that sizes and names the piece; without it the keyword table does. */
   askHelper?: AskHelper;
   onChanged?: (item: FurnitureItem) => void;
@@ -98,7 +103,10 @@ function thumbnailOf(image: Buffer): Buffer {
   const thumb = new PNG({ width, height });
   for (let y = 0; y < height; y += 1)
     for (let x = 0; x < width; x += 1) {
-      const from = (Math.floor((y * source.height) / height) * source.width + Math.floor((x * source.width) / width)) * 4;
+      const from =
+        (Math.floor((y * source.height) / height) * source.width +
+          Math.floor((x * source.width) / width)) *
+        4;
       source.data.copy(thumb.data, (y * width + x) * 4, from, from + 4);
     }
   return PNG.sync.write(thumb);
@@ -168,7 +176,10 @@ export class FurnitureService {
     const text = this.checkPrompt(prompt);
     const record = this.record(id);
     if (this.jobs.has(id)) throw new Error('This piece is already being made.');
-    return this.start(await this.update(record.id, { status: 'generating', error: undefined }), text);
+    return this.start(
+      await this.update(record.id, { status: 'generating', error: undefined }),
+      text,
+    );
   }
 
   /** Stops its job, then removes its files and record. */
@@ -192,8 +203,12 @@ export class FurnitureService {
     const controller = new AbortController();
     const previous = this.lane;
     // A piece deleted while it waits leaves the queue at once, but the next one still waits for the one running.
-    const aborted = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(cancelled()), { once: true }));
-    const run = Promise.race([previous, aborted]).then(() => this.run(record.id, prompt, controller.signal));
+    const aborted = new Promise<never>((_, reject) =>
+      controller.signal.addEventListener('abort', () => reject(cancelled()), { once: true }),
+    );
+    const run = Promise.race([previous, aborted]).then(() =>
+      this.run(record.id, prompt, controller.signal),
+    );
     const settled = run.catch(() => undefined);
     this.lane = Promise.all([previous, settled]);
     const job: Job = { controller, done: settled };
@@ -219,8 +234,11 @@ export class FurnitureService {
     };
     try {
       this.progress(id, 'Working out the size');
-      const estimate = await estimateFurniture(prompt, this.options.askHelper, signal, (message, details) =>
-        this.options.logger?.warn(message, { id, ...details }),
+      const estimate = await estimateFurniture(
+        prompt,
+        this.options.askHelper,
+        signal,
+        (message, details) => this.options.logger?.warn(message, { id, ...details }),
       );
       this.options.logger?.info('Furniture size estimated.', { id, ...estimate });
       stop();
@@ -228,7 +246,9 @@ export class FurnitureService {
       this.progress(id, 'Drawing the piece');
       const seed = (this.options.seed ?? (() => randomInt(0, 2 ** 47)))();
       const imageModel = await this.options.imageModel();
-      const image = await (await this.options.pickComfy('image')).run(objectImageGraph(imageModel, buildFurniturePrompt(prompt), seed), { signal });
+      const image = await (
+        await this.options.pickComfy('image')
+      ).run(objectImageGraph(imageModel, buildFurniturePrompt(prompt), seed), { signal });
       stop();
       if (image.length === 0) throw new Error('The image step returned nothing.');
       await writeFile(path.join(next, 'image.png'), image);
@@ -237,10 +257,17 @@ export class FurnitureService {
       this.progress(id, 'Building the 3D model');
       const geometry = await this.options.geometryModel();
       const mesh = await this.options.pickComfy('mesh');
-      const shape = await inJob(mesh, graphsModelFiles(characterMeshGraph({ front: 'front.png' }, seed, geometry)), async () => {
-        const uploaded = await mesh.uploadImage(`furniture-${id}.png`, image);
-        return mesh.run(characterMeshGraph({ front: uploaded }, seed, geometry), { signal, output: 'mesh' });
-      });
+      const shape = await inJob(
+        mesh,
+        graphsModelFiles(characterMeshGraph({ front: 'front.png' }, seed, geometry)),
+        async () => {
+          const uploaded = await mesh.uploadImage(`furniture-${id}.png`, image);
+          return mesh.run(characterMeshGraph({ front: uploaded }, seed, geometry), {
+            signal,
+            output: 'mesh',
+          });
+        },
+      );
       stop();
       const rawPath = path.join(next, 'model-raw.glb');
       if (usesViews(geometry) && this.options.paint) {
@@ -248,7 +275,12 @@ export class FurnitureService {
         this.progress(id, 'Painting the picture onto the model');
         const shapePath = path.join(next, 'model-shape.glb');
         await writeFile(shapePath, shape);
-        await this.options.paint({ meshPath: shapePath, outputPath: rawPath, front: path.join(next, 'image.png'), signal });
+        await this.options.paint({
+          meshPath: shapePath,
+          outputPath: rawPath,
+          front: path.join(next, 'image.png'),
+          signal,
+        });
         stop();
       } else {
         await writeFile(rawPath, shape);
@@ -261,7 +293,9 @@ export class FurnitureService {
 
       // Everything made: from here the old files are replaced. A piece deleted meanwhile is not brought back.
       if (!this.records().some((record) => record.id === id)) throw cancelled();
-      await Promise.all(STAGES.map((file) => rename(path.join(next, file), path.join(directory, file))));
+      await Promise.all(
+        STAGES.map((file) => rename(path.join(next, file), path.join(directory, file))),
+      );
       await this.update(id, {
         name: estimate.name,
         prompt,
@@ -306,7 +340,9 @@ export class FurnitureService {
   }
 
   private async toItem(record: FurnitureRecord): Promise<FurnitureItem> {
-    const thumbnail = await readFile(path.join(this.directoryOf(record.id), 'thumb.png')).catch(() => null);
+    const thumbnail = await readFile(path.join(this.directoryOf(record.id), 'thumb.png')).catch(
+      () => null,
+    );
     const message = this.messages.get(record.id);
     return {
       ...record,
@@ -336,7 +372,10 @@ export class FurnitureService {
   }
 
   private async exists(id: string, file: string): Promise<boolean> {
-    return access(path.join(this.directoryOf(id), file)).then(() => true, () => false);
+    return access(path.join(this.directoryOf(id), file)).then(
+      () => true,
+      () => false,
+    );
   }
 
   private now(): string {

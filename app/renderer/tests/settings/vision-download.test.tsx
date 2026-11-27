@@ -5,7 +5,13 @@ import type { ModelsBridge } from '../../src/preload-api.js';
 import { VisionDownload, visionStatusLine } from '../../src/settings/vision-download.js';
 
 const GB = 1024 ** 3;
-const none: VisionStatus = { pick: null, ready: false, sizeBytes: 0, download: null, folder: 'C:/models/vision' };
+const none: VisionStatus = {
+  pick: null,
+  ready: false,
+  sizeBytes: 0,
+  download: null,
+  folder: 'C:/models/vision',
+};
 const download = (state: 'downloading' | 'failed' | 'verifying', extra = {}) => ({
   id: 'd1',
   repo: 'ggml-org/Qwen3-VL-8B-Instruct-GGUF',
@@ -19,7 +25,12 @@ const download = (state: 'downloading' | 'failed' | 'verifying', extra = {}) => 
   ...extra,
 });
 const ready: VisionStatus = {
-  pick: { repo: 'ggml-org/Qwen3-VL-8B-Instruct-GGUF', model: 'C:\\m\\Qwen3-VL-8B-Instruct-Q4_K_M.gguf', mmproj: 'C:\\m\\mmproj-F16.gguf', alias: 'qwen3-vl' },
+  pick: {
+    repo: 'ggml-org/Qwen3-VL-8B-Instruct-GGUF',
+    model: 'C:\\m\\Qwen3-VL-8B-Instruct-Q4_K_M.gguf',
+    mmproj: 'C:\\m\\mmproj-F16.gguf',
+    alias: 'qwen3-vl',
+  },
   ready: true,
   sizeBytes: 5.8 * GB,
   download: null,
@@ -31,7 +42,8 @@ function bridge(initial: VisionStatus) {
   const api = {
     visionStatus: vi.fn(async () => status),
     visionDownload: vi.fn(async (ref?: string) => {
-      if (ref === 'qwen words') throw new Error('Paste a Hugging Face link or repo name of a vision model.');
+      if (ref === 'qwen words')
+        throw new Error('Paste a Hugging Face link or repo name of a vision model.');
       status = { ...none, download: download('downloading') as never };
       return status;
     }),
@@ -46,9 +58,15 @@ function bridge(initial: VisionStatus) {
 describe('vision model status line', () => {
   it('says Not downloaded, Downloading with a percent, and Ready with names and size', () => {
     expect(visionStatusLine(none)).toBe('Not downloaded');
-    expect(visionStatusLine({ ...none, download: download('downloading') as never })).toBe('Downloading 43%');
-    expect(visionStatusLine({ ...none, download: download('failed', { error: 'No space' }) as never })).toBe('Download failed: No space');
-    expect(visionStatusLine(ready)).toBe('Ready: Qwen3-VL-8B-Instruct-Q4_K_M.gguf + mmproj-F16.gguf, 5.80 GB');
+    expect(visionStatusLine({ ...none, download: download('downloading') as never })).toBe(
+      'Downloading 43%',
+    );
+    expect(
+      visionStatusLine({ ...none, download: download('failed', { error: 'No space' }) as never }),
+    ).toBe('Download failed: No space');
+    expect(visionStatusLine(ready)).toBe(
+      'Ready: Qwen3-VL-8B-Instruct-Q4_K_M.gguf + mmproj-F16.gguf, 5.80 GB',
+    );
   });
 });
 
@@ -67,7 +85,9 @@ describe('VisionDownload', () => {
   it('shows Ready with the file names', async () => {
     const { api } = bridge(ready);
     render(<VisionDownload api={api} busy={false} />);
-    expect(await screen.findByText(/Ready: Qwen3-VL-8B-Instruct-Q4_K_M\.gguf \+ mmproj-F16\.gguf/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Ready: Qwen3-VL-8B-Instruct-Q4_K_M\.gguf \+ mmproj-F16\.gguf/),
+    ).toBeTruthy();
   });
 
   it('downloads another repo from the text field and shows an error from the app', async () => {
@@ -80,6 +100,8 @@ describe('VisionDownload', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Paste a Hugging Face link');
     fireEvent.change(field, { target: { value: 'someone/Qwen3-VL-GGUF:Q4_K_M' } });
     fireEvent.click(screen.getByRole('button', { name: 'Download this one' }));
-    await waitFor(() => expect(api.visionDownload).toHaveBeenLastCalledWith('someone/Qwen3-VL-GGUF:Q4_K_M'));
+    await waitFor(() =>
+      expect(api.visionDownload).toHaveBeenLastCalledWith('someone/Qwen3-VL-GGUF:Q4_K_M'),
+    );
   });
 });

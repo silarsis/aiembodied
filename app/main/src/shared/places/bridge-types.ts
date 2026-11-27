@@ -18,7 +18,11 @@ export interface PlacesBridge {
    * An avatar walks to another place. `placeRef` is a place id or name ("next door", "the lounge").
    * The renderer calls this when an avatar's `{room:}` exit walk is done, and from the Call button (reason 'called').
    */
-  move(avatarId: string, placeRef: string, reason?: 'called' | 'chose to' | 'wandered'): Promise<PlaceMoveResult>;
+  move(
+    avatarId: string,
+    placeRef: string,
+    reason?: 'called' | 'chose to' | 'wandered',
+  ): Promise<PlaceMoveResult>;
   /** The avatar's body is loaded and standing at the door of this PC's place. */
   arrived(avatarId: string): Promise<void>;
   /**

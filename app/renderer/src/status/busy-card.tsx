@@ -10,12 +10,19 @@ export function BusyCard({ api }: { api?: CodingBusyBridge }) {
 
   useEffect(() => {
     if (!api) return undefined;
-    return api.onChanged((state) => setMessage(state.busy ? (state.message ?? 'Hang on, I’m busy, be with you in a sec…') : null));
+    return api.onChanged((state) =>
+      setMessage(state.busy ? (state.message ?? 'Hang on, I’m busy, be with you in a sec…') : null),
+    );
   }, [api]);
 
   if (!message) return null;
   return (
-    <section className="approvals busy-card--floating" role="status" aria-live="polite" data-testid="busy-card">
+    <section
+      className="approvals busy-card--floating"
+      role="status"
+      aria-live="polite"
+      data-testid="busy-card"
+    >
       <p className="approvals__summary">{message}</p>
       <p className="approvals__note">Swapping the coding model out for my voice model.</p>
     </section>

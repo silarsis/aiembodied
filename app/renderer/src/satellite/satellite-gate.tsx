@@ -3,13 +3,19 @@ import { getPreloadApi, type PreloadApi } from '../preload-api.js';
 import { SatelliteContext } from './satellite-context.js';
 import { ConnectScreen } from './connect-screen.js';
 import { useSatelliteStatus } from './use-satellite-status.js';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
+import type {
+  SatelliteBridge,
+  SatelliteStatus,
+} from '../../../main/src/shared/satellite/bridge-types.js';
 
 type Role = 'loading' | 'full' | 'satellite';
 
 /** Waits a little for the preload bridge, then asks the config which role this PC has. */
 function useRole(): { role: Role; api: PreloadApi | undefined } {
-  const [state, setState] = useState<{ role: Role; api: PreloadApi | undefined }>({ role: 'loading', api: undefined });
+  const [state, setState] = useState<{ role: Role; api: PreloadApi | undefined }>({
+    role: 'loading',
+    api: undefined,
+  });
   useEffect(() => {
     let cancelled = false;
     let attempts = 0;
@@ -26,7 +32,8 @@ function useRole(): { role: Role; api: PreloadApi | undefined } {
       api.config
         .get()
         .then((config) => {
-          if (!cancelled) setState({ role: config?.role === 'satellite' ? 'satellite' : 'full', api });
+          if (!cancelled)
+            setState({ role: config?.role === 'satellite' ? 'satellite' : 'full', api });
         })
         .catch(() => {
           if (!cancelled) setState({ role: 'full', api });
@@ -45,9 +52,17 @@ function Waiting({ status, bridge }: { status: SatelliteStatus; bridge: Satellit
   return (
     <main className="connectScreen" data-testid="satellite-waiting">
       <div className="connectScreen__card" role="status">
-        <h1>{refused ? 'bija does not know this PC' : status.link === 'offline' ? 'Lost touch with bija. Trying again…' : 'Connecting to bija…'}</h1>
+        <h1>
+          {refused
+            ? 'bija does not know this PC'
+            : status.link === 'offline'
+              ? 'Lost touch with bija. Trying again…'
+              : 'Connecting to bija…'}
+        </h1>
         {status.hubUrl ? <p className="connectScreen__help">{status.hubUrl}</p> : null}
-        {refused && status.lastError ? <p className="connectScreen__error">{status.lastError}</p> : null}
+        {refused && status.lastError ? (
+          <p className="connectScreen__error">{status.lastError}</p>
+        ) : null}
         <button type="button" className="btn btn--secondary" onClick={() => void bridge.forget()}>
           Forget this pairing
         </button>
@@ -76,7 +91,10 @@ export function SatelliteGate({ children }: { children: ReactNode }) {
   if (!status.paired) return <ConnectScreen bridge={bridge} status={status} />;
   if (!everOnline) return <Waiting status={status} bridge={bridge} />;
   return (
-    <SatelliteContext.Provider value={{ status, bridge }} key={`${status.hubUrl}|${status.deviceName}`}>
+    <SatelliteContext.Provider
+      value={{ status, bridge }}
+      key={`${status.hubUrl}|${status.deviceName}`}
+    >
       {children}
     </SatelliteContext.Provider>
   );

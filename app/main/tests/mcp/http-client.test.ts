@@ -17,16 +17,22 @@ async function startServer(requiredHeader?: { name: string; value: string }) {
 
   const makeMcp = () => {
     const mcp = new McpServer({ name: 'http-fixture', version: '1.0.0' });
-    mcp.registerTool('echo', { description: 'Echo', inputSchema: { message: z.string() } }, async ({ message }) => ({
-      content: [{ type: 'text', text: `echo: ${message}` }],
-    }));
+    mcp.registerTool(
+      'echo',
+      { description: 'Echo', inputSchema: { message: z.string() } },
+      async ({ message }) => ({
+        content: [{ type: 'text', text: `echo: ${message}` }],
+      }),
+    );
     return mcp;
   };
 
   const http: Server = createServer(async (req, res) => {
     seenHeaders.push(req.headers);
     if (requiredHeader && req.headers[requiredHeader.name.toLowerCase()] !== requiredHeader.value) {
-      res.writeHead(401, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'unauthorized' }));
+      res
+        .writeHead(401, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'unauthorized' }));
       return;
     }
     const chunks: Buffer[] = [];
@@ -82,7 +88,10 @@ describe('HTTPMCPClient (Streamable HTTP)', () => {
 
   it('sends a static header token', async () => {
     server = await startServer({ name: 'Authorization', value: 'Bearer secret' });
-    client = new HTTPMCPClient(server.url, { headerName: 'Authorization', headerToken: 'Bearer secret' });
+    client = new HTTPMCPClient(server.url, {
+      headerName: 'Authorization',
+      headerToken: 'Bearer secret',
+    });
     await client.connect();
     expect(await client.callTool('echo', { message: 'x' })).toBe('echo: x');
     expect(server.seenHeaders.every((h) => h.authorization === 'Bearer secret')).toBe(true);
@@ -90,7 +99,10 @@ describe('HTTPMCPClient (Streamable HTTP)', () => {
 
   it('fails to connect when the header token is wrong', async () => {
     server = await startServer({ name: 'Authorization', value: 'Bearer secret' });
-    client = new HTTPMCPClient(server.url, { headerName: 'Authorization', headerToken: 'Bearer wrong' });
+    client = new HTTPMCPClient(server.url, {
+      headerName: 'Authorization',
+      headerToken: 'Bearer wrong',
+    });
     await expect(client.connect()).rejects.toThrow();
   });
 

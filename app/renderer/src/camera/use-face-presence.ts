@@ -30,7 +30,13 @@ export interface UseFacePresenceResult {
  * release the camera. If the camera cannot start (no camera, the gate said no, the model is missing) the reason is
  * logged and `error` says why; it never throws into the page.
  */
-export function useFacePresence({ enabled, deviceId, camera, onFaceSeen, makeDeps }: UseFacePresenceOptions): UseFacePresenceResult {
+export function useFacePresence({
+  enabled,
+  deviceId,
+  camera,
+  onFaceSeen,
+  makeDeps,
+}: UseFacePresenceOptions): UseFacePresenceResult {
   const [live, setLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const presenceRef = useRef<FacePresence | null>(null);

@@ -47,7 +47,11 @@ export interface LinkSocketHandlers {
 }
 
 /** Opens a socket to `url` and reports through `handlers`. `handshakeTimeoutMs` bounds the connect where the library can. */
-export type SocketFactory = (url: string, handlers: LinkSocketHandlers, options: { handshakeTimeoutMs: number }) => LinkSocket;
+export type SocketFactory = (
+  url: string,
+  handlers: LinkSocketHandlers,
+  options: { handshakeTimeoutMs: number },
+) => LinkSocket;
 
 /** `unref` exists on Node timers only; a browser timer is a number. */
 function unref(timer: unknown): void {
@@ -148,15 +152,24 @@ export class RoomLinkCore {
    * the link is down; the very first connection is given a few seconds, since the window asks for things at start-up.
    */
   async call(channel: string, args: unknown[] = []): Promise<unknown> {
-    const reply = await this.request({ op: 'call', channel, args }, LONG_RUNNING_CHANNELS.has(channel) ? null : (this.options.callTimeoutMs ?? CALL_TIMEOUT_MS));
+    const reply = await this.request(
+      { op: 'call', channel, args },
+      LONG_RUNNING_CHANNELS.has(channel) ? null : (this.options.callTimeoutMs ?? CALL_TIMEOUT_MS),
+    );
     return reply.value;
   }
 
   /** Fetches a room asset through bija (`asset.get`). */
   async getAsset(url: string): Promise<{ mime: string; data: Uint8Array }> {
-    const reply = await this.request({ op: 'asset.get', url }, this.options.callTimeoutMs ?? CALL_TIMEOUT_MS);
+    const reply = await this.request(
+      { op: 'asset.get', url },
+      this.options.callTimeoutMs ?? CALL_TIMEOUT_MS,
+    );
     if (!reply.payload) throw new LinkError('bija sent no file.', 'bad-reply');
-    return { mime: typeof reply.op.mime === 'string' ? reply.op.mime : 'application/octet-stream', data: reply.payload };
+    return {
+      mime: typeof reply.op.mime === 'string' ? reply.op.mime : 'application/octet-stream',
+      data: reply.payload,
+    };
   }
 
   /** Fire-and-forget ops (`presence`, `device.state`, `wake.heard`). False when the link is down. */
@@ -167,12 +180,21 @@ export class RoomLinkCore {
 
   // -- Calls ------------------------------------------------------------------------------------
 
-  private async request(op: Op, timeoutMs: number | null): Promise<{ value: unknown; payload: Uint8Array | null; op: Op }> {
+  private async request(
+    op: Op,
+    timeoutMs: number | null,
+  ): Promise<{ value: unknown; payload: Uint8Array | null; op: Op }> {
     if (this.state.state === 'connecting' && !this.everOnline) {
-      const online = await this.waitOnline(this.options.firstConnectWaitMs ?? FIRST_CONNECT_WAIT_MS);
+      const online = await this.waitOnline(
+        this.options.firstConnectWaitMs ?? FIRST_CONNECT_WAIT_MS,
+      );
       if (!online) throw new LinkError(LOST_TOUCH, 'offline');
     }
-    if (this.state.state !== 'online') throw new LinkError(LOST_TOUCH, this.state.state === 'refused' ? (this.state.code ?? 'refused') : 'offline');
+    if (this.state.state !== 'online')
+      throw new LinkError(
+        LOST_TOUCH,
+        this.state.state === 'refused' ? (this.state.code ?? 'refused') : 'offline',
+      );
     const ref = `c${++this.serial}`;
     return new Promise((resolve, reject) => {
       const entry: Pending = {
@@ -191,7 +213,12 @@ export class RoomLinkCore {
       if (!this.write({ ...op, ref })) {
         this.pending.delete(ref);
         if (entry.timer) clearTimeout(entry.timer);
-        reject(new LinkError(op.op === 'call' ? 'The request is too large to send.' : LOST_TOUCH, 'too-large'));
+        reject(
+          new LinkError(
+            op.op === 'call' ? 'The request is too large to send.' : LOST_TOUCH,
+            'too-large',
+          ),
+        );
       }
     });
   }
@@ -231,7 +258,13 @@ export class RoomLinkCore {
         onOpen: () => {
           if (this.socket !== socket) return;
           this.lastTraffic = Date.now();
-          this.write({ op: 'hello', protocol: LINK_PROTOCOL, deviceId: this.options.deviceId, token: this.options.token, appVersion: this.options.appVersion });
+          this.write({
+            op: 'hello',
+            protocol: LINK_PROTOCOL,
+            deviceId: this.options.deviceId,
+            token: this.options.token,
+            appVersion: this.options.appVersion,
+          });
         },
         onMessage: (data) => {
           if (this.socket !== socket) return;
@@ -274,7 +307,10 @@ export class RoomLinkCore {
       socket.send(encodeMessage(op));
       return true;
     } catch (error) {
-      this.options.logger?.warn('Room link could not send', { op: op.op, message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Room link could not send', {
+        op: op.op,
+        message: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }
@@ -284,7 +320,9 @@ export class RoomLinkCore {
     try {
       decoded = decodeMessage(data);
     } catch (error) {
-      this.options.logger?.warn('Room link: bad frame from bija', { message: error instanceof FrameError ? error.message : String(error) });
+      this.options.logger?.warn('Room link: bad frame from bija', {
+        message: error instanceof FrameError ? error.message : String(error),
+      });
       return;
     }
     const { op, payload } = decoded;
@@ -313,7 +351,10 @@ export class RoomLinkCore {
           try {
             this.options.onIpc(op.channel, Array.isArray(op.args) ? op.args : []);
           } catch (error) {
-            this.options.logger?.warn('Room link: delivering an event failed', { channel: op.channel, message: error instanceof Error ? error.message : String(error) });
+            this.options.logger?.warn('Room link: delivering an event failed', {
+              channel: op.channel,
+              message: error instanceof Error ? error.message : String(error),
+            });
           }
         }
         return;
@@ -346,7 +387,13 @@ export class RoomLinkCore {
       return;
     }
     // An error with no ref ends the link. These mean trying again will not help until something changes.
-    if (code === 'auth' || code === 'peer' || code === 'protocol' || code === 'revoked' || code === 'replaced') {
+    if (
+      code === 'auth' ||
+      code === 'peer' ||
+      code === 'protocol' ||
+      code === 'revoked' ||
+      code === 'replaced'
+    ) {
       this.refuse(code, message);
     } else {
       this.options.logger?.warn('Room link: bija reported an error', { code, message });
@@ -404,7 +451,9 @@ export class RoomLinkCore {
     try {
       this.options.onStatus({ ...status });
     } catch (error) {
-      this.options.logger?.warn('Room link: a status listener failed', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Room link: a status listener failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

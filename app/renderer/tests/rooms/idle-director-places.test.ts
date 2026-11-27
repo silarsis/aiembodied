@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
 import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { WANDER_COOLDOWN_MS } from '../../../main/src/shared/places/wander.js';
-import { FIRST_ACTION_DELAY_MS, IdleDirector, type IdleExecutor, type IdlePlacesView } from '../../src/rooms/idle-director.js';
+import {
+  FIRST_ACTION_DELAY_MS,
+  IdleDirector,
+  type IdleExecutor,
+  type IdlePlacesView,
+} from '../../src/rooms/idle-director.js';
 import { INITIAL_STATE, type AvatarState, type PlanWorld } from '../../src/rooms/scene-actions.js';
 import { builtInRoom } from './fixtures.js';
 
@@ -25,7 +30,9 @@ class Clock {
   async advance(ms: number): Promise<void> {
     const end = this.time + ms;
     for (;;) {
-      const due = this.timers.filter((timer) => timer.at <= end).sort((a, b) => a.at - b.at || a.id - b.id)[0];
+      const due = this.timers
+        .filter((timer) => timer.at <= end)
+        .sort((a, b) => a.at - b.at || a.id - b.id)[0];
       if (!due) break;
       this.timers = this.timers.filter((timer) => timer !== due);
       this.time = Math.max(this.time, due.at);
@@ -110,7 +117,10 @@ function setup(view: IdlePlacesView | null, answer: boolean | Error, reply = '{r
   return { clock, director, runs, picks, asked };
 }
 
-const view = (patch: Partial<PlacesSnapshot> = {}): IdlePlacesView => ({ snapshot: snapshot(patch), nameOf: (id) => (id === 'sage' ? 'Sage' : id) });
+const view = (patch: Partial<PlacesSnapshot> = {}): IdlePlacesView => ({
+  snapshot: snapshot(patch),
+  nameOf: (id) => (id === 'sage' ? 'Sage' : id),
+});
 
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -122,7 +132,9 @@ describe('IdleDirector wandering between places', () => {
     s.director.start();
     await s.clock.advance(FIRST_ACTION_DELAY_MS);
     expect(s.picks[0]?.system).toContain('{room:<place>}');
-    expect(s.picks[0]?.user).toContain('- the study: Sage is there; someone used that PC in the last 10 minutes');
+    expect(s.picks[0]?.user).toContain(
+      '- the study: Sage is there; someone used that PC in the last 10 minutes',
+    );
     // Next door: nobody there and no PC, so it is not offered.
     expect(s.picks[0]?.user).not.toContain('next door');
   });
@@ -188,7 +200,13 @@ describe('IdleDirector and phone rooms', () => {
       places: [
         { id: 'home', name: 'the lounge', node: 'local' },
         { id: 'next-door', name: 'next door', node: 'offscreen' },
-        { id: 'study', name: 'the study', node: 'room-1', online: true, ...(kind === 'desktop' ? {} : { kind }) },
+        {
+          id: 'study',
+          name: 'the study',
+          node: 'room-1',
+          online: true,
+          ...(kind === 'desktop' ? {} : { kind }),
+        },
       ],
     });
 
@@ -201,10 +219,13 @@ describe('IdleDirector and phone rooms', () => {
     expect(s.asked).toEqual([]);
   });
 
-  it.each(['browser', 'desktop'] as const)('still offers a %s room (desktop rules)', async (kind) => {
-    const s = setup(phoneView(kind), true);
-    s.director.start();
-    await s.clock.advance(FIRST_ACTION_DELAY_MS);
-    expect(s.picks[0]?.user).toContain('- the study:');
-  });
+  it.each(['browser', 'desktop'] as const)(
+    'still offers a %s room (desktop rules)',
+    async (kind) => {
+      const s = setup(phoneView(kind), true);
+      s.director.start();
+      await s.clock.advance(FIRST_ACTION_DELAY_MS);
+      expect(s.picks[0]?.user).toContain('- the study:');
+    },
+  );
 });

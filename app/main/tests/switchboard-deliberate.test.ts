@@ -1,18 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PresenceTracker } from '../src/presence/presence.js';
-import { DELIBERATE_SYSTEM_PROMPT, deliberate, deliberateSystemPrompt, parseDecision } from '../src/switchboard/deliberate.js';
+import {
+  DELIBERATE_SYSTEM_PROMPT,
+  deliberate,
+  deliberateSystemPrompt,
+  parseDecision,
+} from '../src/switchboard/deliberate.js';
 import type { ChatClient } from '../src/local-voice/voice-engines.js';
 import type { SwitchboardEvent } from '../src/switchboard/types.js';
 
 const event = (extra: Partial<SwitchboardEvent> = {}): SwitchboardEvent => ({
-  id: 'E1', v: 1, at: '2026-11-10T20:00:00Z', type: 'avatar.inbox', producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'],
-  priority: 'normal', payload: { text: 'Tests passed', source: 'coding' }, ...extra,
+  id: 'E1',
+  v: 1,
+  at: '2026-11-10T20:00:00Z',
+  type: 'avatar.inbox',
+  producer: { kind: 'service', id: 'app' },
+  to: ['avatar:echo'],
+  priority: 'normal',
+  payload: { text: 'Tests passed', source: 'coding' },
+  ...extra,
 });
 
 function fake(reply: string | Error | 'hang') {
-  const calls: Array<{ messages: Array<{ role: string; content: string }>; signal?: AbortSignal }> = [];
+  const calls: Array<{ messages: Array<{ role: string; content: string }>; signal?: AbortSignal }> =
+    [];
   const client = {
-    baseUrl: 'x', flavor: 'llama-server', isAvailable: async () => true,
+    baseUrl: 'x',
+    flavor: 'llama-server',
+    isAvailable: async () => true,
     async *streamChat(messages: never, options: { signal?: AbortSignal }) {
       calls.push({ messages, signal: options.signal });
       if (reply instanceof Error) throw reply;
@@ -25,9 +40,17 @@ function fake(reply: string | Error | 'hang') {
 
 describe('parseDecision', () => {
   it('reads plain, fenced and think-wrapped JSON', () => {
-    expect(parseDecision('{"action":"say","reason":"he asked"}')).toEqual({ action: 'say', reason: 'he asked' });
-    expect(parseDecision('```json\n{"action": "Remember", "reason": "later"}\n```')).toEqual({ action: 'remember', reason: 'later' });
-    expect(parseDecision('<think>{"action":"say"}</think>Sure: {"action":"ignore","reason":"noise"} ok')).toEqual({ action: 'ignore', reason: 'noise' });
+    expect(parseDecision('{"action":"say","reason":"he asked"}')).toEqual({
+      action: 'say',
+      reason: 'he asked',
+    });
+    expect(parseDecision('```json\n{"action": "Remember", "reason": "later"}\n```')).toEqual({
+      action: 'remember',
+      reason: 'later',
+    });
+    expect(
+      parseDecision('<think>{"action":"say"}</think>Sure: {"action":"ignore","reason":"noise"} ok'),
+    ).toEqual({ action: 'ignore', reason: 'noise' });
   });
   it('rejects garbage and unknown actions', () => {
     expect(parseDecision('no json')).toBeNull();
@@ -64,19 +87,34 @@ describe('deliberate', () => {
 
   it('flags urgent events', async () => {
     const { client } = fake('{"action":"say","reason":""}');
-    expect((await deliberate(event({ priority: 'urgent' }), presence, { clients: [client] }))?.urgent).toBe(true);
+    expect(
+      (await deliberate(event({ priority: 'urgent' }), presence, { clients: [client] }))?.urgent,
+    ).toBe(true);
   });
 
   it('gives null for garbage, thrown errors and no clients', async () => {
     const warn = vi.fn();
-    expect(await deliberate(event(), presence, { clients: [fake('hmm').client], logger: { warn } })).toBeNull();
-    expect(await deliberate(event(), presence, { clients: [fake(new Error('down')).client], logger: { warn } })).toBeNull();
+    expect(
+      await deliberate(event(), presence, { clients: [fake('hmm').client], logger: { warn } }),
+    ).toBeNull();
+    expect(
+      await deliberate(event(), presence, {
+        clients: [fake(new Error('down')).client],
+        logger: { warn },
+      }),
+    ).toBeNull();
     expect(await deliberate(event(), presence, { clients: [] })).toBeNull();
     expect(warn).toHaveBeenCalled();
   });
 
   it('gives null on timeout even if the client ignores the signal', async () => {
     const { client } = fake('hang');
-    expect(await deliberate(event(), presence, { clients: [client], timeoutMs: 20, logger: { warn: vi.fn() } })).toBeNull();
+    expect(
+      await deliberate(event(), presence, {
+        clients: [client],
+        timeoutMs: 20,
+        logger: { warn: vi.fn() },
+      }),
+    ).toBeNull();
   });
 });

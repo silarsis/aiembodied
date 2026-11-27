@@ -2,7 +2,6 @@
 import type { PlaceDeviceState } from '../presence/place-presence-types.js';
 import type { DeviceKind } from './room-devices-types.js';
 
-
 export interface RoomHubDeviceStatus {
   id: string;
   name: string;
@@ -16,7 +15,6 @@ export interface RoomHubDeviceStatus {
   deviceState?: PlaceDeviceState | null;
 }
 
-
 export interface RoomHubStatus {
   running: boolean;
   port: number | null;
@@ -27,7 +25,6 @@ export interface RoomHubStatus {
   pairing: { code: string; expiresAt: number; placeName: string | null } | null;
   devices: RoomHubDeviceStatus[];
 }
-
 
 export interface PairingStart {
   code: string;

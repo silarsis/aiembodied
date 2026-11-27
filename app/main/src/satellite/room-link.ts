@@ -6,21 +6,37 @@
  */
 import WebSocket, { type RawData } from 'ws';
 import { MAX_FRAME_BYTES } from '../shared/room-hub/frames.js';
-import { RoomLinkCore, type LinkSocket, type RoomLinkOptions, type SocketFactory } from '../shared/satellite/link-core.js';
+import {
+  RoomLinkCore,
+  type LinkSocket,
+  type RoomLinkOptions,
+  type SocketFactory,
+} from '../shared/satellite/link-core.js';
 
 export * from '../shared/satellite/link-shared.js';
 export type { RoomLinkOptions } from '../shared/satellite/link-core.js';
 
 function toFrame(data: RawData, isBinary: boolean): string | Uint8Array {
-  const bytes = Array.isArray(data) ? Buffer.concat(data) : data instanceof ArrayBuffer ? new Uint8Array(data) : data;
-  return isBinary ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes.toString('utf8');
+  const bytes = Array.isArray(data)
+    ? Buffer.concat(data)
+    : data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : data;
+  return isBinary
+    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    : bytes.toString('utf8');
 }
 
 /** The `ws` package as a link socket. */
 export const wsSocketFactory: SocketFactory = (url, handlers, options) => {
-  const ws = new WebSocket(url, { maxPayload: MAX_FRAME_BYTES, handshakeTimeout: options.handshakeTimeoutMs });
+  const ws = new WebSocket(url, {
+    maxPayload: MAX_FRAME_BYTES,
+    handshakeTimeout: options.handshakeTimeoutMs,
+  });
   ws.on('open', () => handlers.onOpen());
-  ws.on('message', (data: RawData, isBinary: boolean) => handlers.onMessage(toFrame(data, isBinary)));
+  ws.on('message', (data: RawData, isBinary: boolean) =>
+    handlers.onMessage(toFrame(data, isBinary)),
+  );
   ws.on('close', () => handlers.onClose());
   ws.on('error', (error) => handlers.onError(error.message));
   const socket: LinkSocket = {

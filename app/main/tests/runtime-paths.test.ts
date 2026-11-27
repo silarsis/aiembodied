@@ -9,11 +9,8 @@ vi.mock('node:fs', () => ({
 
 const baseDir = path.join('/', 'app', 'main', 'src');
 
-const {
-  resolvePreloadScriptPath,
-  resolveRendererEntryPoint,
-  RuntimeResourceNotFoundError,
-} = await import('../src/runtime-paths.js');
+const { resolvePreloadScriptPath, resolveRendererEntryPoint, RuntimeResourceNotFoundError } =
+  await import('../src/runtime-paths.js');
 
 function resetExistsMock() {
   existsSyncMock.mockReset();

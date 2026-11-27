@@ -25,7 +25,13 @@ const MAX_EMBEDDINGS = 120;
 const WARMUP_FRAMES = 5;
 
 // hey_echo is trained for this project (experiments/wakeword/); the rest are openWakeWord's pre-trained models.
-export const BUILTIN_WAKE_WORD_MODELS = ['hey_echo', 'hey_jarvis', 'alexa', 'hey_mycroft', 'hey_rhasspy'] as const;
+export const BUILTIN_WAKE_WORD_MODELS = [
+  'hey_echo',
+  'hey_jarvis',
+  'alexa',
+  'hey_mycroft',
+  'hey_rhasspy',
+] as const;
 export type BuiltinWakeWordModel = (typeof BUILTIN_WAKE_WORD_MODELS)[number];
 
 export interface OpenWakeWordModelPaths {
@@ -35,7 +41,10 @@ export interface OpenWakeWordModelPaths {
 }
 
 /** Paths to the bundled models; `wakeWord` is a builtin name or a path to a custom .onnx model. */
-export function resolveOpenWakeWordModelPaths(assetsDirectory: string, wakeWord: string): OpenWakeWordModelPaths {
+export function resolveOpenWakeWordModelPaths(
+  assetsDirectory: string,
+  wakeWord: string,
+): OpenWakeWordModelPaths {
   const builtin = (BUILTIN_WAKE_WORD_MODELS as readonly string[]).includes(wakeWord);
   return {
     melspectrogram: path.join(assetsDirectory, 'melspectrogram.onnx'),
@@ -58,7 +67,10 @@ export class OpenWakeWordDetector {
   ) {}
 
   static async create(paths: OpenWakeWordModelPaths): Promise<OpenWakeWordDetector> {
-    const options: ort.InferenceSession.SessionOptions = { intraOpNumThreads: 1, interOpNumThreads: 1 };
+    const options: ort.InferenceSession.SessionOptions = {
+      intraOpNumThreads: 1,
+      interOpNumThreads: 1,
+    };
     const [melspec, embedding, wakeWord] = await Promise.all([
       ort.InferenceSession.create(paths.melspectrogram, options),
       ort.InferenceSession.create(paths.embedding, options),
@@ -73,7 +85,9 @@ export class OpenWakeWordDetector {
   /** Clear all audio history, as if the detector had just been created. */
   async reset(): Promise<void> {
     this.rawHistory = new Int16Array(0);
-    this.melFrames = Array.from({ length: EMBEDDING_WINDOW }, () => new Float32Array(MEL_BINS).fill(1));
+    this.melFrames = Array.from({ length: EMBEDDING_WINDOW }, () =>
+      new Float32Array(MEL_BINS).fill(1),
+    );
     this.framesProcessed = 0;
     // Like openWakeWord, start the embedding history from 10 s of silence.
     const silenceMel = await this.melspectrogram(new Int16Array(OWW_SAMPLE_RATE * 10));
@@ -87,7 +101,9 @@ export class OpenWakeWordDetector {
   /** Feed one 80 ms frame (1280 samples of 16 kHz int16 audio); returns the wake-word score 0..1. */
   async process(frame: Int16Array): Promise<number> {
     if (frame.length !== OWW_FRAME_LENGTH) {
-      throw new Error(`openWakeWord expects ${OWW_FRAME_LENGTH}-sample frames, got ${frame.length}.`);
+      throw new Error(
+        `openWakeWord expects ${OWW_FRAME_LENGTH}-sample frames, got ${frame.length}.`,
+      );
     }
 
     const history = new Int16Array(this.rawHistory.length + frame.length);
@@ -116,7 +132,10 @@ export class OpenWakeWordDetector {
 
   private async melspectrogram(samples: Int16Array): Promise<Float32Array[]> {
     const input = Float32Array.from(samples);
-    const output = await runSingle(this.melspec, new ort.Tensor('float32', input, [1, input.length]));
+    const output = await runSingle(
+      this.melspec,
+      new ort.Tensor('float32', input, [1, input.length]),
+    );
     const data = output.data as Float32Array;
     const frames: Float32Array[] = [];
     for (let offset = 0; offset + MEL_BINS <= data.length; offset += MEL_BINS) {
@@ -129,7 +148,10 @@ export class OpenWakeWordDetector {
   private async embed(window: Float32Array[]): Promise<Float32Array> {
     const input = new Float32Array(EMBEDDING_WINDOW * MEL_BINS);
     window.forEach((frame, index) => input.set(frame, index * MEL_BINS));
-    const output = await runSingle(this.embedding, new ort.Tensor('float32', input, [1, EMBEDDING_WINDOW, MEL_BINS, 1]));
+    const output = await runSingle(
+      this.embedding,
+      new ort.Tensor('float32', input, [1, EMBEDDING_WINDOW, MEL_BINS, 1]),
+    );
     return Float32Array.from(output.data as Float32Array);
   }
 

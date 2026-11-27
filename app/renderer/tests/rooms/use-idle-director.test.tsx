@@ -44,7 +44,10 @@ describe('useIdleDirector', () => {
       pick: async () => ({ text: '{sit:sofa}' }),
       run,
     };
-    const { result, rerender, unmount } = renderHook((props: UseIdleDirectorOptions) => useIdleDirector(props), { initialProps: base });
+    const { result, rerender, unmount } = renderHook(
+      (props: UseIdleDirectorOptions) => useIdleDirector(props),
+      { initialProps: base },
+    );
     expect(result.current.idleNote).toBe('');
 
     await act(async () => {

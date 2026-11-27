@@ -13,7 +13,12 @@ await build({
     outDir: work,
     emptyOutDir: false,
     minify: false,
-    lib: { entry: 'scripts/stylised-face-demo/review-render.js', formats: ['iife'], name: 'FaceReview', fileName: () => 'review.js' },
+    lib: {
+      entry: 'scripts/stylised-face-demo/review-render.js',
+      formats: ['iife'],
+      name: 'FaceReview',
+      fileName: () => 'review.js',
+    },
   },
 });
 await writeFile(
@@ -22,6 +27,14 @@ await writeFile(
 );
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
-const executable = process.env.ELECTRON_EXE || (process.platform === 'win32' ? 'app/main/node_modules/electron/dist/electron.exe' : 'app/main/node_modules/electron/dist/electron');
-const child = spawn(path.resolve(executable), [path.resolve('scripts/stylised-face-demo')], { env, stdio: 'inherit', windowsHide: true });
+const executable =
+  process.env.ELECTRON_EXE ||
+  (process.platform === 'win32'
+    ? 'app/main/node_modules/electron/dist/electron.exe'
+    : 'app/main/node_modules/electron/dist/electron');
+const child = spawn(path.resolve(executable), [path.resolve('scripts/stylised-face-demo')], {
+  env,
+  stdio: 'inherit',
+  windowsHide: true,
+});
 child.on('exit', (code) => (process.exitCode = code));

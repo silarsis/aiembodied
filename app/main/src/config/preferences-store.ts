@@ -22,7 +22,7 @@ function hasErrnoCode(error: unknown): error is { code: string } {
 }
 
 export class FilePreferencesStore implements PreferencesStore {
-  constructor(private readonly filePath: string) { }
+  constructor(private readonly filePath: string) {}
 
   async load(): Promise<AudioDevicePreferences> {
     try {
@@ -59,7 +59,9 @@ export class FilePreferencesStore implements PreferencesStore {
     const vadSilenceDurationMs = this.normalizeInt(input.vadSilenceDurationMs, 0, 10000);
     const vadMinSpeechDurationMs = this.normalizeInt(input.vadMinSpeechDurationMs, 0, 10000);
     const conversationBackend =
-      input.conversationBackend === 'local' || input.conversationBackend === 'openai' ? input.conversationBackend : undefined;
+      input.conversationBackend === 'local' || input.conversationBackend === 'openai'
+        ? input.conversationBackend
+        : undefined;
 
     const preferences: AudioDevicePreferences = {};
 

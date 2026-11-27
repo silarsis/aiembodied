@@ -5,9 +5,16 @@
  * their turn. Events for things Echo already saw in a tool result are not repeated.
  */
 import { describeOutcome, type ApprovalOutcome } from '../tools/approvals.js';
-import type { RunnerEvent, RunnerQuestion, RunnerTask } from '../shared/coding/runner-client-types.js';
+import type {
+  RunnerEvent,
+  RunnerQuestion,
+  RunnerTask,
+} from '../shared/coding/runner-client-types.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface CodingNudgerOptions {
   notify: (text: string, options: { urgent: boolean }) => void;
@@ -50,7 +57,10 @@ export class CodingNudger {
       this.lastStatus.set(id, status);
       if (status === 'paused') {
         // Once per pause: lastStatus only changes when the task leaves "paused" and comes back.
-        this.send('The coding task is paused while you talk to Kevin; it resumes when things are quiet.', false);
+        this.send(
+          'The coding task is paused while you talk to Kevin; it resumes when things are quiet.',
+          false,
+        );
         return;
       }
       if (!['review', 'done', 'failed'].includes(status)) return;
@@ -59,7 +69,9 @@ export class CodingNudger {
       if (!task || task.status !== status) return;
       this.send(this.statusText(task), false);
     } catch (error) {
-      this.options.logger?.warn('Coding update for Echo failed', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Coding update for Echo failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -76,7 +88,9 @@ export class CodingNudger {
   }
 
   private label(task: RunnerTask | null, id: string): string {
-    return task ? `Task ${id} (${this.options.workspaceName(task.workspace_id)}: ${clip(task.goal ?? '', 70)})` : `Task ${id}`;
+    return task
+      ? `Task ${id} (${this.options.workspaceName(task.workspace_id)}: ${clip(task.goal ?? '', 70)})`
+      : `Task ${id}`;
   }
 
   private questionText(id: string, task: RunnerTask | null, q: RunnerQuestion): string {
@@ -96,9 +110,21 @@ export class CodingNudger {
   private statusText(task: RunnerTask): string {
     const who = this.label(task, task.id);
     if (task.status === 'review') {
-      const files = task.review?.changed_files?.length ?? task.review?.files?.length ?? task.files_touched?.length ?? 0;
-      const checks = task.checks_ok === null || task.checks_ok === undefined ? 'no checks configured' : task.checks_ok ? 'checks passed' : 'checks FAILED';
-      const care = [...(task.review?.protected_violations ?? []).map((v) => `protected: ${v}`), ...(task.review?.flags ?? [])];
+      const files =
+        task.review?.changed_files?.length ??
+        task.review?.files?.length ??
+        task.files_touched?.length ??
+        0;
+      const checks =
+        task.checks_ok === null || task.checks_ok === undefined
+          ? 'no checks configured'
+          : task.checks_ok
+            ? 'checks passed'
+            : 'checks FAILED';
+      const care = [
+        ...(task.review?.protected_violations ?? []).map((v) => `protected: ${v}`),
+        ...(task.review?.flags ?? []),
+      ];
       return `${who} is ready for review: ${files} file(s) changed, ${checks}${care.length ? `, flags: ${care.join('; ')}` : ''}. Tell Kevin briefly. You can use review_coding_task for details, and ask whether to open a pull request.`;
     }
     if (task.status === 'done') {

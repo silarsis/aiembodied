@@ -43,11 +43,19 @@ export const SELF_PROTECTED_PATHS: readonly string[] = [
   'app/main/src/crash-guard.ts',
 ];
 
-export const DEFAULT_CODING_CONFIG: CodingConfig = { runner: BUILT_IN_SERVER_IDS.coderRunner, workspaces: [] };
+export const DEFAULT_CODING_CONFIG: CodingConfig = {
+  runner: BUILT_IN_SERVER_IDS.coderRunner,
+  workspaces: [],
+};
 
 export const WORKSPACE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function slugifyWorkspaceId(name: string): string {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '');
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/g, '');
   return slug || 'workspace';
 }

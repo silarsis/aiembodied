@@ -27,13 +27,18 @@ export function seatedContactY(hipsY: number, restHipsHeight: number, scale = 1)
  * current offset already applied, so the offset is taken back out first; that keeps the target stable
  * while the root is moving and means the result never accumulates.
  */
-export function seatOffsetTarget(contactY: number, surfaceY: number, appliedOffset: number): number {
+export function seatOffsetTarget(
+  contactY: number,
+  surfaceY: number,
+  appliedOffset: number,
+): number {
   const wanted = surfaceY - (contactY - appliedOffset);
   return Math.max(-MAX_SEAT_OFFSET, Math.min(MAX_SEAT_OFFSET, wanted));
 }
 
 /** Moves `current` towards `target` with an exponential ease over `deltaSeconds`. */
 export function easeOffset(current: number, target: number, deltaSeconds: number): number {
-  const next = current + (target - current) * (1 - Math.exp(-SEAT_EASE_RATE * Math.max(0, deltaSeconds)));
+  const next =
+    current + (target - current) * (1 - Math.exp(-SEAT_EASE_RATE * Math.max(0, deltaSeconds)));
   return Math.abs(target - next) < SEAT_OFFSET_EPSILON ? target : next;
 }

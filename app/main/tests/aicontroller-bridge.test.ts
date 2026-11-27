@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AicontrollerBridge, echoRouteOverride, parseControllerMode } from '../src/aicontroller/bridge.js';
-import { builtInServers, defaultRoutes, resolveModelRouting, routeTargetsWithOverride } from '../src/shared/config/model-routing.js';
+import {
+  AicontrollerBridge,
+  echoRouteOverride,
+  parseControllerMode,
+} from '../src/aicontroller/bridge.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+  routeTargetsWithOverride,
+} from '../src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { FAKE_BACKEND_URLS, FakeAicontroller } from './helpers/fake-aicontroller.js';
 
@@ -16,8 +25,16 @@ describe('AicontrollerBridge', () => {
     await fake.stop();
   });
 
-  const bridge = (env: Record<string, string | undefined> = {}, extra: { onChange?: () => void; leaseWaitS?: number } = {}) =>
-    new AicontrollerBridge({ logger, env: { AICONTROLLER_URL: fake.url, ...env }, watchMs: 0, ...extra });
+  const bridge = (
+    env: Record<string, string | undefined> = {},
+    extra: { onChange?: () => void; leaseWaitS?: number } = {},
+  ) =>
+    new AicontrollerBridge({
+      logger,
+      env: { AICONTROLLER_URL: fake.url, ...env },
+      watchMs: 0,
+      ...extra,
+    });
 
   it('parses AICONTROLLER_ENABLED', () => {
     expect(parseControllerMode(undefined)).toBe('auto');
@@ -38,9 +55,14 @@ describe('AicontrollerBridge', () => {
     expect(fake.active('echo-llm')[0]?.client).toBe('aiembodied');
     // Echo's chat base URL comes from the lease.
     expect(b.echoUrl()).toBe(FAKE_BACKEND_URLS['echo-llm']);
-    const routing = resolveModelRouting(builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://x' }), defaultRoutes(DEFAULT_PROVIDER_SETTINGS));
+    const routing = resolveModelRouting(
+      builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://x' }),
+      defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+    );
     const override = echoRouteOverride(routing, b.echoUrl());
-    expect(routeTargetsWithOverride(routing, 'llm', override)[0]?.server.url).toBe(FAKE_BACKEND_URLS['echo-llm']);
+    expect(routeTargetsWithOverride(routing, 'llm', override)[0]?.server.url).toBe(
+      FAKE_BACKEND_URLS['echo-llm'],
+    );
     expect(b.status().line).toContain('echo-llm leased');
     await b.shutdown();
   });
@@ -67,7 +89,11 @@ describe('AicontrollerBridge', () => {
   it('requires the controller with AICONTROLLER_ENABLED=1: turns fail while it is down', async () => {
     const dead = fake.url;
     await fake.stop();
-    const b = new AicontrollerBridge({ logger, env: { AICONTROLLER_URL: dead, AICONTROLLER_ENABLED: '1' }, watchMs: 0 });
+    const b = new AicontrollerBridge({
+      logger,
+      env: { AICONTROLLER_URL: dead, AICONTROLLER_ENABLED: '1' },
+      watchMs: 0,
+    });
     await b.start();
     expect(b.inUse()).toBe(true);
     await expect(b.ensureEcho()).rejects.toThrow(/model controller/);
@@ -102,7 +128,9 @@ describe('AicontrollerBridge', () => {
       b.check();
       expect(b.status().echo).toBe('paused');
     });
-    expect(b.status().line).toContain('Local LLM paused by the model controller (GPU needed by game.exe).');
+    expect(b.status().line).toContain(
+      'Local LLM paused by the model controller (GPU needed by game.exe).',
+    );
     expect(b.echoUrl()).toBeNull();
     await b.ensureEcho();
     expect(b.status().echo).toBe('leased');
@@ -121,7 +149,9 @@ describe('AicontrollerBridge', () => {
       b.check();
       expect(b.status().echo).toBe('paused');
     });
-    await expect(b.ensureEcho()).rejects.toThrow(/Local LLM paused by the model controller \(GPU needed by game.exe\)/);
+    await expect(b.ensureEcho()).rejects.toThrow(
+      /Local LLM paused by the model controller \(GPU needed by game.exe\)/,
+    );
     await b.shutdown();
   });
 
@@ -144,7 +174,8 @@ describe('AicontrollerBridge', () => {
 
   describe('a lease queued at the controller', () => {
     const until = async (cond: () => boolean) => {
-      for (let i = 0; i < 100 && !cond(); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      for (let i = 0; i < 100 && !cond(); i++)
+        await new Promise((resolve) => setTimeout(resolve, 10));
       expect(cond()).toBe(true);
     };
 

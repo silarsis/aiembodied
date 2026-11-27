@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { AvatarBridge, AvatarImageModelSelection, AvatarLoraChoice, AvatarLoraSummary, BaseModelSuggestions } from './types.js';
+import type {
+  AvatarBridge,
+  AvatarImageModelSelection,
+  AvatarLoraChoice,
+  AvatarLoraSummary,
+  BaseModelSuggestions,
+} from './types.js';
 
 const FAMILY_LABELS: Record<string, string> = {
   sd1: 'SD 1.5',
@@ -14,7 +20,10 @@ function gb(bytes: number): string {
 }
 
 function baseLabel(lora: AvatarLoraSummary): string {
-  return lora.baseModel ?? (lora.family ? FAMILY_LABELS[lora.family] ?? lora.family : 'unknown base model');
+  return (
+    lora.baseModel ??
+    (lora.family ? (FAMILY_LABELS[lora.family] ?? lora.family) : 'unknown base model')
+  );
 }
 
 interface Props {
@@ -41,16 +50,30 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
   const [suggestionsFor, setSuggestionsFor] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<BaseModelSuggestions | null>(null);
   const [suggestError, setSuggestError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState<{ id: string; name: string; state: string; error?: string } | null>(null);
+  const [downloading, setDownloading] = useState<{
+    id: string;
+    name: string;
+    state: string;
+    error?: string;
+  } | null>(null);
   const [showOthers, setShowOthers] = useState(false);
 
   useEffect(() => {
-    if (!downloading || !['queued', 'downloading', 'verifying'].includes(downloading.state) || !api.listModelDownloads) return;
+    if (
+      !downloading ||
+      !['queued', 'downloading', 'verifying'].includes(downloading.state) ||
+      !api.listModelDownloads
+    )
+      return;
     const timer = setInterval(() => {
       void api.listModelDownloads?.().then(async (all) => {
         const entry = all.find((item) => item.id === downloading.id);
         if (!entry || entry.state === downloading.state) return;
-        setDownloading({ ...downloading, state: entry.state, ...(entry.error ? { error: entry.error } : {}) });
+        setDownloading({
+          ...downloading,
+          state: entry.state,
+          ...(entry.error ? { error: entry.error } : {}),
+        });
         if (entry.state === 'done') await onRefresh();
       });
     }, 2000);
@@ -64,7 +87,11 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
   const shown = showOthers ? [...usableLoras, ...otherLoras] : usableLoras;
 
   const toggle = (lora: AvatarLoraSummary, on: boolean) =>
-    onChange(on ? [...chosen.filter((c) => c.name !== lora.name), { name: lora.name, strength: 0.8 }] : chosen.filter((c) => c.name !== lora.name));
+    onChange(
+      on
+        ? [...chosen.filter((c) => c.name !== lora.name), { name: lora.name, strength: 0.8 }]
+        : chosen.filter((c) => c.name !== lora.name),
+    );
   const setStrength = (name: string, strength: number) =>
     onChange(chosen.map((c) => (c.name === name ? { ...c, strength } : c)));
 
@@ -74,7 +101,12 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
     setSuggestions(null);
     setSuggestError(null);
     try {
-      setSuggestions(await api.suggestBaseModels({ ...(lora.baseModel ? { baseModel: lora.baseModel } : {}), ...(lora.family ? { family: lora.family } : {}) }));
+      setSuggestions(
+        await api.suggestBaseModels({
+          ...(lora.baseModel ? { baseModel: lora.baseModel } : {}),
+          ...(lora.family ? { family: lora.family } : {}),
+        }),
+      );
     } catch (err) {
       setSuggestError(err instanceof Error ? err.message : 'Civitai had no suggestions.');
     }
@@ -86,7 +118,12 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
       const started = await api.downloadBaseModel(serverId, ref);
       setDownloading({ id: started.id, name, state: started.state });
     } catch (err) {
-      setDownloading({ id: '', name, state: 'failed', error: err instanceof Error ? err.message : 'The download could not start.' });
+      setDownloading({
+        id: '',
+        name,
+        state: 'failed',
+        error: err instanceof Error ? err.message : 'The download could not start.',
+      });
     }
   };
 
@@ -99,7 +136,11 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
         const usable = Boolean(lora.family && lora.family === modelFamily);
         const hasModel = Boolean(lora.family && availableFamilies.has(lora.family));
         return (
-          <div key={lora.name} className="avatarStudio__lora" style={lora.offline ? { opacity: 0.55 } : undefined}>
+          <div
+            key={lora.name}
+            className="avatarStudio__lora"
+            style={lora.offline ? { opacity: 0.55 } : undefined}
+          >
             <label>
               <input
                 type="checkbox"
@@ -108,7 +149,13 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
                 onChange={(event) => toggle(lora, event.target.checked)}
               />{' '}
               {lora.title ?? lora.name} <small>({baseLabel(lora)})</small>
-              {lora.location ? <small> {lora.location}{lora.offline ? ' (offline)' : ''}</small> : null}
+              {lora.location ? (
+                <small>
+                  {' '}
+                  {lora.location}
+                  {lora.offline ? ' (offline)' : ''}
+                </small>
+              ) : null}
             </label>
             {choice && usable ? (
               <label className="avatarStudio__loraStrength">
@@ -125,9 +172,13 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
                 />
               </label>
             ) : null}
-            {lora.triggerWords?.length ? <small>Adds to the prompt: {lora.triggerWords.join(', ')}</small> : null}
+            {lora.triggerWords?.length ? (
+              <small>Adds to the prompt: {lora.triggerWords.join(', ')}</small>
+            ) : null}
             {!lora.family ? (
-              <small className="avatarStudio__warnText">{"Its base model isn't known, so it can't be used."}</small>
+              <small className="avatarStudio__warnText">
+                {"Its base model isn't known, so it can't be used."}
+              </small>
             ) : !usable && hasModel ? (
               <small>Pick a {baseLabel(lora)} image model above to use it.</small>
             ) : !usable ? (
@@ -139,25 +190,41 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
               </small>
             ) : null}
             {suggestionsFor === lora.name ? (
-              <div className="avatarStudio__suggestions" aria-label={`Models for ${lora.title ?? lora.name}`}>
-                {suggestError ? <small className="avatarStudio__warnText">{suggestError}</small> : null}
+              <div
+                className="avatarStudio__suggestions"
+                aria-label={`Models for ${lora.title ?? lora.name}`}
+              >
+                {suggestError ? (
+                  <small className="avatarStudio__warnText">{suggestError}</small>
+                ) : null}
                 {!suggestions && !suggestError ? <small>Asking Civitai…</small> : null}
                 {suggestions ? (
                   <>
                     <small>
                       Popular {suggestions.baseModel} models on Civitai
-                      {suggestions.vramBytes ? `, for ${suggestions.serverName}'s ${gb(suggestions.vramBytes)} GPU` : ''}:
+                      {suggestions.vramBytes
+                        ? `, for ${suggestions.serverName}'s ${gb(suggestions.vramBytes)} GPU`
+                        : ''}
+                      :
                     </small>
                     {suggestions.suggestions.length ? null : <small>None found.</small>}
                     {suggestions.suggestions.map((item) => (
                       <div key={item.ref} className="avatarStudio__suggestion">
                         <span>
                           {item.name} <small>{gb(item.sizeKB * 1024)}</small>{' '}
-                          {item.fits === false ? <small className="avatarStudio__warnText">too big for the GPU</small> : null}
+                          {item.fits === false ? (
+                            <small className="avatarStudio__warnText">too big for the GPU</small>
+                          ) : null}
                         </span>
                         <button
                           type="button"
-                          disabled={disabled || Boolean(downloading && ['queued', 'downloading', 'verifying'].includes(downloading.state))}
+                          disabled={
+                            disabled ||
+                            Boolean(
+                              downloading &&
+                              ['queued', 'downloading', 'verifying'].includes(downloading.state),
+                            )
+                          }
                           onClick={() => void download(suggestions.serverId, item.ref, item.name)}
                         >
                           Download
@@ -172,14 +239,21 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
         );
       })}
       {otherLoras.length ? (
-        <button type="button" className="avatarStudio__loraMore" onClick={() => setShowOthers(!showOthers)}>
+        <button
+          type="button"
+          className="avatarStudio__loraMore"
+          onClick={() => setShowOthers(!showOthers)}
+        >
           {showOthers
             ? 'Hide LoRAs for other models'
             : `${otherLoras.length} more for other models`}
         </button>
       ) : null}
       {downloading ? (
-        <small className={downloading.state === 'failed' ? 'avatarStudio__warnText' : undefined} role="status">
+        <small
+          className={downloading.state === 'failed' ? 'avatarStudio__warnText' : undefined}
+          role="status"
+        >
           {downloading.state === 'done'
             ? `${downloading.name} downloaded.`
             : downloading.state === 'failed' || downloading.state === 'cancelled'

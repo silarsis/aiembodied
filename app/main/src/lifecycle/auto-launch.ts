@@ -9,7 +9,9 @@ export type RunReg = (args: string[]) => Promise<string>;
 
 const runRegExe: RunReg = (args) =>
   new Promise((resolve, reject) => {
-    execFile('reg.exe', args, { windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
+    execFile('reg.exe', args, { windowsHide: true }, (error, stdout) =>
+      error ? reject(error) : resolve(stdout),
+    );
   });
 
 /**

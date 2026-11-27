@@ -8,7 +8,10 @@ export function readTagInstructions(input: unknown): AvatarTagInstructions {
   const read = (value: unknown): string =>
     typeof value === 'string' && value.length <= MAX_TAG_INSTRUCTIONS_LENGTH ? value.trim() : '';
   const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
-  const result: AvatarTagInstructions = { shared: read(record.shared), moveOnly: read(record.moveOnly) };
+  const result: AvatarTagInstructions = {
+    shared: read(record.shared),
+    moveOnly: read(record.moveOnly),
+  };
   const scene = read(record.scene);
   if (scene) result.scene = scene;
   if (record.sceneFor && typeof record.sceneFor === 'object') {
@@ -32,7 +35,13 @@ export interface ComposeAvatarPromptInput {
 }
 
 /** Persona, then a blank line, then the tag instructions that fit its body. Undefined when there is neither. */
-export function composeAvatarPrompt({ name, persona, ownModel, tags, avatarId }: ComposeAvatarPromptInput): string | undefined {
+export function composeAvatarPrompt({
+  name,
+  persona,
+  ownModel,
+  tags,
+  avatarId,
+}: ComposeAvatarPromptInput): string | undefined {
   const sceneText = (avatarId ? tags.sceneFor?.[avatarId] : undefined) ?? tags.scene ?? '';
   const baseTagText = ownModel ? tags.moveOnly : tags.shared;
   // The scene text follows the tags; it only exists while live motion is available, so it never stands alone.

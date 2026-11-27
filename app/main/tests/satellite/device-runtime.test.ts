@@ -1,27 +1,58 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DeviceRuntime, DEFAULT_CLOSE_SHORTCUT, type MenuItemLike } from '../../src/satellite/device-runtime.js';
-import { CAPTURE_STOP_TIMEOUT_MS, type DeviceGateState } from '../../src/shared/satellite/device-gate.js';
+import {
+  DeviceRuntime,
+  DEFAULT_CLOSE_SHORTCUT,
+  type MenuItemLike,
+} from '../../src/satellite/device-runtime.js';
+import {
+  CAPTURE_STOP_TIMEOUT_MS,
+  type DeviceGateState,
+} from '../../src/shared/satellite/device-gate.js';
 import type { SatelliteSettings } from '../../src/satellite/settings.js';
 import type { Op } from '../../src/shared/room-hub/frames.js';
 
-const snapshot = (locations: Record<string, string>, transit: Array<{ avatarId: string; from: string; to: string }> = [], study: { doorbell?: boolean } = {}) => ({
+const snapshot = (
+  locations: Record<string, string>,
+  transit: Array<{ avatarId: string; from: string; to: string }> = [],
+  study: { doorbell?: boolean } = {},
+) => ({
   places: [{ id: 'study', name: 'the study', node: 'device-1', camera: false, ...study }],
   locations,
   transit,
   localPlaceId: 'study',
 });
 
-function setup(settings: Partial<SatelliteSettings> = {}, onGate?: (state: DeviceGateState) => void) {
-  const store = { closed: false, closeShortcut: null, doorbell: false, ...settings } as SatelliteSettings;
+function setup(
+  settings: Partial<SatelliteSettings> = {},
+  onGate?: (state: DeviceGateState) => void,
+) {
+  const store = {
+    closed: false,
+    closeShortcut: null,
+    doorbell: false,
+    ...settings,
+  } as SatelliteSettings;
   const ops: Op[] = [];
   const sent: Array<[string, unknown]> = [];
   const reload = vi.fn();
   const listeners = new Map<string, () => void>();
   const shortcuts = new Map<string, () => void>();
-  const tray = { setToolTip: vi.fn(), setImage: vi.fn(), setContextMenu: vi.fn(), destroy: vi.fn() };
+  const tray = {
+    setToolTip: vi.fn(),
+    setImage: vi.fn(),
+    setContextMenu: vi.fn(),
+    destroy: vi.fn(),
+  };
   const menus: MenuItemLike[][] = [];
   const notify = vi.fn();
-  let permission: ((webContents: unknown, permission: string, callback: (granted: boolean) => void, details?: unknown) => void) | null = null;
+  let permission:
+    | ((
+        webContents: unknown,
+        permission: string,
+        callback: (granted: boolean) => void,
+        details?: unknown,
+      ) => void)
+    | null = null;
   let fullscreen: (noFullscreenApp: boolean) => void = () => undefined;
   const watcher = { start: vi.fn(), stop: vi.fn() };
   const runtime = new DeviceRuntime({
@@ -41,7 +72,13 @@ function setup(settings: Partial<SatelliteSettings> = {}, onGate?: (state: Devic
       setPermissionRequestHandler: (handler) => void (permission = handler as typeof permission),
       setPermissionCheckHandler: () => undefined,
     },
-    getWindow: () => ({ isDestroyed: () => false, webContents: { send: (channel: string, value: unknown) => void sent.push([channel, value]), reload } }),
+    getWindow: () => ({
+      isDestroyed: () => false,
+      webContents: {
+        send: (channel: string, value: unknown) => void sent.push([channel, value]),
+        reload,
+      },
+    }),
     sendOp: (op) => (ops.push(op), true),
     tray,
     makeImage: (icon) => icon,
@@ -63,7 +100,21 @@ function setup(settings: Partial<SatelliteSettings> = {}, onGate?: (state: Devic
     (permission as NonNullable<typeof permission>)(null, name, callback, { mediaTypes });
     return callback.mock.calls[0][0] as boolean;
   };
-  return { runtime, store, ops, sent, reload, listeners, shortcuts, tray, menus, notify, ask, fullscreen: (value: boolean) => fullscreen(value), watcher };
+  return {
+    runtime,
+    store,
+    ops,
+    sent,
+    reload,
+    listeners,
+    shortcuts,
+    tray,
+    menus,
+    notify,
+    ask,
+    fullscreen: (value: boolean) => fullscreen(value),
+    watcher,
+  };
 }
 
 describe('DeviceRuntime', () => {
@@ -92,7 +143,15 @@ describe('DeviceRuntime', () => {
     const last = t.sent.at(-1) as [string, { mic: string }];
     expect(last[0]).toBe('device-gate:changed');
     expect(last[1].mic).toBe('live');
-    expect(t.ops.at(-1)).toEqual({ op: 'device.state', mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: false, fullscreen: false });
+    expect(t.ops.at(-1)).toEqual({
+      op: 'device.state',
+      mic: 'live',
+      camera: 'off',
+      speakers: 'live',
+      locked: false,
+      closed: false,
+      fullscreen: false,
+    });
   });
 
   it('closes on lock and opens on unlock', () => {
@@ -122,7 +181,9 @@ describe('DeviceRuntime', () => {
     t.fullscreen(false);
     expect(t.runtime.state()).toMatchObject({ micAllowed: false, fullscreen: true });
     t.fullscreen(true);
-    t.runtime.setSnapshot(snapshot({ echo: 'study' }, [{ avatarId: 'echo', from: 'study', to: 'home' }]));
+    t.runtime.setSnapshot(
+      snapshot({ echo: 'study' }, [{ avatarId: 'echo', from: 'study', to: 'home' }]),
+    );
     expect(t.runtime.state().micAllowed).toBe(false);
     t.runtime.setSnapshot(snapshot({ echo: 'home' }));
     expect(t.runtime.state().occupied).toBe(false);
@@ -177,7 +238,11 @@ describe('DeviceRuntime', () => {
       again.fullscreen(true);
       again.runtime.setLinkUp(true);
       again.runtime.setSnapshot(snapshot({ echo: 'study' }));
-      expect(again.runtime.state()).toMatchObject({ micAllowed: false, closed: true, summary: 'This room is closed' });
+      expect(again.runtime.state()).toMatchObject({
+        micAllowed: false,
+        closed: true,
+        summary: 'This room is closed',
+      });
       again.runtime.setOpen(true);
       expect(again.ops).toContainEqual({ op: 'room.open' });
       expect(again.store.closed).toBe(false);
@@ -224,7 +289,7 @@ describe('DeviceRuntime', () => {
       expect((t.menus.at(-1) ?? [])[0].label).toBe('Study: Nobody is in this room');
     });
 
-    it('says doorbell only when the place\'s doorbell is on (a setting kept on bija) and nobody is here', () => {
+    it("says doorbell only when the place's doorbell is on (a setting kept on bija) and nobody is here", () => {
       const t = setup();
       t.runtime.start();
       t.fullscreen(true);
@@ -248,7 +313,9 @@ describe('DeviceRuntime', () => {
 
   it('tells the wake word worker about every change of the gate', () => {
     const seen: Array<{ micAllowed: boolean; doorbell: boolean }> = [];
-    const t = setup({}, (state) => seen.push({ micAllowed: state.micAllowed, doorbell: state.doorbell }));
+    const t = setup({}, (state) =>
+      seen.push({ micAllowed: state.micAllowed, doorbell: state.doorbell }),
+    );
     t.runtime.start();
     t.fullscreen(true);
     t.runtime.setLinkUp(true);
@@ -265,7 +332,10 @@ describe('DeviceRuntime', () => {
     t.runtime.setLinkUp(true);
     t.runtime.setSnapshot(snapshot({ echo: 'study' }));
     expect(t.notify).toHaveBeenCalledTimes(1);
-    expect(t.notify).toHaveBeenCalledWith('Microphone on', 'Echo is here: the mic is on in the study');
+    expect(t.notify).toHaveBeenCalledWith(
+      'Microphone on',
+      'Echo is here: the mic is on in the study',
+    );
     t.runtime.setLinkUp(false);
     t.runtime.setLinkUp(true);
     expect(t.notify).toHaveBeenCalledTimes(1);
@@ -280,13 +350,20 @@ describe('DeviceRuntime', () => {
     expect(t.ops.length).toBe(before + 1);
   });
 
-  it('turns the camera on only when the room\'s own setting says so, as bija sent it in the snapshot', () => {
+  it("turns the camera on only when the room's own setting says so, as bija sent it in the snapshot", () => {
     const t = setup();
     t.runtime.start();
     t.fullscreen(true);
     t.runtime.setLinkUp(true);
     const study = (camera?: boolean) => ({
-      places: [{ id: 'study', name: 'the study', node: 'room-1', ...(camera === undefined ? {} : { camera }) }],
+      places: [
+        {
+          id: 'study',
+          name: 'the study',
+          node: 'room-1',
+          ...(camera === undefined ? {} : { camera }),
+        },
+      ],
       locations: { echo: 'study' },
       transit: [],
       localPlaceId: 'study',
@@ -300,7 +377,12 @@ describe('DeviceRuntime', () => {
     t.runtime.setSnapshot(study(true));
     expect(t.runtime.state().camera).toBe('live');
     // Anything unreadable, or a snapshot without this room in it, fails closed.
-    t.runtime.setSnapshot({ places: [], locations: { echo: 'study' }, transit: [], localPlaceId: 'study' });
+    t.runtime.setSnapshot({
+      places: [],
+      locations: { echo: 'study' },
+      transit: [],
+      localPlaceId: 'study',
+    });
     expect(t.runtime.state()).toMatchObject({ micAllowed: true, camera: 'off' });
     // The camera goes with the mic: nobody here, no camera.
     t.runtime.setSnapshot(study(true));
@@ -313,7 +395,12 @@ describe('DeviceRuntime', () => {
     t.runtime.start();
     t.fullscreen(true);
     t.runtime.setLinkUp(true);
-    t.runtime.setSnapshot({ places: [{ id: 'study', name: 'the study', node: 'room-1', camera: false }], locations: { echo: 'study' }, transit: [], localPlaceId: 'study' });
+    t.runtime.setSnapshot({
+      places: [{ id: 'study', name: 'the study', node: 'room-1', camera: false }],
+      locations: { echo: 'study' },
+      transit: [],
+      localPlaceId: 'study',
+    });
     expect(t.runtime.gate.allowsMedia('audio')).toBe(true);
     expect(t.runtime.gate.allowsMedia('video')).toBe(false);
     expect(t.ask('media', ['video'])).toBe(false);

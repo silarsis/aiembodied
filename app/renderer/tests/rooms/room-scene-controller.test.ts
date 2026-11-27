@@ -10,10 +10,19 @@ function controller() {
   parent.append(canvas);
   Object.defineProperty(parent, 'clientWidth', { value: 800 });
   Object.defineProperty(parent, 'clientHeight', { value: 600 });
-  const renderer = { setClearColor: () => undefined, setSize: () => undefined } as unknown as THREE.WebGLRenderer;
+  const renderer = {
+    setClearColor: () => undefined,
+    setSize: () => undefined,
+  } as unknown as THREE.WebGLRenderer;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
-  const instance = new RoomSceneController({ renderer, scene, camera, canvas, legacySize: { width: 480, height: 640 } });
+  const instance = new RoomSceneController({
+    renderer,
+    scene,
+    camera,
+    canvas,
+    legacySize: { width: 480, height: 640 },
+  });
   const avatar = new THREE.Group();
   instance.attachAvatar(avatar);
   return { instance, avatar };
@@ -36,7 +45,10 @@ describe('RoomSceneController.setRoom', () => {
     avatar.position.set(1.2, 0, -0.7);
     const before = instance.currentStage;
 
-    const withModel = { ...reading, objects: reading.objects.map((o, i) => (i === 0 ? { ...o, name: 'made' } : o)) };
+    const withModel = {
+      ...reading,
+      objects: reading.objects.map((o, i) => (i === 0 ? { ...o, name: 'made' } : o)),
+    };
     await instance.setRoom(withModel);
     expect(instance.currentStage).not.toBe(before);
     expect(instance.currentStage).not.toBeNull();
@@ -64,8 +76,17 @@ describe('RoomSceneController soles on the floor', () => {
     parent.append(canvas);
     Object.defineProperty(parent, 'clientWidth', { value: 800 });
     Object.defineProperty(parent, 'clientHeight', { value: 600 });
-    const renderer = { setClearColor: () => undefined, setSize: () => undefined } as unknown as THREE.WebGLRenderer;
-    const instance = new RoomSceneController({ renderer, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas, legacySize: { width: 480, height: 640 } });
+    const renderer = {
+      setClearColor: () => undefined,
+      setSize: () => undefined,
+    } as unknown as THREE.WebGLRenderer;
+    const instance = new RoomSceneController({
+      renderer,
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(),
+      canvas,
+      legacySize: { width: 480, height: 640 },
+    });
     const avatar = new THREE.Group();
     avatar.position.y = -0.07; // the 2D normalisation dropped the ankle bone to y = 0
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.3));
@@ -87,8 +108,17 @@ describe('RoomSceneController avatar height', () => {
     parent.append(canvas);
     Object.defineProperty(parent, 'clientWidth', { value: 800 });
     Object.defineProperty(parent, 'clientHeight', { value: 600 });
-    const renderer = { setClearColor: () => undefined, setSize: () => undefined } as unknown as THREE.WebGLRenderer;
-    const instance = new RoomSceneController({ renderer, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas, legacySize: { width: 480, height: 640 } });
+    const renderer = {
+      setClearColor: () => undefined,
+      setSize: () => undefined,
+    } as unknown as THREE.WebGLRenderer;
+    const instance = new RoomSceneController({
+      renderer,
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(),
+      canvas,
+      legacySize: { width: 480, height: 640 },
+    });
     // Normalised the 2D way: 1.9 m sole to crown, ankles on y = 0, soles 8 cm below.
     const avatar = new THREE.Group();
     avatar.position.set(0.03, -0.02, -0.01);
@@ -153,7 +183,10 @@ describe('RoomSceneController companions', () => {
     await instance.setRoom(room);
     const right = companionHome(room.home, 0);
     const left = companionHome(room.home, 1);
-    expect(rex.position.x).toBeCloseTo(right.position[0] + 0.5 * Math.cos((room.home.facing * Math.PI) / 180), 3);
+    expect(rex.position.x).toBeCloseTo(
+      right.position[0] + 0.5 * Math.cos((room.home.facing * Math.PI) / 180),
+      3,
+    );
     expect(sage.position.x).toBeCloseTo(left.position[0]);
     expect(sage.position.z).toBeCloseTo(left.position[2]);
     expect(sage.rotation.y).toBeCloseTo((room.home.facing * Math.PI) / 180);
@@ -211,7 +244,7 @@ describe('RoomSceneController scene envs', () => {
     instance.dispose();
   });
 
-  it('moves the companion\'s root, not Echo\'s, when its env bakes a pose; it stands at its home until then', async () => {
+  it("moves the companion's root, not Echo's, when its env bakes a pose; it stands at its home until then", async () => {
     const { instance, avatar } = controller();
     const sage = new THREE.Group();
     sage.rotation.y = Math.PI;
@@ -238,7 +271,7 @@ describe('RoomSceneController scene envs', () => {
     instance.dispose();
   });
 
-  it('puts a companion\'s carried object back when the room goes away', async () => {
+  it("puts a companion's carried object back when the room goes away", async () => {
     const { instance } = controller();
     const hand = new THREE.Object3D();
     const sage = new THREE.Group();
@@ -325,8 +358,17 @@ describe('RoomSceneController contact body', () => {
     parent.append(canvas);
     Object.defineProperty(parent, 'clientWidth', { value: 800 });
     Object.defineProperty(parent, 'clientHeight', { value: 600 });
-    const renderer = { setClearColor: () => undefined, setSize: () => undefined } as unknown as THREE.WebGLRenderer;
-    const instance = new RoomSceneController({ renderer, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas, legacySize: { width: 480, height: 640 } });
+    const renderer = {
+      setClearColor: () => undefined,
+      setSize: () => undefined,
+    } as unknown as THREE.WebGLRenderer;
+    const instance = new RoomSceneController({
+      renderer,
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(),
+      canvas,
+      legacySize: { width: 480, height: 640 },
+    });
     const avatar = new THREE.Group();
     const bones = new Map<string, THREE.Object3D>();
     const add = (name: string, parentName: string | null, x: number, y: number, z: number) => {
@@ -339,14 +381,25 @@ describe('RoomSceneController contact body', () => {
     add('spine', 'hips', 0, 0.1, 0);
     add('chest', 'spine', 0, 0.15, 0);
     add('neck', 'chest', 0, 0.25, 0);
-    for (const [side, sign] of [['left', 1], ['right', -1]] as const) {
+    for (const [side, sign] of [
+      ['left', 1],
+      ['right', -1],
+    ] as const) {
       add(`${side}UpperLeg`, 'hips', sign * 0.09, -0.05, 0);
       add(`${side}LowerLeg`, `${side}UpperLeg`, 0, -0.43, 0);
       add(`${side}Foot`, `${side}LowerLeg`, 0, -0.3, 0);
-      bones.get(`${side}UpperLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(75 * Math.PI) / 180);
-      bones.get(`${side}LowerLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), (60 * Math.PI) / 180);
+      bones
+        .get(`${side}UpperLeg`)!
+        .quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(75 * Math.PI) / 180);
+      bones
+        .get(`${side}LowerLeg`)!
+        .quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), (60 * Math.PI) / 180);
     }
-    instance.attachAvatar(avatar, { getNormalizedBoneNode: (name: string) => bones.get(name) ?? null } as never, 0.95);
+    instance.attachAvatar(
+      avatar,
+      { getNormalizedBoneNode: (name: string) => bones.get(name) ?? null } as never,
+      0.95,
+    );
     const reading = builtInRoom('reading-room');
     await instance.setRoom(reading);
     const sofa = reading.objects.find((object) => object.id === 'sofa')!;
@@ -380,7 +433,8 @@ describe('RoomSceneController contact body', () => {
     expect(corrected.length).toBeGreaterThan(0);
     await instance.setRoom(null);
     instance.solveContact(1 / 60);
-    for (const [name, q] of animated) expect(bones.get(name)!.quaternion.angleTo(q)).toBeLessThan(1e-9);
+    for (const [name, q] of animated)
+      expect(bones.get(name)!.quaternion.angleTo(q)).toBeLessThan(1e-9);
     instance.dispose();
   });
 });

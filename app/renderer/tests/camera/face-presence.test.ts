@@ -1,9 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DETECT_INTERVAL_MS, FACE_REPORT_MS, FacePresence, GREET_GAP_MS, type FaceDetectorLike, type VideoLike } from '../../src/camera/face-presence.js';
+import {
+  DETECT_INTERVAL_MS,
+  FACE_REPORT_MS,
+  FacePresence,
+  GREET_GAP_MS,
+  type FaceDetectorLike,
+  type VideoLike,
+} from '../../src/camera/face-presence.js';
 
 /** A camera made of fakes: tracks that know whether they were stopped, a video, and a detector that counts what the test says. */
 function rig() {
-  const state = { faces: 0, now: 1_000_000, open: 0, failOpen: null as Error | null, failDetector: null as Error | null, hold: null as null | Promise<void> };
+  const state = {
+    faces: 0,
+    now: 1_000_000,
+    open: 0,
+    failOpen: null as Error | null,
+    failDetector: null as Error | null,
+    hold: null as null | Promise<void>,
+  };
   const tracks: Array<{ stop: ReturnType<typeof vi.fn> }> = [];
   const detectors: Array<{ closed: boolean; countFaces: ReturnType<typeof vi.fn> }> = [];
   const videos: VideoLike[] = [];
@@ -22,7 +36,14 @@ function rig() {
       return { getTracks: () => [track] } as unknown as MediaStream;
     },
     createVideo: () => {
-      const video: VideoLike = { srcObject: null, muted: false, playsInline: false, readyState: 4, play: async () => undefined, pause: vi.fn() };
+      const video: VideoLike = {
+        srcObject: null,
+        muted: false,
+        playsInline: false,
+        readyState: 4,
+        play: async () => undefined,
+        pause: vi.fn(),
+      };
       videos.push(video);
       return video;
     },
@@ -58,7 +79,10 @@ describe('FacePresence', () => {
   it('opens the camera at 640x360 (the chosen one when given) and looks twice a second', async () => {
     const t = rig();
     expect(await t.presence.start('cam-2')).toEqual({ ok: true });
-    expect(t.constraints[0]).toEqual({ audio: false, video: { width: { ideal: 640 }, height: { ideal: 360 }, deviceId: { ideal: 'cam-2' } } });
+    expect(t.constraints[0]).toEqual({
+      audio: false,
+      video: { width: { ideal: 640 }, height: { ideal: 360 }, deviceId: { ideal: 'cam-2' } },
+    });
     expect(t.live).toEqual([true]);
     expect(t.videos[0]).toMatchObject({ muted: true, playsInline: true });
     expect(DETECT_INTERVAL_MS).toBe(500);
@@ -182,12 +206,25 @@ describe('FacePresence', () => {
     const original = t.presence;
     expect(original.running).toBe(false);
     const failing = new FacePresence({
-      getStream: async () => ({ getTracks: () => [t.tracks[t.tracks.push({ stop: vi.fn() }) - 1]] }) as unknown as MediaStream,
-      createVideo: () => ({ srcObject: null, muted: false, playsInline: false, readyState: 0, play: () => Promise.reject(new Error('blocked')), pause: vi.fn() }),
+      getStream: async () =>
+        ({
+          getTracks: () => [t.tracks[t.tracks.push({ stop: vi.fn() }) - 1]],
+        }) as unknown as MediaStream,
+      createVideo: () => ({
+        srcObject: null,
+        muted: false,
+        playsInline: false,
+        readyState: 0,
+        play: () => Promise.reject(new Error('blocked')),
+        pause: vi.fn(),
+      }),
       createDetector: async () => ({ countFaces: () => 0, close: vi.fn() }),
       emit: vi.fn(),
     });
-    expect(await failing.start()).toEqual({ ok: false, reason: 'the video would not play (blocked)' });
+    expect(await failing.start()).toEqual({
+      ok: false,
+      reason: 'the video would not play (blocked)',
+    });
     expect(t.tracks[0].stop).toHaveBeenCalled();
   });
 

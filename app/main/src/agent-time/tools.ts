@@ -60,7 +60,12 @@ function readString(params: unknown, key: string): string | undefined {
 function readNumber(params: unknown, key: string): number | undefined {
   if (params && typeof params === 'object' && key in params) {
     const value = (params as Record<string, unknown>)[key];
-    const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN;
+    const n =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim()
+          ? Number(value)
+          : Number.NaN;
     if (Number.isFinite(n)) return n;
   }
   return undefined;
@@ -76,7 +81,9 @@ function readObject(params: unknown, key: string): Record<string, unknown> | und
       return undefined;
     }
   }
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function clip(text: string, limit: number): string {
@@ -91,15 +98,20 @@ function json(value: unknown): string {
 function readWhen(params: unknown, now: Date): { at?: string; inSeconds?: number } {
   const at = readString(params, 'at');
   const inSeconds = readNumber(params, 'inSeconds');
-  const when = params && typeof params === 'object' ? (params as Record<string, unknown>).when : undefined;
+  const when =
+    params && typeof params === 'object' ? (params as Record<string, unknown>).when : undefined;
   if (inSeconds !== undefined) return { inSeconds: Math.max(1, Math.round(inSeconds)) };
   const text = at ?? (typeof when === 'string' ? when.trim() : undefined);
   if (text) {
     const time = Date.parse(text);
-    if (Number.isNaN(time)) throw new Error(`I could not read the time "${text}". Use an ISO time such as ${new Date(now.getTime() + 3_600_000).toISOString()}, or inSeconds.`);
+    if (Number.isNaN(time))
+      throw new Error(
+        `I could not read the time "${text}". Use an ISO time such as ${new Date(now.getTime() + 3_600_000).toISOString()}, or inSeconds.`,
+      );
     return { at: new Date(time).toISOString() };
   }
-  if (typeof when === 'number' && Number.isFinite(when)) return { inSeconds: Math.max(1, Math.round(when)) };
+  if (typeof when === 'number' && Number.isFinite(when))
+    return { inSeconds: Math.max(1, Math.round(when)) };
   throw new Error('Say when: "at" (an ISO time) or "inSeconds" (a number of seconds from now).');
 }
 
@@ -107,7 +119,9 @@ function readWhen(params: unknown, now: Date): { at?: string; inSeconds?: number
 function failure(error: unknown): Error {
   if (error instanceof WorkflowsError) {
     if (error.status === 422 && error.errors.length > 0) {
-      return new Error(`The service refused this. Fix these and call again:\n- ${error.errors.join('\n- ')}`);
+      return new Error(
+        `The service refused this. Fix these and call again:\n- ${error.errors.join('\n- ')}`,
+      );
     }
     return new Error(error.message);
   }
@@ -115,8 +129,15 @@ function failure(error: unknown): Error {
 }
 
 const WHEN_PROPERTIES: Record<string, JSONSchema> = {
-  at: { type: 'string', description: 'Optional. When, as an ISO 8601 time with offset, e.g. "2026-11-26T07:30:00+08:00".' },
-  inSeconds: { type: 'number', description: 'Optional, instead of "at". How many seconds from now, e.g. 600 for ten minutes.' },
+  at: {
+    type: 'string',
+    description:
+      'Optional. When, as an ISO 8601 time with offset, e.g. "2026-11-26T07:30:00+08:00".',
+  },
+  inSeconds: {
+    type: 'number',
+    description: 'Optional, instead of "at". How many seconds from now, e.g. 600 for ten minutes.',
+  },
 };
 
 export const FLOW_LANGUAGE = [
@@ -160,7 +181,14 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
       'Example: {"text": "The bins go out tonight.", "at": "2026-11-26T18:00:00+08:00"}.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string', description: 'What to remind Kevin of, in a short sentence.' }, ...WHEN_PROPERTIES, alarm: { type: 'boolean', description: 'Optional, no longer needed: every reminder is spoken when due.' } },
+      properties: {
+        text: { type: 'string', description: 'What to remind Kevin of, in a short sentence.' },
+        ...WHEN_PROPERTIES,
+        alarm: {
+          type: 'boolean',
+          description: 'Optional, no longer needed: every reminder is spoken when due.',
+        },
+      },
       required: ['text'],
     },
     confirmationLevel: 'notify',
@@ -170,7 +198,14 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
       if (!text) throw new Error('remind_me needs "text".');
       const when = readWhen(params, now());
       const alarm = (params as { alarm?: unknown } | null)?.alarm === true;
-      const made = await guarded(() => client.createReminder({ avatarId: avatar(context), ...when, text, ...(alarm ? { alarm } : {}) }));
+      const made = await guarded(() =>
+        client.createReminder({
+          avatarId: avatar(context),
+          ...when,
+          text,
+          ...(alarm ? { alarm } : {}),
+        }),
+      );
       return `Reminder set for ${made.dueAt}.`;
     },
   });
@@ -180,14 +215,23 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
     description:
       'Ask to be woken later to think about something again. At that time you get your note back and may then speak or act. Give "note" and either "inSeconds" or "at". ' +
       'Example: {"note": "Check whether Kevin liked the new playlist.", "inSeconds": 7200}.',
-    inputSchema: { type: 'object', properties: { note: { type: 'string', description: 'What to think about then, in your own words.' }, ...WHEN_PROPERTIES }, required: ['note'] },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        note: { type: 'string', description: 'What to think about then, in your own words.' },
+        ...WHEN_PROPERTIES,
+      },
+      required: ['note'],
+    },
     confirmationLevel: 'none',
     describeCall: (params) => `wake me: ${clip(readString(params, 'note') ?? '', 60)}`,
     execute: async (params, context) => {
       const note = readString(params, 'note');
       if (!note) throw new Error('wake_me_later needs "note".');
       const when = readWhen(params, now());
-      const made = await guarded(() => client.createWakeup({ avatarId: avatar(context), ...when, note }));
+      const made = await guarded(() =>
+        client.createWakeup({ avatarId: avatar(context), ...when, note }),
+      );
       return `I will wake you at ${made.dueAt}.`;
     },
   });
@@ -208,7 +252,10 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
       properties: {
         condition: { type: 'object', description: 'What to watch for (see the description).' },
         then: { type: 'object', description: 'What to do when it happens (see the description).' },
-        untilHours: { type: 'number', description: 'Optional. Stop watching after this many hours (default 24).' },
+        untilHours: {
+          type: 'number',
+          description: 'Optional. Stop watching after this many hours (default 24).',
+        },
       },
       required: ['condition', 'then'],
     },
@@ -221,7 +268,12 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
       if (!then) throw new Error('watch_for needs a "then" object.');
       const untilHours = readNumber(params, 'untilHours');
       const made = await guarded(() =>
-        client.createWatch({ avatarId: avatar(context), condition, then: then as never, ...(untilHours !== undefined ? { untilHours } : {}) }),
+        client.createWatch({
+          avatarId: avatar(context),
+          condition,
+          then: then as never,
+          ...(untilHours !== undefined ? { untilHours } : {}),
+        }),
       );
       return `Watching (${made.workflowId}).`;
     },
@@ -257,7 +309,12 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
       if (!trigger) throw new Error('write_flow needs a "trigger" object.');
       const enabled = (params as { enabled?: unknown } | null)?.enabled;
       const saved = await guarded(() =>
-        client.putFlow(avatar(context), name, { description, definition, trigger, ...(typeof enabled === 'boolean' ? { enabled } : {}) }),
+        client.putFlow(avatar(context), name, {
+          description,
+          definition,
+          trigger,
+          ...(typeof enabled === 'boolean' ? { enabled } : {}),
+        }),
       );
       const version = typeof saved.version === 'number' ? ` (version ${saved.version})` : '';
       return `Saved flow ${name}${version}. Trigger: ${JSON.stringify(trigger)}.`;
@@ -266,10 +323,14 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
 
   const runFlow: RegisteredTool = define({
     toolName: 'run_flow',
-    description: 'Run one of your flows now. Give its "name" and, if it takes inputs, "inputs". Example: {"name": "morning_bins", "inputs": {"city": "Perth"}}.',
+    description:
+      'Run one of your flows now. Give its "name" and, if it takes inputs, "inputs". Example: {"name": "morning_bins", "inputs": {"city": "Perth"}}.',
     inputSchema: {
       type: 'object',
-      properties: { name: { type: 'string', description: 'The flow name.' }, inputs: { type: 'object', description: 'Optional. Values for the flow inputs.' } },
+      properties: {
+        name: { type: 'string', description: 'The flow name.' },
+        inputs: { type: 'object', description: 'Optional. Values for the flow inputs.' },
+      },
       required: ['name'],
     },
     confirmationLevel: 'none',
@@ -285,8 +346,14 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
 
   const myFlows: RegisteredTool = define({
     toolName: 'my_flows',
-    description: 'List the flows you have written, with their triggers. Give "name" to see one flow in full, steps included. Example: {} or {"name": "morning_bins"}.',
-    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Optional. A flow name, to see all of it.' } } },
+    description:
+      'List the flows you have written, with their triggers. Give "name" to see one flow in full, steps included. Example: {} or {"name": "morning_bins"}.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Optional. A flow name, to see all of it.' },
+      },
+    },
     confirmationLevel: 'none',
     readOnly: true,
     describeCall: () => 'your flows',
@@ -298,20 +365,31 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
     },
   });
 
-  const intention = (kind: 'goal' | 'intention'): ((params: unknown, context?: ToolContext) => Promise<string>) => async (params, context) => {
-    const text = readString(params, 'text');
-    if (!text) throw new Error(`${kind === 'goal' ? 'set_goal' : 'set_intention'} needs "text".`);
-    const dueRaw = kind === 'intention' ? readString(params, 'dueAt') : undefined;
-    let dueAt: string | undefined;
-    if (dueRaw) {
-      const time = Date.parse(dueRaw);
-      if (Number.isNaN(time)) throw new Error(`I could not read the time "${dueRaw}". Use an ISO time.`);
-      dueAt = new Date(time).toISOString();
-    }
-    const why = readString(params, 'why');
-    await guarded(() => client.createIntention({ avatarId: avatar(context), kind, text, ...(why ? { why } : {}), ...(dueAt ? { dueAt } : {}) }));
-    return kind === 'goal' ? 'Goal kept.' : 'Intention kept.';
-  };
+  const intention =
+    (kind: 'goal' | 'intention'): ((params: unknown, context?: ToolContext) => Promise<string>) =>
+    async (params, context) => {
+      const text = readString(params, 'text');
+      if (!text) throw new Error(`${kind === 'goal' ? 'set_goal' : 'set_intention'} needs "text".`);
+      const dueRaw = kind === 'intention' ? readString(params, 'dueAt') : undefined;
+      let dueAt: string | undefined;
+      if (dueRaw) {
+        const time = Date.parse(dueRaw);
+        if (Number.isNaN(time))
+          throw new Error(`I could not read the time "${dueRaw}". Use an ISO time.`);
+        dueAt = new Date(time).toISOString();
+      }
+      const why = readString(params, 'why');
+      await guarded(() =>
+        client.createIntention({
+          avatarId: avatar(context),
+          kind,
+          text,
+          ...(why ? { why } : {}),
+          ...(dueAt ? { dueAt } : {}),
+        }),
+      );
+      return kind === 'goal' ? 'Goal kept.' : 'Intention kept.';
+    };
 
   const setIntention: RegisteredTool = define({
     toolName: 'set_intention',
@@ -334,10 +412,14 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
 
   const setGoal: RegisteredTool = define({
     toolName: 'set_goal',
-    description: 'Keep a longer goal of your own, something that lasts days or weeks. Give "text" and optionally "why". Example: {"text": "Learn what Kevin likes to cook.", "why": "I want to suggest good dinners."}.',
+    description:
+      'Keep a longer goal of your own, something that lasts days or weeks. Give "text" and optionally "why". Example: {"text": "Learn what Kevin likes to cook.", "why": "I want to suggest good dinners."}.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string', description: 'The goal.' }, why: { type: 'string', description: 'Optional. Why it matters.' } },
+      properties: {
+        text: { type: 'string', description: 'The goal.' },
+        why: { type: 'string', description: 'Optional. Why it matters.' },
+      },
       required: ['text'],
     },
     confirmationLevel: 'none',
@@ -347,7 +429,8 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
 
   const myPlans: RegisteredTool = define({
     toolName: 'my_plans',
-    description: 'See what is going on in your own time: running reminders, watches and flows (with their workflow ids), your open goals and intentions, and your flows. Example: {}.',
+    description:
+      'See what is going on in your own time: running reminders, watches and flows (with their workflow ids), your open goals and intentions, and your flows. Example: {}.',
     inputSchema: { type: 'object', properties: {} },
     confirmationLevel: 'none',
     readOnly: true,
@@ -364,13 +447,18 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
       type: 'object',
       properties: {
         workflowId: { type: 'string', description: 'The workflow id from my_plans.' },
-        signal: { type: 'string', enum: ['pause', 'resume', 'snooze', 'note'], description: 'What to do.' },
+        signal: {
+          type: 'string',
+          enum: ['pause', 'resume', 'snooze', 'note'],
+          description: 'What to do.',
+        },
         args: { type: 'object', description: 'Optional. For snooze: {"seconds": n}.' },
       },
       required: ['workflowId', 'signal'],
     },
     confirmationLevel: 'none',
-    describeCall: (params) => `${readString(params, 'signal') ?? 'change'} ${readString(params, 'workflowId') ?? 'a plan'}`,
+    describeCall: (params) =>
+      `${readString(params, 'signal') ?? 'change'} ${readString(params, 'workflowId') ?? 'a plan'}`,
     execute: async (params) => {
       const workflowId = readString(params, 'workflowId');
       const signal = readString(params, 'signal');
@@ -382,10 +470,14 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
 
   const dropPlan: RegisteredTool = define({
     toolName: 'drop_plan',
-    description: 'Cancel a reminder, watch, wake-up or flow schedule by its workflow id from my_plans, and say why. Example: {"workflowId": "watch:1234", "why": "Kevin already did it."}.',
+    description:
+      'Cancel a reminder, watch, wake-up or flow schedule by its workflow id from my_plans, and say why. Example: {"workflowId": "watch:1234", "why": "Kevin already did it."}.',
     inputSchema: {
       type: 'object',
-      properties: { workflowId: { type: 'string', description: 'The workflow id from my_plans.' }, why: { type: 'string', description: 'Why you are dropping it.' } },
+      properties: {
+        workflowId: { type: 'string', description: 'The workflow id from my_plans.' },
+        why: { type: 'string', description: 'Why you are dropping it.' },
+      },
       required: ['workflowId', 'why'],
     },
     confirmationLevel: 'none',
@@ -402,14 +494,33 @@ export function createAgentTimeTools(options: AgentTimeToolsOptions): Registered
     toolName: 'go_to_sleep',
     description:
       'Go to sleep: stop idle moves and reading, and only be woken by urgent news or by Kevin speaking to you. You wake when he talks to you or after some hours. Use it when you are tired or it is late and nothing is going on. Give a short "reason". Example: {"reason": "It is late and Kevin has gone to bed."}.',
-    inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Why you are going to sleep.' } }, required: ['reason'] },
+    inputSchema: {
+      type: 'object',
+      properties: { reason: { type: 'string', description: 'Why you are going to sleep.' } },
+      required: ['reason'],
+    },
     confirmationLevel: 'none',
     describeCall: () => 'go to sleep',
     execute: async (params, context) => {
-      await guarded(() => client.sleep(avatar(context), readString(params, 'reason') ?? 'by my own choice'));
+      await guarded(() =>
+        client.sleep(avatar(context), readString(params, 'reason') ?? 'by my own choice'),
+      );
       return 'Going to sleep.';
     },
   });
 
-  return [remind, wake, watch, writeFlow, runFlow, myFlows, setIntention, setGoal, myPlans, changePlan, dropPlan, goToSleep];
+  return [
+    remind,
+    wake,
+    watch,
+    writeFlow,
+    runFlow,
+    myFlows,
+    setIntention,
+    setGoal,
+    myPlans,
+    changePlan,
+    dropPlan,
+    goToSleep,
+  ];
 }
