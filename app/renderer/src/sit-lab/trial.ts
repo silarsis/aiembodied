@@ -25,6 +25,9 @@ const DEFAULT_MOTION_URL = 'http://127.0.0.1:8190';
 /** Frames of the sit phase that are photographed from the three-quarter view. */
 const SIT_SHOTS = 5;
 const VIEW_DISTANCE = 2.4;
+/** How far inside the walls a close-up camera stays. */
+const WALL_MARGIN = 0.15;
+const MAX_VIEW_FOV = 100;
 
 interface TrialCaptures {
   final: Record<ViewName, string>;
@@ -56,7 +59,26 @@ export interface TrialResult {
   captures: TrialCaptures;
 }
 
-/** Where the camera stands for a named view, around `focus` (a seated pelvis), and where it looks. */
+/** How far from `focus` a camera can go along `direction` before it reaches the room's walls (room centred on 0,0). */
+function roomToWall(
+  shell: { width: number; depth: number },
+  focus: Vec3,
+  direction: [number, number],
+): number {
+  const limit = (position: number, step: number, half: number): number =>
+    step === 0 ? Infinity : ((step > 0 ? half : -half) - position) / step;
+  return Math.min(
+    VIEW_DISTANCE,
+    limit(focus[0], direction[0], shell.width / 2 - WALL_MARGIN),
+    limit(focus[2], direction[1], shell.depth / 2 - WALL_MARGIN),
+  );
+}
+
+/**
+ * Where the camera stands for a named view, around `focus` (a seated pelvis), and where it looks. A seat near a wall
+ * would put the camera outside the room, so the side views take whichever side has more room, and the camera moves
+ * in, widening its lens to keep the framing.
+ */
 function viewCamera(
   world: LabWorld,
   dest: Destination,
@@ -67,20 +89,35 @@ function viewCamera(
   if (view === 'room') return { position: room.position, target: room.target, fov: room.fov };
   const [fx, fz] = dest.forward;
   const [lx, lz] = dest.left;
-  const direction: [number, number] =
+  const candidates: [number, number][] =
     view === 'front'
-      ? [fx, fz]
+      ? [[fx, fz]]
       : view === 'side'
-        ? [lx, lz]
-        : [(fx + lx) / Math.SQRT2, (fz + lz) / Math.SQRT2];
+        ? [
+            [lx, lz],
+            [-lx, -lz],
+          ]
+        : [
+            [(fx + lx) / Math.SQRT2, (fz + lz) / Math.SQRT2],
+            [(fx - lx) / Math.SQRT2, (fz - lz) / Math.SQRT2],
+          ];
+  const shell = world.stage.room.shell;
+  const [direction, distance] = candidates
+    .map((d): [[number, number], number] => [d, roomToWall(shell, focus, d)])
+    .reduce((best, next) => (next[1] > best[1] + 1e-6 ? next : best));
+  const halfFov = (room.fov * Math.PI) / 360;
+  const fov = Math.min(
+    MAX_VIEW_FOV,
+    (Math.atan((Math.tan(halfFov) * VIEW_DISTANCE) / distance) * 360) / Math.PI,
+  );
   return {
     position: [
-      focus[0] + direction[0] * VIEW_DISTANCE,
+      focus[0] + direction[0] * distance,
       focus[1] + 0.35,
-      focus[2] + direction[1] * VIEW_DISTANCE,
+      focus[2] + direction[1] * distance,
     ],
     target: [focus[0], focus[1] + 0.1, focus[2]],
-    fov: room.fov,
+    fov,
   };
 }
 

@@ -1,4 +1,4 @@
-// Finds the rooms the app saved (<userData>/rooms/<id>/room.json), lists them, and copies one out.
+// Finds the rooms the app saved (<userData>/rooms/<id>/room.json) and its built-in rooms, lists them, and copies one out.
 // Usage: node export-room.mjs                       list rooms and their seats
 //        node export-room.mjs <room id or name> --out rooms/sofa.json
 //        add --user-data <folder> if the app's data folder is not one of the usual places
@@ -39,7 +39,7 @@ for (const folder of candidateFolders(userData)) {
     const file = join(roomsDir, entry.name, 'room.json');
     if (entry.isDirectory() && existsSync(file)) {
       found.push({
-        folder: roomsDir,
+        assets: join(roomsDir, 'assets'),
         id: entry.name,
         file,
         room: JSON.parse(readFileSync(file, 'utf8')),
@@ -48,14 +48,21 @@ for (const folder of candidateFolders(userData)) {
   }
 }
 if (found.length === 0) {
-  throw new Error(
-    `No rooms found in ${candidateFolders(userData).join(' or ')}. Pass --user-data <the app's data folder>.`,
+  console.log(
+    `No saved rooms in ${candidateFolders(userData).join(' or ')}; pass --user-data <the app's data folder> for them.`,
   );
 }
-
+// The app's built-in rooms (the reading room and the studio flat) are not saved under userData.
+const builtInDir = join(repoRoot, 'app', 'main', 'assets', 'rooms');
+for (const name of readdirSync(builtInDir)) {
+  if (!name.endsWith('.json')) continue;
+  const file = join(builtInDir, name);
+  const room = JSON.parse(readFileSync(file, 'utf8'));
+  found.push({ assets: builtInDir, id: room.id, file, room });
+}
 if (!wanted) {
-  for (const { id, room, folder } of found) {
-    console.log(`${id}  "${room.name}"  (assets: ${join(folder, 'assets')})`);
+  for (const { id, room, assets } of found) {
+    console.log(`${id}  "${room.name}"  (assets: ${assets})`);
     for (const object of room.objects) {
       console.log(
         `    ${object.id}  ${object.name}  at ${object.position.map((v) => v.toFixed(2)).join(', ')}`,
@@ -76,4 +83,4 @@ if (!out) throw new Error('Give --out <file> for the copy.');
 mkdirSync(dirname(resolve(out)), { recursive: true });
 copyFileSync(match[0].file, resolve(out));
 console.log(`Copied ${match[0].file} to ${resolve(out)}`);
-console.log(`Room assets (pass to run.mjs as --assets): ${join(match[0].folder, 'assets')}`);
+console.log(`Room assets (pass to run.mjs as --assets): ${match[0].assets}`);

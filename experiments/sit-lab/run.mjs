@@ -50,8 +50,39 @@ async function ensureVite(url) {
     if (await reachable(url)) return child;
     await new Promise((done) => setTimeout(done, 1000));
   }
-  child.kill();
+  stopTree(child);
   throw new Error(`The vite dev server did not come up at ${url} within 90 s.`);
+}
+
+/** With `shell: true` the child is the shell; on Windows killing it leaves vite running, so end the whole tree. */
+function stopTree(child) {
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else child.kill();
+}
+
+/** Waits for the motion service to finish loading its model (ARDY takes about 100 s); a fake backend is an error. */
+async function waitForMotion(motionUrl) {
+  let last = 'no answer';
+  for (let i = 0; i < 60; i += 1) {
+    try {
+      const health = await (await fetch(`${motionUrl}/health`)).json();
+      if (health.backend === 'fake') {
+        throw new Error(`The motion service at ${motionUrl} runs the fake backend.`);
+      }
+      if (health.status === 'error') {
+        throw new Error(`The motion service at ${motionUrl} failed: ${JSON.stringify(health)}`);
+      }
+      if (health.ready) return;
+      last = JSON.stringify(health);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('The motion service')) throw error;
+      last = error instanceof Error ? error.message : String(error);
+    }
+    if (i === 0) console.log(`Waiting for the motion service at ${motionUrl} to be ready...`);
+    await new Promise((done) => setTimeout(done, 5000));
+  }
+  throw new Error(`The motion service at ${motionUrl} was not ready within 5 minutes (${last}).`);
 }
 
 /** Start positions are given relative to the seat: where the avatar stands when the trial begins. */
@@ -90,6 +121,8 @@ mkdirSync(runDir, { recursive: true });
 const url = args.url ?? 'http://localhost:5199';
 const assetsDir = args.assets ? resolve(args.assets) : null;
 
+const motionUrl = plan.motionUrl ?? 'http://127.0.0.1:8190';
+await waitForMotion(motionUrl);
 const viteChild = await ensureVite(url);
 const browser = await chromium.launch(
   process.platform === 'win32'
@@ -123,7 +156,7 @@ try {
   const spec = {
     roomJson,
     avatarUrl: '/lab-files/avatar.vrm',
-    motionUrl: plan.motionUrl ?? 'http://127.0.0.1:8190',
+    motionUrl,
     seatObjectId: plan.seatObjectId,
     start: { x: seat.position[0], z: seat.position[2] + 2, heading: 180 },
   };
@@ -184,5 +217,5 @@ try {
 } finally {
   console.log(`Done: ${ok} run, ${skipped} already done, ${failed} failed. Results in ${runDir}`);
   await browser.close();
-  viteChild?.kill();
+  if (viteChild) stopTree(viteChild);
 }
