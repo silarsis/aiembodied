@@ -44,7 +44,9 @@ describe('Controller.lease waits longer than one request can', () => {
 
   it('says the lease is still queued (not that the controller is down) when the whole wait runs out, and gives it back', async () => {
     fake.stillQueued.add('echo-llm');
-    await expect(controller().lease('echo-llm', { waitS: 0.1 })).rejects.toThrow(/still queued after waiting 0\.1s .*loading the model or waiting for memory/);
+    await expect(controller().lease('echo-llm', { waitS: 0.1 })).rejects.toThrow(
+      /still queued after waiting 0\.1s .*loading the model or waiting for memory/,
+    );
     expect(fake.live('echo-llm')).toHaveLength(0);
     expect(fake.requests.some((request) => request.startsWith('DELETE /v1/leases/'))).toBe(true);
   });
@@ -76,7 +78,9 @@ describe('Controller.request', () => {
         init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
       })) as typeof fetch;
     const c = new Controller({ url: 'http://127.0.0.1:1', autostart: false, fetch: hang });
-    await expect(c.request('GET', '/v1/status', { timeoutMs: 20 })).rejects.toThrow(/did not answer GET \/v1\/status within 0s/);
+    await expect(c.request('GET', '/v1/status', { timeoutMs: 20 })).rejects.toThrow(
+      /did not answer GET \/v1\/status within 0s/,
+    );
   });
 
   it('still says it cannot connect when the connection fails', async () => {
@@ -84,6 +88,8 @@ describe('Controller.request', () => {
       throw new TypeError('fetch failed');
     }) as unknown as typeof fetch;
     const c = new Controller({ url: 'http://127.0.0.1:1', autostart: false, fetch: refuse });
-    await expect(c.request('GET', '/v1/status')).rejects.toThrow(/cannot connect to the controller/);
+    await expect(c.request('GET', '/v1/status')).rejects.toThrow(
+      /cannot connect to the controller/,
+    );
   });
 });

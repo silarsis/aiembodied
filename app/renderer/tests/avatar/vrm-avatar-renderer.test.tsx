@@ -7,7 +7,9 @@ const loaderState = vi.hoisted(() => ({
   }) as () => unknown,
 }));
 
-const threeMockState = vi.hoisted(() => ({ mixers: [] as Array<{ actions: MockAnimationAction[] }> }));
+const threeMockState = vi.hoisted(() => ({
+  mixers: [] as Array<{ actions: MockAnimationAction[] }>,
+}));
 
 type MockAnimationAction = {
   reset: ReturnType<typeof vi.fn>;
@@ -42,12 +44,12 @@ vi.mock('three', async () => {
   const actual = await vi.importActual<typeof import('three')>('three');
 
   class MockWebGLRenderer {
-    constructor(public readonly options: unknown) { }
-    setClearColor() { }
-    setPixelRatio() { }
-    setSize() { }
-    render() { }
-    dispose() { }
+    constructor(public readonly options: unknown) {}
+    setClearColor() {}
+    setPixelRatio() {}
+    setSize() {}
+    render() {}
+    dispose() {}
   }
 
   class MockTimer {
@@ -100,7 +102,7 @@ vi.mock('@pixiv/three-vrm', async () => {
   const actual = await vi.importActual<typeof import('@pixiv/three-vrm')>('@pixiv/three-vrm');
   return {
     ...actual,
-    VRMLoaderPlugin: class { },
+    VRMLoaderPlugin: class {},
     VRMUtils: {
       removeUnnecessaryVertices: vi.fn(),
       combineSkeletons: vi.fn(),
@@ -122,21 +124,25 @@ import {
   applyBaseNeutralPose,
   applyPoseExpressions,
   renderedFootFraction,
-    poseBonesForVrm,
+  poseBonesForVrm,
 } from '../../src/avatar/vrm-avatar-renderer.js';
 
 describe('base pose coordinate conventions', () => {
   it('converts tagged legacy stances for VRM 1 without modifying the original pose or other avatars', () => {
-    const pose = { sourceVrmVersion: '0' as const, bones: { leftUpperArm: { rotation: [0.1, 0.2, 0.3, 0.9] } } };
+    const pose = {
+      sourceVrmVersion: '0' as const,
+      bones: { leftUpperArm: { rotation: [0.1, 0.2, 0.3, 0.9] } },
+    };
     const v1 = { meta: { metaVersion: '1' } } as unknown as import('@pixiv/three-vrm').VRM;
     const v0 = { meta: { metaVersion: '0' } } as unknown as import('@pixiv/three-vrm').VRM;
     expect(poseBonesForVrm(v1, pose).bones.leftUpperArm.rotation).toEqual([-0.1, 0.2, -0.3, 0.9]);
     expect(poseBonesForVrm(v0, pose).bones.leftUpperArm.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
-    expect(poseBonesForVrm(v1, { bones: pose.bones }).bones.leftUpperArm.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
+    expect(poseBonesForVrm(v1, { bones: pose.bones }).bones.leftUpperArm.rotation).toEqual([
+      0.1, 0.2, 0.3, 0.9,
+    ]);
     expect(pose.bones.leftUpperArm.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
   });
 });
-
 
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
 
@@ -221,7 +227,13 @@ describe('VrmAvatarRenderer behavior cues', () => {
   let originalRequestAnimationFrame: typeof window.requestAnimationFrame;
   let originalCancelAnimationFrame: typeof window.cancelAnimationFrame;
   let originalResizeObserver: typeof ResizeObserver | undefined;
-  let cameraListener: ((event: { cue: string; timestamp?: number; payload?: Record<string, unknown> | null }) => void) | undefined;
+  let cameraListener:
+    | ((event: {
+        cue: string;
+        timestamp?: number;
+        payload?: Record<string, unknown> | null;
+      }) => void)
+    | undefined;
   const defaultLoader = loaderState.createVrm;
 
   beforeEach(() => {
@@ -266,7 +278,7 @@ describe('VrmAvatarRenderer behavior cues', () => {
 
     originalGetContext = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = vi
-      .fn(() => ({} as CanvasRenderingContext2D))
+      .fn(() => ({}) as CanvasRenderingContext2D)
       .mockName('getContextStub') as unknown as typeof HTMLCanvasElement.prototype.getContext;
     originalGetBoundingClientRect = HTMLCanvasElement.prototype.getBoundingClientRect;
     HTMLCanvasElement.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 320, 240);
@@ -276,13 +288,19 @@ describe('VrmAvatarRenderer behavior cues', () => {
     window.cancelAnimationFrame = vi.fn();
     originalResizeObserver = window.ResizeObserver;
     window.ResizeObserver = class {
-      observe() { }
-      disconnect() { }
+      observe() {}
+      disconnect() {}
     } as unknown as typeof ResizeObserver;
 
     (window as unknown as { aiembodied?: unknown }).aiembodied = {
       camera: {
-        onDetection: (listener: (event: { cue: string; timestamp?: number; payload?: Record<string, unknown> | null }) => void) => {
+        onDetection: (
+          listener: (event: {
+            cue: string;
+            timestamp?: number;
+            payload?: Record<string, unknown> | null;
+          }) => void,
+        ) => {
           cameraListener = listener;
           return () => {
             cameraListener = undefined;
@@ -343,7 +361,15 @@ describe('VrmAvatarRenderer behavior cues', () => {
   });
 
   it('does not make Echo wave for a greeting meant for another avatar that is not on stage', async () => {
-    const model: AvatarModelSummary = { id: 'vrm-1', name: 'Test', createdAt: Date.now(), version: '1.0', fileSha: 'abc', thumbnailDataUrl: null, description: null };
+    const model: AvatarModelSummary = {
+      id: 'vrm-1',
+      name: 'Test',
+      createdAt: Date.now(),
+      version: '1.0',
+      fileSha: 'abc',
+      thumbnailDataUrl: null,
+      description: null,
+    };
     render(
       <BehaviorCueProvider>
         <VrmAvatarRenderer frame={null} model={model} />
@@ -363,27 +389,43 @@ describe('VrmAvatarRenderer behavior cues', () => {
   });
 });
 
-
-
-
 describe('approved base poses', () => {
   it('anchors to solid rendered shoe pixels while ignoring stray antialiasing pixels', () => {
-    const renderer = { getContext: () => ({
-      drawingBufferWidth: 8, drawingBufferHeight: 8, RGBA: 1, UNSIGNED_BYTE: 2,
-      readPixels: (_x: number, _y: number, _w: number, _h: number, _format: number, _type: number, pixels: Uint8Array) => {
-        pixels[3] = 255;
-        for (const column of [2, 3, 4]) pixels[(2 * 8 + column) * 4 + 3] = 255;
-      },
-    }) } as unknown as THREE.WebGLRenderer;
+    const renderer = {
+      getContext: () => ({
+        drawingBufferWidth: 8,
+        drawingBufferHeight: 8,
+        RGBA: 1,
+        UNSIGNED_BYTE: 2,
+        readPixels: (
+          _x: number,
+          _y: number,
+          _w: number,
+          _h: number,
+          _format: number,
+          _type: number,
+          pixels: Uint8Array,
+        ) => {
+          pixels[3] = 255;
+          for (const column of [2, 3, 4]) pixels[(2 * 8 + column) * 4 + 3] = 255;
+        },
+      }),
+    } as unknown as THREE.WebGLRenderer;
     expect(renderedFootFraction(renderer)).toBe(1 - 2.5 / 8);
   });
 
   it('starts with the calibrated neutral and resets the previous emotional expression', () => {
     const setNormalizedPose = vi.fn();
     const setValue = vi.fn();
-    const vrm = { humanoid: { setNormalizedPose }, expressionManager: {
-      expressions: ['happy', 'sad', 'angry', 'relaxed', 'Surprised'].map((expressionName) => ({ expressionName })), setValue,
-    }} as unknown as import('@pixiv/three-vrm').VRM;
+    const vrm = {
+      humanoid: { setNormalizedPose },
+      expressionManager: {
+        expressions: ['happy', 'sad', 'angry', 'relaxed', 'Surprised'].map((expressionName) => ({
+          expressionName,
+        })),
+        setValue,
+      },
+    } as unknown as import('@pixiv/three-vrm').VRM;
     applyBaseNeutralPose(vrm);
     expect(setNormalizedPose).toHaveBeenCalledOnce();
     expect(setNormalizedPose.mock.calls[0][0]).toHaveProperty('leftShoulder.rotation');

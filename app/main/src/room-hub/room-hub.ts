@@ -21,16 +21,23 @@ import os from 'node:os';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { PlaceManager } from '../places/place-manager.js';
-import type { PlaceDeviceState } from '../presence/place-presence.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 import { mimeFor, resolveAssetPath } from '../rooms/asset-protocol.js';
 import { WEB_PREFIX, hostAllowed, originAllowed, serveStaticFile } from './web-serve.js';
 import { isAllowedChannel } from './allowlist.js';
-import { FrameError, MAX_FRAME_BYTES, decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../shared/room-hub/frames.js';
-import { getIpcHandler, type IpcHandler } from './ipc-registry.js';
-import { cleanKind, type DeviceKind, type RoomDeviceRegistry } from './room-devices.js';
+import {
+  FrameError,
+  MAX_FRAME_BYTES,
+  decodeMessage,
+  encodeBinaryFrame,
+  encodeMessage,
+  type Op,
+} from '../shared/room-hub/frames.js';
+import { getIpcHandler, type IpcHandler } from '../ipc/handle-ipc.js';
+import { cleanKind, type RoomDeviceRegistry } from './room-devices.js';
 import type { TailscaleLookup } from './tailscale.js';
+import type { RoomHubStatus, PairingStart } from '../shared/room-hub/room-hub-types.js';
 
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_HUB_PORT = 8791;
@@ -98,37 +105,6 @@ export function fileMarker(file: string): { has(): boolean; mark(): void } {
   };
 }
 
-export interface RoomHubDeviceStatus {
-  id: string;
-  name: string;
-  /** Shown on the Places page: a desktop, a phone or a browser. */
-  kind?: DeviceKind;
-  placeId: string;
-  online: boolean;
-  lastSeen: number;
-  tailscaleNode: string | null;
-  /** What the PC last said about its mic, camera, speakers, lock, kill switch and full-screen apps. Added by main.ts. */
-  deviceState?: PlaceDeviceState | null;
-}
-
-export interface RoomHubStatus {
-  running: boolean;
-  port: number | null;
-  /** Addresses the server listens on. */
-  addresses: string[];
-  /** Set (on Windows) when the hub started listening for the first time on this PC; the Places page shows it. */
-  firewallNote?: string | null;
-  pairing: { code: string; expiresAt: number; placeName: string | null } | null;
-  devices: RoomHubDeviceStatus[];
-}
-
-export interface PairingStart {
-  code: string;
-  expiresAt: number;
-  /** Where to point the other PC (`http://<host>:<port>`). */
-  urls: string[];
-}
-
 interface Connection {
   ws: WebSocket;
   address: string;
@@ -146,13 +122,22 @@ interface Connection {
 /** True for 100.64.0.0/10, the range Tailscale hands out. */
 export function isTailscaleAddress(address: string): boolean {
   const parts = address.split('.').map(Number);
-  return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+  return (
+    parts.length === 4 &&
+    parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+    parts[0] === 100 &&
+    parts[1] >= 64 &&
+    parts[1] <= 127
+  );
 }
 
-export function tailscaleAddresses(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string[] {
+export function tailscaleAddresses(
+  interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
+): string[] {
   const out: string[] = [];
   for (const entries of Object.values(interfaces)) {
-    for (const entry of entries ?? []) if (entry.family === 'IPv4' && isTailscaleAddress(entry.address)) out.push(entry.address);
+    for (const entry of entries ?? [])
+      if (entry.family === 'IPv4' && isTailscaleAddress(entry.address)) out.push(entry.address);
   }
   return [...new Set(out)];
 }
@@ -211,10 +196,16 @@ export class RoomHub {
     if (this.started) return;
     this.started = true;
     this.offPlaces = this.options.places.onChanged(() => this.pushPlaces());
-    this.recheckTimer = setInterval(() => void this.refresh(), this.options.recheckMs ?? RECHECK_MS);
+    this.recheckTimer = setInterval(
+      () => void this.refresh(),
+      this.options.recheckMs ?? RECHECK_MS,
+    );
     this.recheckTimer.unref?.();
     const timeout = this.options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
-    this.heartbeatTimer = setInterval(() => this.checkHeartbeats(), Math.max(10, Math.min(1000, Math.floor(timeout / 3))));
+    this.heartbeatTimer = setInterval(
+      () => this.checkHeartbeats(),
+      Math.max(10, Math.min(1000, Math.floor(timeout / 3))),
+    );
     this.heartbeatTimer.unref?.();
     await this.sync();
   }
@@ -242,18 +233,24 @@ export class RoomHub {
     const flag = this.env.ROOM_HUB_ENABLED;
     if (flag === '0') return false;
     if (flag === '1') return true;
-    return this.options.registry.list().length > 0 || this.options.registry.activePairing() !== null;
+    return (
+      this.options.registry.list().length > 0 || this.options.registry.activePairing() !== null
+    );
   }
 
   private configuredPort(): number {
     if (this.options.port !== undefined) return this.options.port;
     const fromEnv = Number.parseInt(this.env.ROOM_HUB_PORT ?? '', 10);
-    return Number.isInteger(fromEnv) && fromEnv >= 0 && fromEnv < 65536 ? fromEnv : DEFAULT_HUB_PORT;
+    return Number.isInteger(fromEnv) && fromEnv >= 0 && fromEnv < 65536
+      ? fromEnv
+      : DEFAULT_HUB_PORT;
   }
 
   private desiredAddresses(): string[] {
     if (!this.shouldRun()) return [];
-    const addresses = this.options.listenAddresses ? this.options.listenAddresses() : ['127.0.0.1', ...tailscaleAddresses()];
+    const addresses = this.options.listenAddresses
+      ? this.options.listenAddresses()
+      : ['127.0.0.1', ...tailscaleAddresses()];
     return [...new Set(addresses)];
   }
 
@@ -264,7 +261,9 @@ export class RoomHub {
 
   private async doSync(): Promise<void> {
     const wanted = this.desiredAddresses();
-    await this.closeServers([...this.servers.keys()].filter((address) => !wanted.includes(address)));
+    await this.closeServers(
+      [...this.servers.keys()].filter((address) => !wanted.includes(address)),
+    );
     for (const address of wanted) {
       if (this.servers.has(address)) continue;
       const server = createServer((req, res) => void this.handleHttp(req, res));
@@ -279,13 +278,25 @@ export class RoomHub {
           });
         });
       } catch (error) {
-        this.options.logger?.warn('Room hub could not listen', { address, port, message: error instanceof Error ? error.message : String(error) });
+        this.options.logger?.warn('Room hub could not listen', {
+          address,
+          port,
+          message: error instanceof Error ? error.message : String(error),
+        });
         server.close();
         continue;
       }
-      server.on('error', (error) => this.options.logger?.warn('Room hub server error', { address, message: error.message }));
+      server.on('error', (error) =>
+        this.options.logger?.warn('Room hub server error', { address, message: error.message }),
+      );
       const bound = server.address();
-      if (bound && typeof bound === 'object' && this.boundPort === null && this.configuredPort() === 0) this.boundPort = bound.port;
+      if (
+        bound &&
+        typeof bound === 'object' &&
+        this.boundPort === null &&
+        this.configuredPort() === 0
+      )
+        this.boundPort = bound.port;
       this.servers.set(address, server);
     }
     if (this.servers.size === 0) this.boundPort = null;
@@ -294,7 +305,8 @@ export class RoomHub {
 
   /** The first time the hub listens on Windows: say in the log, and on the Places page, which firewall answer to give. */
   private noteFirewall(): void {
-    if (this.firewallNote !== null || (this.options.platform ?? process.platform) !== 'win32') return;
+    if (this.firewallNote !== null || (this.options.platform ?? process.platform) !== 'win32')
+      return;
     const noted = this.options.firewallNoted;
     if (noted?.has()) return;
     this.firewallNote = FIREWALL_NOTE;
@@ -369,7 +381,10 @@ export class RoomHub {
     const pairing = this.options.registry.startPairing();
     this.pairingName = placeName?.trim() ? placeName.trim().slice(0, 80) : null;
     if (this.pairingTimer) clearTimeout(this.pairingTimer);
-    this.pairingTimer = setTimeout(() => void this.refresh(), Math.max(0, pairing.expiresAt - Date.now()) + 50);
+    this.pairingTimer = setTimeout(
+      () => void this.refresh(),
+      Math.max(0, pairing.expiresAt - Date.now()) + 50,
+    );
     this.pairingTimer.unref?.();
     await this.refresh();
     return { code: pairing.code, expiresAt: pairing.expiresAt, urls: await this.pairingUrls() };
@@ -388,9 +403,12 @@ export class RoomHub {
     if (port === null) return [];
     const urls: string[] = [];
     const self = this.servers.size > 0 ? await this.options.tailscale.self() : null;
-    if (self && [...this.servers.keys()].some(isTailscaleAddress)) urls.push(`http://${self.node}:${port}`);
-    for (const address of this.servers.keys()) if (!isLoopback(address)) urls.push(`http://${address}:${port}`);
-    for (const address of this.servers.keys()) if (isLoopback(address)) urls.push(`http://${address}:${port}`);
+    if (self && [...this.servers.keys()].some(isTailscaleAddress))
+      urls.push(`http://${self.node}:${port}`);
+    for (const address of this.servers.keys())
+      if (!isLoopback(address)) urls.push(`http://${address}:${port}`);
+    for (const address of this.servers.keys())
+      if (isLoopback(address)) urls.push(`http://${address}:${port}`);
     return urls;
   }
 
@@ -404,7 +422,12 @@ export class RoomHub {
       this.closeConnection(conn, 1008, 'revoked');
     }
     this.options.places.removePlace(device.placeId);
-    this.journal('place.revoked', device.placeId, { kind: 'service', id: 'room-hub' }, { placeId: device.placeId, deviceId, address: conn?.address ?? null });
+    this.journal(
+      'place.revoked',
+      device.placeId,
+      { kind: 'service', id: 'room-hub' },
+      { placeId: device.placeId, deviceId, address: conn?.address ?? null },
+    );
     await this.refresh();
     return true;
   }
@@ -435,18 +458,31 @@ export class RoomHub {
 
   /** The device id of the satellite that draws this place, when connected. */
   deviceForPlace(placeId: string): string | null {
-    for (const [deviceId, conn] of this.byDevice) if (conn.ready && conn.placeId === placeId) return deviceId;
+    for (const [deviceId, conn] of this.byDevice)
+      if (conn.ready && conn.placeId === placeId) return deviceId;
     return null;
   }
 
   // -- Journal -------------------------------------------------------------------------------------
 
   /** Fire-and-forget, like the floor's journal. */
-  private journal(type: string, scene: string | undefined, producer: SwitchboardEventInput['producer'], payload: Record<string, unknown>): void {
+  private journal(
+    type: string,
+    scene: string | undefined,
+    producer: SwitchboardEventInput['producer'],
+    payload: Record<string, unknown>,
+  ): void {
     try {
       const bus = this.options.bus?.();
       if (!bus) return;
-      bus.publish({ type, producer, to: [], ...(scene ? { scene } : {}), audience: 'private', payload });
+      bus.publish({
+        type,
+        producer,
+        to: [],
+        ...(scene ? { scene } : {}),
+        audience: 'private',
+        payload,
+      });
     } catch {
       // Journaling must never disturb the link.
     }
@@ -455,9 +491,18 @@ export class RoomHub {
   // -- HTTP: pairing -------------------------------------------------------------------------------
 
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const reply = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}): void => {
+    const reply = (
+      status: number,
+      body: Record<string, unknown>,
+      headers: Record<string, string> = {},
+    ): void => {
       const text = JSON.stringify(body);
-      res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store', ...headers });
+      res.writeHead(status, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(text),
+        'Cache-Control': 'no-store',
+        ...headers,
+      });
       res.end(text);
     };
     try {
@@ -481,13 +526,18 @@ export class RoomHub {
       }
       reply(404, { error: 'not-found' });
     } catch (error) {
-      this.options.logger?.warn('Room hub request failed', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Room hub request failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       if (!res.headersSent) reply(500, { error: 'failed' });
     }
   }
 
   private allowedHosts(): string[] {
-    return (this.env.ROOM_HUB_ALLOWED_HOSTS ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+    return (this.env.ROOM_HUB_ALLOWED_HOSTS ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean);
   }
 
   /** The Origin rule for browsers (web-serve.ts): absent, the hub's own page, loopback on the hub's port, or the Android shell. */
@@ -498,7 +548,10 @@ export class RoomHub {
   /** For a request that came over the network: it must come from a node of this PC's own Tailscale login. Loopback needs nothing. */
   private async peerOk(address: string): Promise<boolean> {
     if (!this.needsPeerCheck(address)) return true;
-    const [peer, self] = await Promise.all([this.options.tailscale.whois(address), this.options.tailscale.self()]);
+    const [peer, self] = await Promise.all([
+      this.options.tailscale.whois(address),
+      this.options.tailscale.self(),
+    ]);
     return Boolean(peer && self && peer.login === self.login);
   }
 
@@ -509,7 +562,11 @@ export class RoomHub {
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
-    reply: (status: number, body: Record<string, unknown>, headers?: Record<string, string>) => void,
+    reply: (
+      status: number,
+      body: Record<string, unknown>,
+      headers?: Record<string, string>,
+    ) => void,
   ): Promise<void> {
     if (req.method !== 'GET') {
       reply(405, { error: 'method' }, { Allow: 'GET' });
@@ -520,18 +577,31 @@ export class RoomHub {
       return;
     }
     if (!(await this.peerOk(peerOf(req.socket)))) {
-      this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address: peerOf(req.socket), code: 'peer' });
+      this.journal(
+        'place.refused',
+        undefined,
+        { kind: 'service', id: 'room-hub' },
+        { address: peerOf(req.socket), code: 'peer' },
+      );
       reply(403, { error: 'peer' });
       return;
     }
     if (url.pathname === '/app') {
-      res.writeHead(308, { Location: `${WEB_PREFIX}${url.search}`, 'Cache-Control': 'no-store', 'Content-Length': 0 });
+      res.writeHead(308, {
+        Location: `${WEB_PREFIX}${url.search}`,
+        'Cache-Control': 'no-store',
+        'Content-Length': 0,
+      });
       res.end();
       return;
     }
     const root = this.options.webRoot;
     if (!root) {
-      reply(503, { error: 'not-built', message: 'This PC has no web build of the app. Run: pnpm --filter @aiembodied/renderer build' });
+      reply(503, {
+        error: 'not-built',
+        message:
+          'This PC has no web build of the app. Run: pnpm --filter @aiembodied/renderer build',
+      });
       return;
     }
     await serveStaticFile(root, url.pathname, req, res);
@@ -549,7 +619,11 @@ export class RoomHub {
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
-    reply: (status: number, body: Record<string, unknown>, headers?: Record<string, string>) => void,
+    reply: (
+      status: number,
+      body: Record<string, unknown>,
+      headers?: Record<string, string>,
+    ) => void,
   ): Promise<void> {
     if (req.method !== 'GET') {
       reply(405, { error: 'method' }, { Allow: 'GET' });
@@ -588,13 +662,23 @@ export class RoomHub {
   /** Who may fetch room files: a paired device (token, and the Tailscale node that paired when it is not on loopback) or its open link (key). */
   private async assetCallerOk(req: IncomingMessage, url: URL, address: string): Promise<boolean> {
     const header = req.headers.authorization;
-    const bearer = typeof header === 'string' && /^Bearer /i.test(header) ? header.slice(7).trim() : '';
+    const bearer =
+      typeof header === 'string' && /^Bearer /i.test(header) ? header.slice(7).trim() : '';
     if (bearer) {
       const device = this.options.registry.findByToken(bearer);
       if (!device) return false;
       if (!this.needsPeerCheck(address)) return true;
-      const [peer, self] = await Promise.all([this.options.tailscale.whois(address), this.options.tailscale.self()]);
-      return Boolean(peer && self && device.tailscaleNode && peer.node === device.tailscaleNode && peer.login === self.login);
+      const [peer, self] = await Promise.all([
+        this.options.tailscale.whois(address),
+        this.options.tailscale.self(),
+      ]);
+      return Boolean(
+        peer &&
+        self &&
+        device.tailscaleNode &&
+        peer.node === device.tailscaleNode &&
+        peer.login === self.login,
+      );
     }
     const key = url.searchParams.get('k');
     const conn = key ? this.assetKeys.get(key) : undefined;
@@ -623,7 +707,14 @@ export class RoomHub {
     return !isLoopback(address) || this.options.trustLoopback === false;
   }
 
-  private async handlePair(req: IncomingMessage, reply: (status: number, body: Record<string, unknown>, headers?: Record<string, string>) => void): Promise<void> {
+  private async handlePair(
+    req: IncomingMessage,
+    reply: (
+      status: number,
+      body: Record<string, unknown>,
+      headers?: Record<string, string>,
+    ) => void,
+  ): Promise<void> {
     const { registry, places, tailscale } = this.options;
     const address = peerOf(req.socket);
     const lockedFor = registry.lockout.lockedFor(address);
@@ -635,7 +726,10 @@ export class RoomHub {
     let body: Record<string, unknown> | null = null;
     try {
       const parsed: unknown = raw === null ? null : JSON.parse(raw);
-      body = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+      body =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null;
     } catch {
       body = null;
     }
@@ -645,8 +739,17 @@ export class RoomHub {
     }
     if (!registry.codeMatches(body.code)) {
       const nowLocked = registry.lockout.fail(address);
-      this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address, code: 'pairing-code' });
-      reply(nowLocked ? 429 : 401, { error: nowLocked ? 'locked' : 'bad-code' }, nowLocked ? { 'Retry-After': '60' } : {});
+      this.journal(
+        'place.refused',
+        undefined,
+        { kind: 'service', id: 'room-hub' },
+        { address, code: 'pairing-code' },
+      );
+      reply(
+        nowLocked ? 429 : 401,
+        { error: nowLocked ? 'locked' : 'bad-code' },
+        nowLocked ? { 'Retry-After': '60' } : {},
+      );
       return;
     }
     // Who is asking: nobody to look up on this PC itself; anyone else must be a node of this PC's own Tailscale login.
@@ -655,7 +758,12 @@ export class RoomHub {
     if (this.needsPeerCheck(address)) {
       const [peer, self] = await Promise.all([tailscale.whois(address), tailscale.self()]);
       if (!peer || !self || peer.login !== self.login) {
-        this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address, code: 'peer' });
+        this.journal(
+          'place.refused',
+          undefined,
+          { kind: 'service', id: 'room-hub' },
+          { address, code: 'peer' },
+        );
         reply(403, { error: 'peer' });
         return;
       }
@@ -668,11 +776,25 @@ export class RoomHub {
       return;
     }
     const kind = cleanKind(body.kind);
-    const deviceName = typeof body.deviceName === 'string' && body.deviceName.trim() ? body.deviceName : kind === 'phone' ? 'Phone room' : kind === 'browser' ? 'Browser room' : 'Desktop room';
-    const requested = this.pairingName ?? (typeof body.placeName === 'string' && body.placeName.trim() ? body.placeName.trim().slice(0, 80) : 'the study');
+    const deviceName =
+      typeof body.deviceName === 'string' && body.deviceName.trim()
+        ? body.deviceName
+        : kind === 'phone'
+          ? 'Phone room'
+          : kind === 'browser'
+            ? 'Browser room'
+            : 'Desktop room';
+    const requested =
+      this.pairingName ??
+      (typeof body.placeName === 'string' && body.placeName.trim()
+        ? body.placeName.trim().slice(0, 80)
+        : 'the study');
     this.pairingName = null;
     const deviceId = `room-${randomBytes(6).toString('hex')}`;
-    const placeId = slugPlaceId(requested, places.list().map((place) => place.id));
+    const placeId = slugPlaceId(
+      requested,
+      places.list().map((place) => place.id),
+    );
     const place = places.addPlace({ id: placeId, name: requested, node: deviceId, kind });
     if (!place) {
       reply(500, { error: 'failed' });
@@ -680,15 +802,32 @@ export class RoomHub {
     }
     let paired;
     try {
-      paired = registry.addDevice({ id: deviceId, name: deviceName, kind, placeId, tailscaleNode: node, tailscaleLogin: login });
+      paired = registry.addDevice({
+        id: deviceId,
+        name: deviceName,
+        kind,
+        placeId,
+        tailscaleNode: node,
+        tailscaleLogin: login,
+      });
     } catch (error) {
       places.removePlace(placeId);
       // Log the reason here; the unauthenticated caller only gets a fixed message.
-      this.options.logger?.warn('Room hub could not add a device', { message: error instanceof Error ? error.message : String(error) });
-      reply(409, { error: 'too-many-devices', message: 'Too many desktop rooms are paired. Revoke one on bija first.' });
+      this.options.logger?.warn('Room hub could not add a device', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      reply(409, {
+        error: 'too-many-devices',
+        message: 'Too many desktop rooms are paired. Revoke one on bija first.',
+      });
       return;
     }
-    this.journal('place.paired', placeId, { kind: 'service', id: 'room-hub' }, { placeId, deviceId, address, node });
+    this.journal(
+      'place.paired',
+      placeId,
+      { kind: 'service', id: 'room-hub' },
+      { placeId, deviceId, address, node },
+    );
     reply(200, { deviceId, token: paired.token, placeId, protocol: PROTOCOL_VERSION });
     void this.refresh();
   }
@@ -710,8 +849,16 @@ export class RoomHub {
     // A web page always sends its Origin. Only the hub's own page, loopback on the hub's port and the Android shell
     // may open the link (a page of another site on this PC's browser must not). The device token is still needed.
     const origin = req.headers.origin;
-    if (!this.originOk(req) || (origin !== undefined && !hostAllowed(req.headers.host, this.allowedHosts()))) {
-      this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address: peerOf(req.socket), code: 'origin' });
+    if (
+      !this.originOk(req) ||
+      (origin !== undefined && !hostAllowed(req.headers.host, this.allowedHosts()))
+    ) {
+      this.journal(
+        'place.refused',
+        undefined,
+        { kind: 'service', id: 'room-hub' },
+        { address: peerOf(req.socket), code: 'origin' },
+      );
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       return;
     }
@@ -720,11 +867,26 @@ export class RoomHub {
   }
 
   private accept(ws: WebSocket, address: string): void {
-    const conn: Connection = { ws, address, deviceId: null, placeId: null, assetKey: null, lastTraffic: Date.now(), helloTimer: null, auth: null, ready: false, closed: false };
+    const conn: Connection = {
+      ws,
+      address,
+      deviceId: null,
+      placeId: null,
+      assetKey: null,
+      lastTraffic: Date.now(),
+      helloTimer: null,
+      auth: null,
+      ready: false,
+      closed: false,
+    };
     this.sockets.add(conn);
     conn.helloTimer = setTimeout(() => {
       if (!conn.auth) {
-        this.send(conn, { op: 'error', code: 'hello-timeout', message: 'No hello within 5 seconds.' });
+        this.send(conn, {
+          op: 'error',
+          code: 'hello-timeout',
+          message: 'No hello within 5 seconds.',
+        });
         this.closeConnection(conn, 1008, 'hello timeout');
       }
     }, this.options.helloTimeoutMs ?? HELLO_TIMEOUT_MS);
@@ -740,10 +902,22 @@ export class RoomHub {
   private async onMessage(conn: Connection, data: RawData, isBinary: boolean): Promise<void> {
     let decoded;
     try {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : data instanceof ArrayBuffer ? new Uint8Array(data) : data;
-      decoded = decodeMessage(isBinary ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes.toString('utf8'));
+      const bytes = Array.isArray(data)
+        ? Buffer.concat(data)
+        : data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : data;
+      decoded = decodeMessage(
+        isBinary
+          ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+          : bytes.toString('utf8'),
+      );
     } catch (error) {
-      this.send(conn, { op: 'error', code: 'bad-frame', message: error instanceof FrameError ? error.message : 'Bad frame.' });
+      this.send(conn, {
+        op: 'error',
+        code: 'bad-frame',
+        message: error instanceof FrameError ? error.message : 'Bad frame.',
+      });
       return;
     }
     const { op } = decoded;
@@ -782,13 +956,38 @@ export class RoomHub {
         this.options.onSatelliteMessage?.({ deviceId: conn.deviceId, placeId: conn.placeId }, op);
         return;
       default:
-        this.send(conn, { op: 'error', ...(ref ? { ref } : {}), code: 'unknown-op', message: `Unknown op ${String(op.op).slice(0, 40)}.` });
+        this.send(conn, {
+          op: 'error',
+          ...(ref ? { ref } : {}),
+          code: 'unknown-op',
+          message: `Unknown op ${String(op.op).slice(0, 40)}.`,
+        });
     }
   }
 
-  private refuse(conn: Connection, address: string, code: 'auth' | 'peer' | 'protocol', extra: Record<string, unknown> = {}): void {
-    this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address, code });
-    this.send(conn, { op: 'error', code, message: code === 'auth' ? 'Not paired.' : code === 'peer' ? 'This PC is not the one that paired.' : 'Protocol mismatch.', ...extra });
+  private refuse(
+    conn: Connection,
+    address: string,
+    code: 'auth' | 'peer' | 'protocol',
+    extra: Record<string, unknown> = {},
+  ): void {
+    this.journal(
+      'place.refused',
+      undefined,
+      { kind: 'service', id: 'room-hub' },
+      { address, code },
+    );
+    this.send(conn, {
+      op: 'error',
+      code,
+      message:
+        code === 'auth'
+          ? 'Not paired.'
+          : code === 'peer'
+            ? 'This PC is not the one that paired.'
+            : 'Protocol mismatch.',
+      ...extra,
+    });
     this.closeConnection(conn, 1008, code);
   }
 
@@ -797,7 +996,10 @@ export class RoomHub {
     if (conn.helloTimer) clearTimeout(conn.helloTimer);
     conn.helloTimer = null;
     if (op.protocol !== PROTOCOL_VERSION) {
-      this.refuse(conn, conn.address, 'protocol', { hub: PROTOCOL_VERSION, client: op.protocol ?? null });
+      this.refuse(conn, conn.address, 'protocol', {
+        hub: PROTOCOL_VERSION,
+        client: op.protocol ?? null,
+      });
       return;
     }
     const deviceId = typeof op.deviceId === 'string' ? op.deviceId : '';
@@ -810,7 +1012,13 @@ export class RoomHub {
     if (this.needsPeerCheck(conn.address)) {
       const [peer, self] = await Promise.all([tailscale.whois(conn.address), tailscale.self()]);
       if (conn.closed) return;
-      if (!peer || !self || !device.tailscaleNode || peer.node !== device.tailscaleNode || peer.login !== self.login) {
+      if (
+        !peer ||
+        !self ||
+        !device.tailscaleNode ||
+        peer.node !== device.tailscaleNode ||
+        peer.login !== self.login
+      ) {
         this.refuse(conn, conn.address, 'peer');
         return;
       }
@@ -828,7 +1036,11 @@ export class RoomHub {
     this.assetKeys.set(conn.assetKey, conn);
     this.byDevice.set(deviceId, conn);
     if (previous) {
-      this.send(previous, { op: 'error', code: 'replaced', message: 'Another connection took over.' });
+      this.send(previous, {
+        op: 'error',
+        code: 'replaced',
+        message: 'Another connection took over.',
+      });
       this.closeConnection(previous, 1000, 'replaced');
     }
     registry.touch(deviceId);
@@ -847,12 +1059,18 @@ export class RoomHub {
       assetKey: conn.assetKey,
     });
     conn.ready = true;
-    this.journal('place.online', place.id, { kind: 'device', id: deviceId }, { placeId: place.id, deviceId, address: conn.address });
+    this.journal(
+      'place.online',
+      place.id,
+      { kind: 'device', id: deviceId },
+      { placeId: place.id, deviceId, address: conn.address },
+    );
     this.emitChanged();
   }
 
   private async handleCall(conn: Connection, op: Op, ref: string | undefined): Promise<void> {
-    const fail = (code: string, message: string): void => void this.send(conn, { op: 'error', ...(ref ? { ref } : {}), code, message });
+    const fail = (code: string, message: string): void =>
+      void this.send(conn, { op: 'error', ...(ref ? { ref } : {}), code, message });
     if (!ref) {
       fail('bad-request', 'A call needs a ref.');
       return;
@@ -869,7 +1087,12 @@ export class RoomHub {
       if (channel === 'places:snapshot') {
         // Relative to the satellite: its own place is the local one.
         value = places.snapshot(conn.placeId as string);
-      } else if (channel === 'places:arrived' && !places.snapshot().transit.some((move) => move.avatarId === args[0] && move.to === conn.placeId)) {
+      } else if (
+        channel === 'places:arrived' &&
+        !places
+          .snapshot()
+          .transit.some((move) => move.avatarId === args[0] && move.to === conn.placeId)
+      ) {
         // Only the place an avatar is walking to may confirm its arrival.
         value = undefined;
       } else {
@@ -881,7 +1104,8 @@ export class RoomHub {
         const event = {
           sender: {
             id: -1,
-            send: (eventChannel: string, ...eventArgs: unknown[]) => void this.send(conn, { op: 'ipc', channel: eventChannel, args: eventArgs }),
+            send: (eventChannel: string, ...eventArgs: unknown[]) =>
+              void this.send(conn, { op: 'ipc', channel: eventChannel, args: eventArgs }),
             isDestroyed: () => conn.closed,
           },
           senderFrame: null,
@@ -890,7 +1114,10 @@ export class RoomHub {
         };
         value = await (handler as (event: unknown, ...rest: unknown[]) => unknown)(event, ...args);
       }
-      if (!this.send(conn, { op: 'result', ref, value: value === undefined ? null : value }) && !conn.closed) {
+      if (
+        !this.send(conn, { op: 'result', ref, value: value === undefined ? null : value }) &&
+        !conn.closed
+      ) {
         fail('too-large', 'The answer is too large to send.');
       }
     } catch (error) {
@@ -899,12 +1126,14 @@ export class RoomHub {
   }
 
   private async handleAsset(conn: Connection, op: Op, ref: string | undefined): Promise<void> {
-    const fail = (code: string, message: string): void => void this.send(conn, { op: 'error', ...(ref ? { ref } : {}), code, message });
+    const fail = (code: string, message: string): void =>
+      void this.send(conn, { op: 'error', ...(ref ? { ref } : {}), code, message });
     if (!ref) {
       fail('bad-request', 'An asset request needs a ref.');
       return;
     }
-    const file = typeof op.url === 'string' ? resolveAssetPath(this.options.assetRoot, op.url) : null;
+    const file =
+      typeof op.url === 'string' ? resolveAssetPath(this.options.assetRoot, op.url) : null;
     if (!file) {
       fail('not-found', 'No such asset.');
       return;
@@ -912,7 +1141,9 @@ export class RoomHub {
     try {
       const data = await readFile(file);
       if (conn.closed) return;
-      conn.ws.send(encodeBinaryFrame({ op: 'asset', ref, mime: mimeFor(file) }, data), { binary: true });
+      conn.ws.send(encodeBinaryFrame({ op: 'asset', ref, mime: mimeFor(file) }, data), {
+        binary: true,
+      });
     } catch (error) {
       fail(error instanceof FrameError ? 'too-large' : 'not-found', 'No such asset.');
     }
@@ -922,7 +1153,11 @@ export class RoomHub {
   private pushPlaces(): void {
     for (const conn of this.byDevice.values()) {
       if (!conn.ready || !conn.placeId) continue;
-      this.send(conn, { op: 'ipc', channel: 'places:changed', args: [this.options.places.snapshot(conn.placeId)] });
+      this.send(conn, {
+        op: 'ipc',
+        channel: 'places:changed',
+        args: [this.options.places.snapshot(conn.placeId)],
+      });
     }
     this.emitChanged();
   }
@@ -934,7 +1169,10 @@ export class RoomHub {
       conn.ws.send(frame, { binary: typeof frame !== 'string' });
       return true;
     } catch (error) {
-      this.options.logger?.warn('Room hub could not send', { op: op.op, message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Room hub could not send', {
+        op: op.op,
+        message: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }
@@ -969,7 +1207,12 @@ export class RoomHub {
     if (!conn.deviceId || !conn.placeId || this.byDevice.get(conn.deviceId) !== conn) return;
     this.byDevice.delete(conn.deviceId);
     this.options.places.setOnline(conn.placeId, false);
-    this.journal('place.offline', conn.placeId, { kind: 'device', id: conn.deviceId }, { placeId: conn.placeId, deviceId: conn.deviceId, address: conn.address });
+    this.journal(
+      'place.offline',
+      conn.placeId,
+      { kind: 'device', id: conn.deviceId },
+      { placeId: conn.placeId, deviceId: conn.deviceId, address: conn.address },
+    );
     this.emitChanged();
   }
 }

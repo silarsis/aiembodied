@@ -8,10 +8,24 @@ import { WorkflowsClient, describeDetail } from '../../src/agent-time/workflows-
 
 describe('agent time parts', () => {
   it('reads the settings: on by default, off with WORKFLOWS_ENABLED=0, life off with AGENT_LIFE=0', () => {
-    expect(agentTimeSettingsFromEnv({})).toMatchObject({ enabled: true, agentLife: true, url: 'http://127.0.0.1:8198', token: null, temporalUiUrl: 'http://127.0.0.1:8233' });
-    expect(agentTimeSettingsFromEnv({ WORKFLOWS_ENABLED: '0' })).toMatchObject({ enabled: false, agentLife: false });
-    expect(agentTimeSettingsFromEnv({ AGENT_LIFE: '0' })).toMatchObject({ enabled: true, agentLife: false });
-    expect(agentTimeSettingsFromEnv({ WORKFLOWS_URL: 'http://x:1/', WORKFLOWS_API_TOKEN: ' t ' })).toMatchObject({ url: 'http://x:1', token: 't' });
+    expect(agentTimeSettingsFromEnv({})).toMatchObject({
+      enabled: true,
+      agentLife: true,
+      url: 'http://127.0.0.1:8198',
+      token: null,
+      temporalUiUrl: 'http://127.0.0.1:8233',
+    });
+    expect(agentTimeSettingsFromEnv({ WORKFLOWS_ENABLED: '0' })).toMatchObject({
+      enabled: false,
+      agentLife: false,
+    });
+    expect(agentTimeSettingsFromEnv({ AGENT_LIFE: '0' })).toMatchObject({
+      enabled: true,
+      agentLife: false,
+    });
+    expect(
+      agentTimeSettingsFromEnv({ WORKFLOWS_URL: 'http://x:1/', WORKFLOWS_API_TOKEN: ' t ' }),
+    ).toMatchObject({ url: 'http://x:1', token: 't' });
   });
 
   it('keeps the time note short and adds it after the instructions', () => {
@@ -44,7 +58,10 @@ describe('agent time parts', () => {
   it('answers the question tool itself and passes other tools through', async () => {
     const execute = vi.fn(async () => ({ success: true, data: 'x', durationMs: 1 }));
     const registry = withQuestionTool({ execute, get: () => undefined });
-    expect(await registry.execute(QUESTION_TOOL_ID, {})).toMatchObject({ success: true, data: 'yes' });
+    expect(await registry.execute(QUESTION_TOOL_ID, {})).toMatchObject({
+      success: true,
+      data: 'yes',
+    });
     await registry.execute('other', { a: 1 });
     expect(execute).toHaveBeenCalledWith('other', { a: 1 }, undefined);
   });
@@ -52,17 +69,24 @@ describe('agent time parts', () => {
   it('reads service error details', () => {
     expect(describeDetail('nope')).toEqual({ message: 'nope', errors: [] });
     expect(describeDetail({ errors: ['a', 'b'] })).toEqual({ message: 'a; b', errors: ['a', 'b'] });
-    expect(describeDetail([{ loc: ['body', 'text'], msg: 'field required' }]).message).toBe('text: field required');
+    expect(describeDetail([{ loc: ['body', 'text'], msg: 'field required' }]).message).toBe(
+      'text: field required',
+    );
   });
 
   it('client health and error text', async () => {
     const fetchFn = vi.fn(async (url: string | URL | Request) =>
       String(url).endsWith('/health')
-        ? new Response(JSON.stringify({ ok: true, temporal: true, agentLife: true, agents: ['echo'] }))
+        ? new Response(
+            JSON.stringify({ ok: true, temporal: true, agentLife: true, agents: ['echo'] }),
+          )
         : new Response(JSON.stringify({ detail: 'Workflow not found' }), { status: 404 }),
     ) as unknown as typeof fetch;
     const client = new WorkflowsClient({ baseUrl: 'http://wf', fetchFn });
     expect((await client.health()).agents).toEqual(['echo']);
-    await expect(client.life('echo')).rejects.toMatchObject({ message: 'Workflow not found', status: 404 });
+    await expect(client.life('echo')).rejects.toMatchObject({
+      message: 'Workflow not found',
+      status: 404,
+    });
   });
 });

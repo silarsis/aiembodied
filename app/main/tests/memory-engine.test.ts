@@ -61,7 +61,9 @@ function fakeEngine() {
           inserted += 1;
         }
       }
-      return new Response(JSON.stringify({ inserted, duplicates: (body.messages as unknown[]).length - inserted }));
+      return new Response(
+        JSON.stringify({ inserted, duplicates: (body.messages as unknown[]).length - inserted }),
+      );
     }
     return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
   });
@@ -80,11 +82,15 @@ describe('memory engine settings', () => {
       apiToken: undefined,
     });
     expect(memoryEngineSettings({ MEMORY_ENABLED: '0' }).enabled).toBe(false);
-    expect(memoryEngineSettings({ MEMORY_BRIEF: 'off', MEMORY_AUTO_RECALL: 'false' })).toMatchObject({
+    expect(
+      memoryEngineSettings({ MEMORY_BRIEF: 'off', MEMORY_AUTO_RECALL: 'false' }),
+    ).toMatchObject({
       brief: false,
       autoRecall: false,
     });
-    expect(memoryEngineSettings({ MEMORY_SERVICE_URL: 'http://x:1', MEMORY_API_TOKEN: 't' })).toMatchObject({
+    expect(
+      memoryEngineSettings({ MEMORY_SERVICE_URL: 'http://x:1', MEMORY_API_TOKEN: 't' }),
+    ).toMatchObject({
       url: 'http://x:1',
       apiToken: 't',
     });
@@ -93,8 +99,14 @@ describe('memory engine settings', () => {
 
 describe('MemoryEngineClient', () => {
   it('sends the bearer token and marks refused requests as not worth retrying', async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ error: 'bad role' }), { status: 422 }));
-    const client = new MemoryEngineClient({ baseUrl: 'http://engine/', apiToken: 'abc', fetchFn: fetchFn as unknown as typeof fetch });
+    const fetchFn = vi.fn(
+      async () => new Response(JSON.stringify({ error: 'bad role' }), { status: 422 }),
+    );
+    const client = new MemoryEngineClient({
+      baseUrl: 'http://engine/',
+      apiToken: 'abc',
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
     const failure = await client.postMessages([]).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(MemoryEngineError);
     expect((failure as MemoryEngineError).retryable).toBe(false);
@@ -111,12 +123,23 @@ describe('MemoryEngineClient', () => {
         throw new TypeError('fetch failed');
       }) as unknown as typeof fetch,
     });
-    expect(((await down.health().catch((e: unknown) => e)) as MemoryEngineError).retryable).toBe(true);
+    expect(((await down.health().catch((e: unknown) => e)) as MemoryEngineError).retryable).toBe(
+      true,
+    );
     const starting = new MemoryEngineClient({
       baseUrl: 'http://engine',
-      fetchFn: (async () => new Response('{"error":"database is not ready"}', { status: 503 })) as unknown as typeof fetch,
+      fetchFn: (async () =>
+        new Response('{"error":"database is not ready"}', {
+          status: 503,
+        })) as unknown as typeof fetch,
     });
-    expect(((await starting.putSession('s', { started_at: 'x' }).catch((e: unknown) => e)) as MemoryEngineError).retryable).toBe(true);
+    expect(
+      (
+        (await starting
+          .putSession('s', { started_at: 'x' })
+          .catch((e: unknown) => e)) as MemoryEngineError
+      ).retryable,
+    ).toBe(true);
   });
 });
 
@@ -129,11 +152,21 @@ describe('MemoryOutbox', () => {
     const outbox = new MemoryOutbox({ store, client, logger: quiet, retryMs: 60_000 });
     cleanups.push(() => outbox.stop());
 
-    outbox.enqueue({ kind: 'session', id: 's1', session: { started_at: '2026-11-03T08:00:00.000Z' } });
+    outbox.enqueue({
+      kind: 'session',
+      id: 's1',
+      session: { started_at: '2026-11-03T08:00:00.000Z' },
+    });
     for (const id of ['m1', 'm2']) {
       outbox.enqueue({
         kind: 'message',
-        message: { id, session_id: 's1', role: 'user', content: id, created_at: '2026-11-03T08:00:01.000Z' },
+        message: {
+          id,
+          session_id: 's1',
+          role: 'user',
+          content: id,
+          created_at: '2026-11-03T08:00:01.000Z',
+        },
       });
     }
     await outbox.flush();
@@ -153,8 +186,16 @@ describe('MemoryOutbox', () => {
     const client = new MemoryEngineClient({ baseUrl: 'http://engine', fetchFn: engine.fetchFn });
     const outbox = new MemoryOutbox({ store, client, logger: quiet });
     cleanups.push(() => outbox.stop());
-    outbox.enqueue({ kind: 'session', id: 's1', session: { started_at: '2026-11-03T08:00:00.000Z' } });
-    outbox.enqueue({ kind: 'handoff', sessionId: 's1', handoff: { text: 'Ask about the budget.', agent: 'Echo', model: 'qwen' } });
+    outbox.enqueue({
+      kind: 'session',
+      id: 's1',
+      session: { started_at: '2026-11-03T08:00:00.000Z' },
+    });
+    outbox.enqueue({
+      kind: 'handoff',
+      sessionId: 's1',
+      handoff: { text: 'Ask about the budget.', agent: 'Echo', model: 'qwen' },
+    });
     await outbox.flush();
     expect(engine.state.calls).toEqual(['PUT /v1/sessions/s1', 'PUT /v1/sessions/s1/handoff']);
     expect(outbox.status().pending).toBe(0);
@@ -168,7 +209,18 @@ describe('MemoryOutbox', () => {
     cleanups.push(() => outbox.stop());
     outbox.enqueue({
       kind: 'coding_task',
-      task: { task_id: 't1', workspace_id: 'w', workspace_name: 'w', title: 'Fix', outcome: 'done', files_changed: [], added: 0, removed: 0, review_flags: [], summary: '' },
+      task: {
+        task_id: 't1',
+        workspace_id: 'w',
+        workspace_name: 'w',
+        title: 'Fix',
+        outcome: 'done',
+        files_changed: [],
+        added: 0,
+        removed: 0,
+        review_flags: [],
+        summary: '',
+      },
     });
     await outbox.flush();
     expect(engine.state.calls).toEqual(['POST /v1/coding/tasks']);
@@ -185,7 +237,10 @@ describe('MemoryOutbox', () => {
     };
     const outbox = new MemoryOutbox({ store, client, logger: quiet });
     cleanups.push(() => outbox.stop());
-    outbox.enqueue({ kind: 'message', message: { id: 'bad', session_id: 's', role: 'user', content: 'x', created_at: 'nope' } });
+    outbox.enqueue({
+      kind: 'message',
+      message: { id: 'bad', session_id: 's', role: 'user', content: 'x', created_at: 'nope' },
+    });
     await outbox.flush();
     expect(outbox.status().pending).toBe(0);
   });
@@ -207,27 +262,62 @@ describe('MemoryStore outbox', () => {
 describe('MemoryCapture', () => {
   function capture() {
     const items: OutboxItem[] = [];
-    const memory = new MemoryCapture({ outbox: { enqueue: (item) => items.push(item) }, agent: () => ({ name: 'Echo', id: 'vrm-1' }) });
+    const memory = new MemoryCapture({
+      outbox: { enqueue: (item) => items.push(item) },
+      agent: () => ({ name: 'Echo', id: 'vrm-1' }),
+    });
     return { memory, items };
   }
 
   it('records user and assistant messages but not system notices', () => {
     const { memory, items } = capture();
-    memory.recordMessage({ id: 'a', sessionId: 's', role: 'system', content: 'Wake word detected', ts: 0 });
+    memory.recordMessage({
+      id: 'a',
+      sessionId: 's',
+      role: 'system',
+      content: 'Wake word detected',
+      ts: 0,
+    });
     memory.recordMessage({ id: 'b', sessionId: 's', role: 'user', content: '   ', ts: 0 });
-    memory.recordMessage({ id: 'c', sessionId: 's', role: 'user', content: 'hello', ts: Date.UTC(2026, 10, 3, 8) });
+    memory.recordMessage({
+      id: 'c',
+      sessionId: 's',
+      role: 'user',
+      content: 'hello',
+      ts: Date.UTC(2026, 10, 3, 8),
+    });
     expect(items).toEqual([
       {
         kind: 'message',
-        message: { id: 'c', session_id: 's', role: 'user', content: 'hello', created_at: '2026-11-03T08:00:00.000Z' },
+        message: {
+          id: 'c',
+          session_id: 's',
+          role: 'user',
+          content: 'hello',
+          created_at: '2026-11-03T08:00:00.000Z',
+        },
       },
     ]);
   });
 
-  it('passes the speaker through, leaving the plain user to the engine\'s default label', () => {
+  it("passes the speaker through, leaving the plain user to the engine's default label", () => {
     const { memory, items } = capture();
-    memory.recordMessage({ id: 'u', sessionId: 's', role: 'user', content: 'hi', ts: 0, speaker: 'user' });
-    memory.recordMessage({ id: 'a', sessionId: 's', role: 'assistant', content: 'hello', ts: 0, speaker: 'sage' });
+    memory.recordMessage({
+      id: 'u',
+      sessionId: 's',
+      role: 'user',
+      content: 'hi',
+      ts: 0,
+      speaker: 'user',
+    });
+    memory.recordMessage({
+      id: 'a',
+      sessionId: 's',
+      role: 'assistant',
+      content: 'hello',
+      ts: 0,
+      speaker: 'sage',
+    });
     const messages = items.map((item) => (item as { message: MemoryEngineMessage }).message);
     expect(messages[0]).not.toHaveProperty('speaker');
     expect(messages[1]?.speaker).toBe('sage');
@@ -236,15 +326,33 @@ describe('MemoryCapture', () => {
   it('records sessions with the character, and tool calls with their result', () => {
     const { memory, items } = capture();
     memory.recordSession({ id: 's', startedAt: 0, title: null });
-    memory.recordToolCall({ sessionId: 's', name: 'web_search', arguments: { query: 'q' }, result: 'r', ok: true, at: 5 });
+    memory.recordToolCall({
+      sessionId: 's',
+      name: 'web_search',
+      arguments: { query: 'q' },
+      result: 'r',
+      ok: true,
+      at: 5,
+    });
     expect(items[0]).toEqual({
       kind: 'session',
       id: 's',
-      session: { started_at: '1970-01-01T00:00:00.000Z', agent: 'Echo', channel: 'voice', title: null, meta: { agent_id: 'vrm-1' } },
+      session: {
+        started_at: '1970-01-01T00:00:00.000Z',
+        agent: 'Echo',
+        channel: 'voice',
+        title: null,
+        meta: { agent_id: 'vrm-1' },
+      },
     });
     expect(items[1]).toMatchObject({
       kind: 'message',
-      message: { session_id: 's', role: 'tool', content: 'r', tool: { name: 'web_search', arguments: { query: 'q' }, ok: true } },
+      message: {
+        session_id: 's',
+        role: 'tool',
+        content: 'r',
+        tool: { name: 'web_search', arguments: { query: 'q' }, ok: true },
+      },
     });
   });
 });
@@ -253,8 +361,22 @@ describe('setupMemoryEngine', () => {
   it('imports the SQLite history once, then follows new conversation', async () => {
     const store = await createStore();
     store.createSession({ id: 'old', startedAt: Date.UTC(2026, 9, 1), title: null });
-    store.appendMessage({ id: 'old-1', sessionId: 'old', role: 'user', ts: Date.UTC(2026, 9, 1, 0, 0, 1), content: 'old question', audioPath: null });
-    store.appendMessage({ id: 'old-2', sessionId: 'old', role: 'system', ts: Date.UTC(2026, 9, 1, 0, 0, 2), content: 'notice', audioPath: null });
+    store.appendMessage({
+      id: 'old-1',
+      sessionId: 'old',
+      role: 'user',
+      ts: Date.UTC(2026, 9, 1, 0, 0, 1),
+      content: 'old question',
+      audioPath: null,
+    });
+    store.appendMessage({
+      id: 'old-2',
+      sessionId: 'old',
+      role: 'system',
+      ts: Date.UTC(2026, 9, 1, 0, 0, 2),
+      content: 'notice',
+      audioPath: null,
+    });
 
     const engine = fakeEngine();
     const conversations = new ConversationManager({ store });
@@ -269,12 +391,26 @@ describe('setupMemoryEngine', () => {
     expect(store.getValue(IMPORTED_KEY)).not.toBeNull();
 
     const session = conversations.startSession({ startedAt: Date.UTC(2026, 10, 3, 8) });
-    conversations.appendMessage({ sessionId: session.id, role: 'user', content: 'new question', ts: Date.UTC(2026, 10, 3, 8, 0, 1) });
-    runtime?.recordToolCall({ name: 'web_search', arguments: {}, result: 'found it', ok: true, at: Date.UTC(2026, 10, 3, 8, 0, 2) });
+    conversations.appendMessage({
+      sessionId: session.id,
+      role: 'user',
+      content: 'new question',
+      ts: Date.UTC(2026, 10, 3, 8, 0, 1),
+    });
+    runtime?.recordToolCall({
+      name: 'web_search',
+      arguments: {},
+      result: 'found it',
+      ok: true,
+      at: Date.UTC(2026, 10, 3, 8, 0, 2),
+    });
     await runtime?.outbox.flush();
 
     expect([...engine.state.sessions.keys()]).toEqual(['old', session.id]);
-    expect(engine.state.sessions.get('old')).toMatchObject({ agent: 'assistant', meta: { imported: true } });
+    expect(engine.state.sessions.get('old')).toMatchObject({
+      agent: 'assistant',
+      meta: { imported: true },
+    });
     const stored = [...engine.state.messages.values()];
     expect(stored.map((m) => [m.session_id, m.role, m.content])).toEqual([
       ['old', 'user', 'old question'],
@@ -284,7 +420,13 @@ describe('setupMemoryEngine', () => {
 
     // A second start doesn't queue the history again.
     runtime?.stop();
-    const again = setupMemoryEngine({ settings: { enabled: true, url: 'http://engine' }, store, conversations, logger: quiet, fetchFn: engine.fetchFn });
+    const again = setupMemoryEngine({
+      settings: { enabled: true, url: 'http://engine' },
+      store,
+      conversations,
+      logger: quiet,
+      fetchFn: engine.fetchFn,
+    });
     cleanups.push(() => again?.stop());
     expect(store.countMemoryOutbox()).toBe(0);
   });
@@ -292,7 +434,12 @@ describe('setupMemoryEngine', () => {
   it('does nothing when memory is off', async () => {
     const store = await createStore();
     expect(
-      setupMemoryEngine({ settings: { enabled: false, url: 'x' }, store, conversations: new ConversationManager({ store }), logger: quiet }),
+      setupMemoryEngine({
+        settings: { enabled: false, url: 'x' },
+        store,
+        conversations: new ConversationManager({ store }),
+        logger: quiet,
+      }),
     ).toBeNull();
   });
 });

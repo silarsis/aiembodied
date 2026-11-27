@@ -111,7 +111,9 @@ describe('createAppDiagnostics', () => {
     });
 
     expect(logger.info).toHaveBeenCalledWith('App diagnostics enabled.');
-    expect(logger.debug).toHaveBeenCalledWith('Diagnostics: window ready-to-show.', { windowId: 7 });
+    expect(logger.debug).toHaveBeenCalledWith('Diagnostics: window ready-to-show.', {
+      windowId: 7,
+    });
     expect(logger.info).toHaveBeenCalledWith('Diagnostics: renderer finished load.', {
       webContentsId: window.webContents.id,
       windowId: 7,
@@ -200,7 +202,9 @@ describe('createAppDiagnostics', () => {
 
     window.webContents.emit('did-start-loading');
 
-    expect(logger.info).toHaveBeenCalledWith('Diagnostics: browser window created.', { windowId: 3 });
+    expect(logger.info).toHaveBeenCalledWith('Diagnostics: browser window created.', {
+      windowId: 3,
+    });
     expect(logger.debug).toHaveBeenCalledWith('Diagnostics: renderer started loading.', {
       webContentsId: window.webContents.id,
       windowId: 3,

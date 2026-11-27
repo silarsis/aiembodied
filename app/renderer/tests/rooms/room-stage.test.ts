@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import { RoomPhysics } from '../../src/rooms/room-physics.js';
 import { buildRoom } from '../../src/rooms/room-builder.js';
@@ -31,11 +31,14 @@ describe('RoomStage navigation', () => {
       expect(insideBox(point, table)).toBe(false);
     }
     // Sample along each segment too: no straight leg may cross any solid object.
-    const solid = room.objects.filter((object) => (object.collider ?? 'box') === 'box' && !object.dynamic);
+    const solid = room.objects.filter(
+      (object) => (object.collider ?? 'box') === 'box' && !object.dynamic,
+    );
     for (let i = 0; i < path!.length - 1; i += 1) {
       for (let t = 0; t <= 1; t += 0.05) {
         const p: Vec3 = [0, 0, 0];
-        for (let axis = 0; axis < 3; axis += 1) p[axis] = path![i][axis] * (1 - t) + path![i + 1][axis] * t;
+        for (let axis = 0; axis < 3; axis += 1)
+          p[axis] = path![i][axis] * (1 - t) + path![i + 1][axis] * t;
         for (const object of solid) expect(insideBox(p, object)).toBe(false);
       }
     }
@@ -77,7 +80,12 @@ describe('RoomPhysics', () => {
     const lifted = {
       ...room,
       objects: room.objects.map((object) =>
-        object.id === 'mug' ? { ...object, position: [object.position[0], object.position[1] + 0.2, object.position[2]] as Vec3 } : object,
+        object.id === 'mug'
+          ? {
+              ...object,
+              position: [object.position[0], object.position[1] + 0.2, object.position[2]] as Vec3,
+            }
+          : object,
       ),
     };
     const built = buildRoom(lifted);
@@ -136,7 +144,7 @@ describe('RoomStage carrying', () => {
 });
 
 describe('RoomStage extra avatars', () => {
-  it('feeds each extra avatar\'s body position to physics and drops it again', async () => {
+  it("feeds each extra avatar's body position to physics and drops it again", async () => {
     const stage = await RoomStage.create(builtInRoom('reading-room'));
     const sage = new THREE.Group();
     sage.position.set(1, 0, 1);
@@ -187,7 +195,10 @@ describe('RoomStage surfaceHeightAt', () => {
     const stage = await RoomStage.create(room);
     const sofa = room.objects.find((object) => object.id === 'sofa')!;
     stage.objectNode('sofa')!.clear();
-    expect(stage.surfaceHeightAt('sofa', sofa.position[0], sofa.position[2])).toBeCloseTo(sofa.position[1] + sofa.size[1], 6);
+    expect(stage.surfaceHeightAt('sofa', sofa.position[0], sofa.position[2])).toBeCloseTo(
+      sofa.position[1] + sofa.size[1],
+      6,
+    );
   });
 });
 

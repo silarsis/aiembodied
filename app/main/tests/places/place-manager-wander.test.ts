@@ -11,7 +11,10 @@ function setup(activeAt: Record<string, number> = {}) {
   const data = new Map<string, string>();
   const clock = { now: 1_000_000 };
   const manager = new PlaceManager({
-    store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) },
+    store: {
+      getValue: (key) => data.get(key) ?? null,
+      setValue: (key, value) => void data.set(key, value),
+    },
     registry: { list: () => PROFILES },
     now: () => clock.now,
     activeAt: (placeId) => activeAt[placeId] ?? null,
@@ -44,7 +47,9 @@ describe('PlaceManager for wandering', () => {
     const { manager } = setup();
     manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
     manager.setOnline('study', true);
-    expect(manager.snapshot().places.find((place) => place.id === 'study')).not.toHaveProperty('closed');
+    expect(manager.snapshot().places.find((place) => place.id === 'study')).not.toHaveProperty(
+      'closed',
+    );
     manager.setClosed('study', true);
     expect(manager.snapshot().places.find((place) => place.id === 'study')?.closed).toBe(true);
   });
@@ -55,7 +60,9 @@ describe('PlaceManager for wandering', () => {
     expect(doorbellOn(manager.get('home'))).toBe(true);
     expect(doorbellOn(manager.get('study'))).toBe(false);
     expect(doorbellOn(manager.get('next-door'))).toBe(false);
-    expect(JSON.parse(data.get(PLACES_KEY) as string).some((place: object) => 'doorbell' in place)).toBe(false);
+    expect(
+      JSON.parse(data.get(PLACES_KEY) as string).some((place: object) => 'doorbell' in place),
+    ).toBe(false);
     expect(manager.setDoorbell('study', true)).toBe(true);
     expect(manager.setDoorbell('home', false)).toBe(true);
     expect(manager.setDoorbell('next-door', true)).toBe(false);
@@ -64,7 +71,13 @@ describe('PlaceManager for wandering', () => {
     expect(doorbellOn(manager.get('home'))).toBe(false);
     expect(manager.snapshot().places.find((place) => place.id === 'study')?.doorbell).toBe(true);
     // Saved, and read back by a new manager.
-    const again = new PlaceManager({ store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) }, registry: { list: () => PROFILES } });
+    const again = new PlaceManager({
+      store: {
+        getValue: (key) => data.get(key) ?? null,
+        setValue: (key, value) => void data.set(key, value),
+      },
+      registry: { list: () => PROFILES },
+    });
     expect(doorbellOn(again.get('study'))).toBe(true);
     expect(doorbellOn(again.get('home'))).toBe(false);
   });

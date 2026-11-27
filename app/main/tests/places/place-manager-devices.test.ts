@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_DESKTOP_ROOM, LOCATIONS_KEY, OFFLINE_GRACE_MS, PLACES_KEY, PlaceManager, scopedPlaces } from '../../src/places/place-manager.js';
-import type { PlacesSnapshot } from '../../src/places/place-manager.js';
+import {
+  DEFAULT_DESKTOP_ROOM,
+  LOCATIONS_KEY,
+  OFFLINE_GRACE_MS,
+  PLACES_KEY,
+  PlaceManager,
+  scopedPlaces,
+} from '../../src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../src/shared/places/place-manager-types.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
 
@@ -11,9 +18,14 @@ const PROFILES = [
 
 function setup(kv: Record<string, string> = {}) {
   const data = new Map<string, string>(Object.entries(kv));
-  const store = { getValue: (key: string) => data.get(key) ?? null, setValue: (key: string, value: string) => void data.set(key, value) };
+  const store = {
+    getValue: (key: string) => data.get(key) ?? null,
+    setValue: (key: string, value: string) => void data.set(key, value),
+  };
   const published: SwitchboardEventInput[] = [];
-  const bus = { publish: (event: SwitchboardEventInput) => (published.push(event), null) } as unknown as SwitchboardBus;
+  const bus = {
+    publish: (event: SwitchboardEventInput) => (published.push(event), null),
+  } as unknown as SwitchboardBus;
   const manager = new PlaceManager({ store, registry: { list: () => PROFILES }, bus: () => bus });
   const snapshots: PlacesSnapshot[] = [];
   manager.onChanged((snapshot) => snapshots.push(snapshot));
@@ -26,10 +38,21 @@ describe('PlaceManager desktop rooms', () => {
 
   it('adds a desktop room, offline until it connects', () => {
     const { manager, data, snapshots } = setup();
-    expect(manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' })).toEqual({ id: 'study', name: 'the study', node: 'room-1', online: false, room: DEFAULT_DESKTOP_ROOM });
+    expect(manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' })).toEqual({
+      id: 'study',
+      name: 'the study',
+      node: 'room-1',
+      online: false,
+      room: DEFAULT_DESKTOP_ROOM,
+    });
     expect(snapshots).toHaveLength(1);
     // `online` is never stored.
-    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1', room: DEFAULT_DESKTOP_ROOM });
+    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({
+      id: 'study',
+      name: 'the study',
+      node: 'room-1',
+      room: DEFAULT_DESKTOP_ROOM,
+    });
     const snapshot = manager.snapshot();
     expect(snapshot.places.find((place) => place.id === 'study')?.online).toBe(false);
     // Built-ins carry no online flag: always online.
@@ -48,7 +71,7 @@ describe('PlaceManager desktop rooms', () => {
     expect(manager.addPlace({ id: 'y', name: ' ', node: 'room-2' })).toBeNull();
   });
 
-  it('shows the snapshot from a desktop room\'s point of view', () => {
+  it("shows the snapshot from a desktop room's point of view", () => {
     const { manager } = setup();
     manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
     expect(manager.snapshot().localPlaceId).toBe('home');
@@ -61,8 +84,14 @@ describe('PlaceManager desktop rooms', () => {
     manager.setOnline('study', true);
     expect(manager.get('study')?.online).toBe(true);
     expect(snapshots.at(-1)?.places.find((place) => place.id === 'study')?.online).toBe(true);
-    manager.rename('study', 'Kevin\'s study');
-    expect(manager.get('study')).toEqual({ id: 'study', name: "Kevin's study", node: 'room-1', online: true, room: DEFAULT_DESKTOP_ROOM });
+    manager.rename('study', "Kevin's study");
+    expect(manager.get('study')).toEqual({
+      id: 'study',
+      name: "Kevin's study",
+      node: 'room-1',
+      online: true,
+      room: DEFAULT_DESKTOP_ROOM,
+    });
     expect(data.get(PLACES_KEY)).not.toContain('online');
     // No change, no push.
     const count = snapshots.length;
@@ -75,7 +104,10 @@ describe('PlaceManager desktop rooms', () => {
   it('refuses a move to a closed room', () => {
     const { manager } = setup();
     manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
-    expect(manager.startMove('sage', 'study', 'chose to')).toEqual({ ok: false, reason: 'the study is closed' });
+    expect(manager.startMove('sage', 'study', 'chose to')).toEqual({
+      ok: false,
+      reason: 'the study is closed',
+    });
     manager.setOnline('study', true);
     expect(manager.startMove('sage', 'study', 'chose to').ok).toBe(true);
     // The satellite confirms the arrival, as the local renderer does for the local place.
@@ -103,7 +135,11 @@ describe('PlaceManager desktop rooms', () => {
     // The move is under way: Sage is in transit to the local place, where the renderer walks her in through the door.
     expect(manager.inTransit('sage')).toBe(true);
     expect(manager.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'study', to: 'home' }]);
-    expect(published.at(-1)).toMatchObject({ type: 'avatar.move', scene: 'home', payload: { avatarId: 'sage', from: 'study', to: 'home', reason: 'room closed' } });
+    expect(published.at(-1)).toMatchObject({
+      type: 'avatar.move',
+      scene: 'home',
+      payload: { avatarId: 'sage', from: 'study', to: 'home', reason: 'room closed' },
+    });
     expect(manager.arrived('sage')).toBe(true);
     expect(manager.locationOf('sage')).toBe('home');
   });
@@ -148,7 +184,12 @@ describe('PlaceManager desktop rooms', () => {
     expect(manager.get('home')?.room).toBeUndefined();
     expect(manager.setRoom('study', 'room:abc')).toBe(true);
     expect(manager.get('study')?.room).toBe('room:abc');
-    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1', room: 'room:abc' });
+    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({
+      id: 'study',
+      name: 'the study',
+      node: 'room-1',
+      room: 'room:abc',
+    });
     expect(snapshots.at(-1)?.places.find((place) => place.id === 'study')?.room).toBe('room:abc');
     expect(manager.setRoom('home', 'room:abc')).toBe(false);
     expect(manager.setRoom('next-door', 'room:abc')).toBe(false);
@@ -157,7 +198,9 @@ describe('PlaceManager desktop rooms', () => {
   });
 
   it('a desktop room saved before rooms could be picked gets the default room', () => {
-    const { manager } = setup({ [PLACES_KEY]: JSON.stringify([{ id: 'study', name: 'the study', node: 'room-1' }]) });
+    const { manager } = setup({
+      [PLACES_KEY]: JSON.stringify([{ id: 'study', name: 'the study', node: 'room-1' }]),
+    });
     expect(manager.get('study')?.room).toBe(DEFAULT_DESKTOP_ROOM);
   });
 
@@ -197,9 +240,21 @@ describe('PlaceManager desktop rooms', () => {
     // Setting the same value again changes nothing and tells nobody.
     manager.setCamera('home', true);
     expect(snapshots).toHaveLength(2);
-    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1', room: DEFAULT_DESKTOP_ROOM, camera: false });
+    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({
+      id: 'study',
+      name: 'the study',
+      node: 'room-1',
+      room: DEFAULT_DESKTOP_ROOM,
+      camera: false,
+    });
     // A new manager on the same store reads them back.
-    const again = new PlaceManager({ store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) }, registry: { list: () => PROFILES } });
+    const again = new PlaceManager({
+      store: {
+        getValue: (key) => data.get(key) ?? null,
+        setValue: (key, value) => void data.set(key, value),
+      },
+      registry: { list: () => PROFILES },
+    });
     expect(again.get('study')?.camera).toBe(false);
     expect(again.get('home')?.camera).toBe(true);
   });

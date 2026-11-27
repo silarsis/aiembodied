@@ -9,7 +9,10 @@ const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
-function rig(names: string[], vrm0 = false): {
+function rig(
+  names: string[],
+  vrm0 = false,
+): {
   limits: JointLimits;
   bones: Map<string, THREE.Object3D>;
   bone: (name: string) => THREE.Object3D;

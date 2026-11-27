@@ -22,7 +22,10 @@ const length = (p: BoneNode['position']): number => Math.hypot(p.x, p.y, p.z);
  * hips height once the hip's drop below the pelvis and both leg segments are taken off, clamped to a plausible
  * range. Null when the bones are missing or give nonsense.
  */
-export function measureRestLegLengths(humanoid: LegBones, restHipsHeight: number): RestLegLengths | null {
+export function measureRestLegLengths(
+  humanoid: LegBones,
+  restHipsHeight: number,
+): RestLegLengths | null {
   const upper = humanoid.getNormalizedBoneNode('leftUpperLeg');
   const lower = humanoid.getNormalizedBoneNode('leftLowerLeg');
   const foot = humanoid.getNormalizedBoneNode('leftFoot');
@@ -32,6 +35,9 @@ export function measureRestLegLengths(humanoid: LegBones, restHipsHeight: number
   if (!(thigh > 0.1 && thigh < 1.5 && shin > 0.1 && shin < 1.5)) return null;
   const hipDrop = Math.max(0, -upper.position.y);
   const rawAnkle = restHipsHeight - hipDrop - thigh - shin;
-  const ankleHeight = Math.min(MAX_ANKLE_HEIGHT, Math.max(MIN_ANKLE_HEIGHT, Number.isFinite(rawAnkle) ? rawAnkle : 0));
+  const ankleHeight = Math.min(
+    MAX_ANKLE_HEIGHT,
+    Math.max(MIN_ANKLE_HEIGHT, Number.isFinite(rawAnkle) ? rawAnkle : 0),
+  );
   return { thigh, shin, ankleHeight };
 }

@@ -15,7 +15,8 @@ const nodeBuiltins = {
 };
 const electron = {
   regex: '^electron(/|$)',
-  message: 'Electron is main-process only. The renderer reaches it through the preload bridge (window.aiembodied).',
+  message:
+    'Electron is main-process only. The renderer reaches it through the preload bridge (window.aiembodied).',
 };
 const mainRuntime = {
   regex: '(^|/)main/src/(?!shared/)',
@@ -27,11 +28,35 @@ const rendererImport = {
   regex: '(^|/)renderer/',
   message: 'app/main never imports from app/renderer.',
 };
+// AGENTS.md rule 17: a component never calls useEffect/useLayoutEffect itself. A local lowercase use* hook inside
+// a component would still match (ESLint selectors cannot stop at the nearest function), so define hooks at module level.
+const effectCall =
+  'CallExpression[callee.name=/^use(Layout)?Effect$/], CallExpression[callee.object.name="React"][callee.property.name=/^use(Layout)?Effect$/]';
+const componentRoots = [
+  'FunctionDeclaration[id.name=/^[A-Z]/]',
+  'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression',
+  'VariableDeclarator[id.name=/^[A-Z]/] > FunctionExpression',
+  'VariableDeclarator[id.name=/^[A-Z]/] > CallExpression[callee.name=/^(memo|forwardRef)$/]',
+  'VariableDeclarator[id.name=/^[A-Z]/] > CallExpression[callee.property.name=/^(memo|forwardRef)$/]',
+];
+const effectInComponentSelectors = componentRoots.flatMap((root) =>
+  effectCall.split(', ').map((call) => ({
+    selector: `${root} ${call}`,
+    message:
+      'Components do not call useEffect/useLayoutEffect directly. Move the effect into a named custom hook (useX, in the feature folder) named for what it does. Better still, derive the value during render or do the work in the event handler.',
+  })),
+);
 const restrict = (...patterns) => ['error', { patterns }];
 
 export default [
   {
-    ignores: ['dist/**', 'coverage/**', 'playwright-report/**', 'test-results/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'playwright-report/**',
+      'test-results/**',
+      'node_modules/**',
+    ],
   },
   js.configs.recommended,
   {
@@ -121,6 +146,11 @@ export default [
     rules: { 'no-restricted-imports': restrict(mainRuntime, electron, nodeBuiltins) },
   },
   {
+    // AGENTS.md rule 17. Existing direct effects are grandfathered in app/renderer/eslint-suppressions.json.
+    files: ['app/renderer/src/**/*.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...effectInComponentSelectors] },
+  },
+  {
     files: ['app/main/**/*.ts'],
     rules: { 'no-restricted-imports': restrict(rendererImport) },
   },
@@ -134,8 +164,8 @@ export default [
         { regex: '^[^.]', message: 'app/main/src/shared must not import npm packages.' },
         {
           regex: '^\\.\\./\\.\\./',
-          allowTypeImports: true,
-          message: 'app/main/src/shared must not import from outside shared/. Move what it needs into shared/.',
+          message:
+            'app/main/src/shared must not import from outside shared/. Move what it needs into shared/.',
         },
       ),
     },

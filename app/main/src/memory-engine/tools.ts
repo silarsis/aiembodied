@@ -14,10 +14,12 @@ import type {
   MemoryEngineClient,
   MemoryEngineCorrectionResult,
   MemoryEngineHomeHistory,
+} from './client.js';
+import type {
   MemoryEngineMemoryDetail,
   MemoryEngineSearchResult,
   MemoryEngineTimeline,
-} from './client.js';
+} from '../shared/memory-engine/client-types.js';
 import type { OutboxItem } from './outbox.js';
 import { describeAgo, parsePeriod, type Period } from './period.js';
 
@@ -40,7 +42,10 @@ const PERIOD_HELP =
   '"the last 10 days", "last tuesday", or a date such as "2026-10-14" or "2026-10".';
 
 export interface MemoryToolsOptions {
-  client: Pick<MemoryEngineClient, 'search' | 'timeline' | 'memory' | 'correctFact' | 'homeHistory'>;
+  client: Pick<
+    MemoryEngineClient,
+    'search' | 'timeline' | 'memory' | 'correctFact' | 'homeHistory'
+  >;
   outbox: { enqueue(item: OutboxItem): void };
   /** The conversation the model is in, for linking a remembered fact to it. */
   currentSessionId: () => string | null;
@@ -59,14 +64,25 @@ function readString(params: unknown, key: string): string | undefined {
   return undefined;
 }
 
-function readNumber(params: unknown, key: string, fallback: number, min: number, max: number): number {
+function readNumber(
+  params: unknown,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const raw = readString(params, key);
   const value = raw === undefined ? fallback : Number(raw);
   return Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
 }
 
 function formatDay(date: Date): string {
-  return date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function formatTime(date: Date): string {
@@ -109,7 +125,9 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /** The model says "home"; the engine says "home_assistant". */
-export function searchSource(value: string | undefined): 'conversation' | 'home_assistant' | 'coding' | 'all' | undefined {
+export function searchSource(
+  value: string | undefined,
+): 'conversation' | 'home_assistant' | 'coding' | 'all' | undefined {
   switch (value?.toLowerCase()) {
     case 'home':
     case 'home_assistant':
@@ -130,8 +148,10 @@ export function formatSearchResults(results: MemoryEngineSearchResult[], now: Da
   return fitTo(
     results.map((result) => {
       const when = new Date(result.period_start);
-      const kind = KIND_LABELS[result.kind] ?? (result.agent ? `with ${result.agent}` : 'conversation');
-      const who = result.kind === 'ha_event' && result.home_name ? `${kind} at ${result.home_name}` : kind;
+      const kind =
+        KIND_LABELS[result.kind] ?? (result.agent ? `with ${result.agent}` : 'conversation');
+      const who =
+        result.kind === 'ha_event' && result.home_name ? `${kind} at ${result.home_name}` : kind;
       return `[${result.id}] ${formatDay(when)} (${describeAgo(when, now)}), ${who}:\n${clip(result.text, SNIPPET_CHARS)}\n`;
     }),
   );
@@ -147,8 +167,11 @@ export function formatTimeline(timeline: MemoryEngineTimeline, period: Period, n
     // A long period: the day, week or month summaries carry it; conversations follow in brief.
     for (const summary of summaries) {
       const start = new Date(summary.period_start);
-      const label = summary.kind === 'day' ? formatDay(start) : `${summary.kind} of ${formatDay(start)}`;
-      lines.push(`[${summary.id}] ${label}: ${summary.title ? `${summary.title}. ` : ''}${clip(summary.text, 400)}`);
+      const label =
+        summary.kind === 'day' ? formatDay(start) : `${summary.kind} of ${formatDay(start)}`;
+      lines.push(
+        `[${summary.id}] ${label}: ${summary.title ? `${summary.title}. ` : ''}${clip(summary.text, 400)}`,
+      );
     }
     if (sessions.length) lines.push('', 'Conversations:');
   }
@@ -178,25 +201,40 @@ function formatValue(value: number | null | undefined, unit: string | null | und
   return `${Math.round(value * 10) / 10}${unit ? ` ${unit}` : ''}`;
 }
 
-function entityLabel(entity: { name: string | null; entity_id: string; area: string | null; home_name?: string | null }): string {
+function entityLabel(entity: {
+  name: string | null;
+  entity_id: string;
+  area: string | null;
+  home_name?: string | null;
+}): string {
   const where = [entity.area, entity.home_name].filter(Boolean).join(', ');
   return `${entity.name ?? entity.entity_id}${where ? ` (${where})` : ''}`;
 }
 
 /** What a home entity did over a period: its changes, then (numeric) readings by hour or day. */
-export function formatHomeHistory(history: MemoryEngineHomeHistory, period: Period, now: Date): string {
+export function formatHomeHistory(
+  history: MemoryEngineHomeHistory,
+  period: Period,
+  now: Date,
+): string {
   if (history.matches) {
     if (history.matches.length === 0) return 'No Home Assistant device or sensor matches that.';
     return fitTo([
       'Several devices match. Ask which one is meant, then call home_history again with its entity id:',
-      ...history.matches.map((m) => `${m.name ?? m.entity_id}${m.area ? `, ${m.area}` : ''}${m.home_name ? `, ${m.home_name}` : ''} [${m.entity_id}]`),
+      ...history.matches.map(
+        (m) =>
+          `${m.name ?? m.entity_id}${m.area ? `, ${m.area}` : ''}${m.home_name ? `, ${m.home_name}` : ''} [${m.entity_id}]`,
+      ),
     ]);
   }
   const entity = history.entity;
   if (!entity) return 'No Home Assistant device or sensor matches that.';
   const unit = entity.unit;
   const lines: string[] = [];
-  const current = entity.last_value !== null && entity.last_value !== undefined ? formatValue(entity.last_value, unit) : entity.last_state;
+  const current =
+    entity.last_value !== null && entity.last_value !== undefined
+      ? formatValue(entity.last_value, unit)
+      : entity.last_state;
   lines.push(`${entityLabel(entity)} [${entity.entity_id}]${current ? `, now ${current}` : ''}.`);
 
   const changes = history.changes ?? [];
@@ -204,7 +242,11 @@ export function formatHomeHistory(history: MemoryEngineHomeHistory, period: Peri
     lines.push('Changes, newest first:');
     for (const change of changes) {
       const when = new Date(change.at);
-      const what = change.text ?? (change.old_state ? `${change.old_state} to ${change.state ?? '?'}` : (change.state ?? 'changed'));
+      const what =
+        change.text ??
+        (change.old_state
+          ? `${change.old_state} to ${change.state ?? '?'}`
+          : (change.state ?? 'changed'));
       lines.push(`${formatDay(when)} ${formatTime(when)} (${describeAgo(when, now)}): ${what}`);
     }
   }
@@ -212,7 +254,9 @@ export function formatHomeHistory(history: MemoryEngineHomeHistory, period: Peri
   const readings = history.readings ?? [];
   if (readings.length) {
     const days = (period.to.getTime() - period.from.getTime()) / HOUR_MS > 48;
-    lines.push(days ? 'Readings by day (min / mean / max):' : 'Readings by hour (min / mean / max):');
+    lines.push(
+      days ? 'Readings by day (min / mean / max):' : 'Readings by hour (min / mean / max):',
+    );
     if (days) {
       const byDay = new Map<string, MemoryEngineHomeHistory['readings']>();
       for (const reading of readings) {
@@ -232,13 +276,17 @@ export function formatHomeHistory(history: MemoryEngineHomeHistory, period: Peri
     } else {
       for (const r of readings) {
         const hour = new Date(r.hour);
-        lines.push(`${formatDay(hour)} ${formatTime(hour)}: ${formatValue(r.min, unit)} / ${formatValue(r.mean, unit)} / ${formatValue(r.max, unit)}`);
+        lines.push(
+          `${formatDay(hour)} ${formatTime(hour)}: ${formatValue(r.min, unit)} / ${formatValue(r.mean, unit)} / ${formatValue(r.max, unit)}`,
+        );
       }
     }
   }
 
   if (!changes.length && !readings.length) {
-    lines.push(`Nothing recorded between ${formatDay(period.from)} and ${formatDay(new Date(period.to.getTime() - 1))}.`);
+    lines.push(
+      `Nothing recorded between ${formatDay(period.from)} and ${formatDay(new Date(period.to.getTime() - 1))}.`,
+    );
   }
   return fitTo(lines);
 }
@@ -248,17 +296,26 @@ export function formatMemory(detail: MemoryEngineMemoryDetail, now: Date): strin
   const header = `${formatDay(when)} ${formatTime(when)} (${describeAgo(when, now)})`;
   if (detail.kind === 'fact') {
     const source = (detail.messages ?? []).map((m) => `${m.role}: ${m.content}`).join('\n');
-    return fitTo([`Fact noted ${header}: ${detail.text ?? ''}`, ...(source ? ['From:', source] : [])]);
+    return fitTo([
+      `Fact noted ${header}: ${detail.text ?? ''}`,
+      ...(source ? ['From:', source] : []),
+    ]);
   }
   if (detail.kind !== 'turn') {
     const what = KIND_LABELS[detail.kind] ?? detail.kind;
-    const more = detail.kind === 'session' ? ' Open one of its exchanges from recall_timeline for the exact words.' : '';
-    return fitTo([`${what[0].toUpperCase()}${what.slice(1)}, ${header}: ${detail.text ?? ''}${more}`]);
+    const more =
+      detail.kind === 'session'
+        ? ' Open one of its exchanges from recall_timeline for the exact words.'
+        : '';
+    return fitTo([
+      `${what[0].toUpperCase()}${what.slice(1)}, ${header}: ${detail.text ?? ''}${more}`,
+    ]);
   }
   const agent = detail.agent ?? 'Assistant';
   const lines = (detail.messages ?? []).map((m) => {
     const time = formatTime(new Date(m.created_at));
-    if (m.role === 'tool') return `${time} [${m.tool?.name ?? 'tool'} result] ${clip(m.content, 800)}`;
+    if (m.role === 'tool')
+      return `${time} [${m.tool?.name ?? 'tool'} result] ${clip(m.content, 800)}`;
     const speaker = m.role === 'user' ? (m.speaker ?? 'User') : agent;
     return `${time} ${speaker}: ${m.content}`;
   });
@@ -314,8 +371,14 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
       type: 'object',
       properties: {
         query: { type: 'string', description: 'What to look for, in a few words.' },
-        period: { type: 'string', description: `Optional. Only look in this period. ${PERIOD_HELP}` },
-        subject: { type: 'string', description: 'Optional. A subject to focus on, such as "garden" or "car".' },
+        period: {
+          type: 'string',
+          description: `Optional. Only look in this period. ${PERIOD_HELP}`,
+        },
+        subject: {
+          type: 'string',
+          description: 'Optional. A subject to focus on, such as "garden" or "car".',
+        },
         source: {
           type: 'string',
           enum: ['conversation', 'home', 'coding', 'all'],
@@ -332,7 +395,9 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
     spokenNotice: 'Let me think back.',
     describeCall: (params) => readString(params, 'query') ?? 'memory',
     execute: async (params) => {
-      const query = [readString(params, 'query'), readString(params, 'subject')].filter(Boolean).join(' ');
+      const query = [readString(params, 'query'), readString(params, 'subject')]
+        .filter(Boolean)
+        .join(' ');
       if (!query) throw new Error('recall_memories needs a "query".');
       const period = resolvePeriod(params, now());
       if (period === 'invalid') return `I could not read that period. ${PERIOD_HELP}`;
@@ -370,7 +435,10 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
       const period = resolvePeriod(params, now());
       if (!period) throw new Error('recall_timeline needs a "period".');
       if (period === 'invalid') return `I could not read that period. ${PERIOD_HELP}`;
-      const timeline = await options.client.timeline(period.from.toISOString(), period.to.toISOString());
+      const timeline = await options.client.timeline(
+        period.from.toISOString(),
+        period.to.toISOString(),
+      );
       return formatTimeline(timeline, period, now());
     },
   };
@@ -385,8 +453,14 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'The id in square brackets from recall_memories or recall_timeline.' },
-        around: { type: 'number', description: 'Optional. How many exchanges either side to include (default 1).' },
+        id: {
+          type: 'string',
+          description: 'The id in square brackets from recall_memories or recall_timeline.',
+        },
+        around: {
+          type: 'number',
+          description: 'Optional. How many exchanges either side to include (default 1).',
+        },
       },
       required: ['id'],
     },
@@ -416,7 +490,10 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
       type: 'object',
       properties: {
         fact: { type: 'string', description: 'The fact, one short sentence.' },
-        subject: { type: 'string', description: 'Optional. One or two words it is about, such as "car" or "garden".' },
+        subject: {
+          type: 'string',
+          description: 'Optional. One or two words it is about, such as "car" or "garden".',
+        },
       },
       required: ['fact'],
     },
@@ -454,17 +531,25 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Optional. The fact\'s id in square brackets from recall_memories.' },
-        about: { type: 'string', description: 'Optional, instead of id. What the fact said, in a few words.' },
+        id: {
+          type: 'string',
+          description: "Optional. The fact's id in square brackets from recall_memories.",
+        },
+        about: {
+          type: 'string',
+          description: 'Optional, instead of id. What the fact said, in a few words.',
+        },
         correction: {
           type: 'string',
-          description: 'Optional. The corrected fact, one short sentence in the third person. Leave out to withdraw it.',
+          description:
+            'Optional. The corrected fact, one short sentence in the third person. Leave out to withdraw it.',
         },
       },
     },
     enabled: true,
     confirmationLevel: 'notify',
-    describeCall: (params) => clip(readString(params, 'correction') ?? readString(params, 'about') ?? 'a fact', 80),
+    describeCall: (params) =>
+      clip(readString(params, 'correction') ?? readString(params, 'about') ?? 'a fact', 80),
     execute: async (params) => {
       const id = readString(params, 'id')?.replace(/^\[|\]$/g, '');
       const about = readString(params, 'about');
@@ -525,8 +610,14 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
     inputSchema: {
       type: 'object',
       properties: {
-        what: { type: 'string', description: 'The device or sensor: its name, its room, or its entity id.' },
-        period: { type: 'string', description: `Optional. Default: the last 24 hours. ${PERIOD_HELP}` },
+        what: {
+          type: 'string',
+          description: 'The device or sensor: its name, its room, or its entity id.',
+        },
+        period: {
+          type: 'string',
+          description: `Optional. Default: the last 24 hours. ${PERIOD_HELP}`,
+        },
       },
       required: ['what'],
     },
@@ -549,7 +640,8 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
           to: period.to.toISOString(),
         });
       } catch (error) {
-        if (error instanceof MemoryEngineError && error.status === null) return 'I cannot reach the house records right now.';
+        if (error instanceof MemoryEngineError && error.status === null)
+          return 'I cannot reach the house records right now.';
         throw error;
       }
       return formatHomeHistory(history, period, at);

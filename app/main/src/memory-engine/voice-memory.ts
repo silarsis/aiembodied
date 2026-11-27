@@ -12,23 +12,31 @@
  *
  * Neither ever throws: memory is a help, never a reason for a reply to fail.
  */
-import type { MemoryEngineBrief, MemoryEngineClient, MemoryEngineSearchResult } from './client.js';
+import type { MemoryEngineBrief, MemoryEngineClient } from './client.js';
+import type { MemoryEngineSearchResult } from '../shared/memory-engine/client-types.js';
 import { describeAgo } from './period.js';
 
-type Logger = { warn: (message: string, data?: Record<string, unknown>) => void; debug?: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  warn: (message: string, data?: Record<string, unknown>) => void;
+  debug?: (message: string, data?: Record<string, unknown>) => void;
+};
 
 /** The part of long-term memory the voice pipeline uses. */
 export interface VoiceMemory {
   /** Text for the end of the system prompt, for a conversation that is starting now. */
   brief(): Promise<string | null>;
   /** A block to put before the user's words, or null when nothing clearly matters. */
-  recall(text: string, alreadyRecalled: readonly string[]): Promise<{ block: string; ids: string[] } | null>;
+  recall(
+    text: string,
+    alreadyRecalled: readonly string[],
+  ): Promise<{ block: string; ids: string[] } | null>;
   /** A turn started (true) or ended (false), so the engine's background work waits. */
   activity?(busy: boolean): void;
 }
 
 export interface VoiceMemoryOptions {
-  client: Pick<MemoryEngineClient, 'brief' | 'recall'> & Partial<Pick<MemoryEngineClient, 'activity'>>;
+  client: Pick<MemoryEngineClient, 'brief' | 'recall'> &
+    Partial<Pick<MemoryEngineClient, 'activity'>>;
   currentSessionId: () => string | null;
   agentName: () => string;
   /** The avatar's id, so the engine can add its own goals, intentions and flows. */
@@ -46,13 +54,23 @@ export const BRIEF_TIMEOUT_MS = 600;
 export const RECALL_TIMEOUT_MS = 150;
 
 function formatNow(now: Date): string {
-  const day = now.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const day = now.toLocaleDateString('en-AU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
   const time = now.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
   return `${day}, ${time}`;
 }
 
 function formatDay(date: Date): string {
-  return date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 /**
@@ -63,7 +81,12 @@ function withoutTags(text: string): string {
   return text
     .replace(/\{[^}]*\}/g, ' ')
     .split('\n')
-    .map((line) => line.replace(/[ \t]+/g, ' ').replace(/ ([,.;:!?…])/g, '$1').trim())
+    .map((line) =>
+      line
+        .replace(/[ \t]+/g, ' ')
+        .replace(/ ([,.;:!?…])/g, '$1')
+        .trim(),
+    )
     .join('\n');
 }
 
@@ -90,7 +113,9 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
   if (coding.length) {
     lines.push('', 'Recent coding work (search it with recall_memories source "coding"):');
     for (const task of coding) {
-      const pr = task.pr_url ? `, PR ${task.pr_url}${task.pr_state ? ` (${task.pr_state})` : ''}` : '';
+      const pr = task.pr_url
+        ? `, PR ${task.pr_url}${task.pr_state ? ` (${task.pr_state})` : ''}`
+        : '';
       lines.push(`- ${task.workspace}: ${oneLine(task.title)} (${task.outcome}${pr})`);
     }
   }
@@ -98,7 +123,11 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
   if (handoff?.text) {
     const when = new Date(handoff.written_at);
     const by = handoff.model ? `, written by ${handoff.model}` : '';
-    lines.push('', `The note you left yourself for this conversation (${describeAgo(when, now)}${by}):`, handoff.text);
+    lines.push(
+      '',
+      `The note you left yourself for this conversation (${describeAgo(when, now)}${by}):`,
+      handoff.text,
+    );
   }
   const intentions = brief?.intentions ?? [];
   const goals = intentions.filter((item) => item.kind === 'goal');
@@ -107,7 +136,10 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
     lines.push('', "What you're in the middle of:");
     for (const item of doing) {
       const dueAt = item.due_at ? new Date(item.due_at) : null;
-      const due = dueAt && !Number.isNaN(dueAt.getTime()) ? ` (due ${formatDay(dueAt)} ${dueAt.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })})` : '';
+      const due =
+        dueAt && !Number.isNaN(dueAt.getTime())
+          ? ` (due ${formatDay(dueAt)} ${dueAt.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })})`
+          : '';
       lines.push(`- ${oneLine(item.text)}${due}${item.status === 'waiting' ? ' [waiting]' : ''}`);
     }
   }
@@ -118,7 +150,8 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
   const flows = brief?.flows ?? [];
   if (flows.length) {
     lines.push('', 'Your workflows (run them with run_flow, change them with write_flow):');
-    for (const flow of flows) lines.push(`- ${flow.name}${flow.description ? `: ${oneLine(flow.description)}` : ''}`);
+    for (const flow of flows)
+      lines.push(`- ${flow.name}${flow.description ? `: ${oneLine(flow.description)}` : ''}`);
   }
   const state = brief?.agent_state;
   if (state?.asleep) lines.push('', 'You are asleep right now.');
@@ -126,7 +159,10 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
   if (last?.summary) {
     const when = new Date(last.last_at);
     const who = last.agent ? `, with ${last.agent}` : '';
-    lines.push('', `Your last conversation (${describeAgo(when, now)}${who}): ${oneLine(withoutTags(last.summary))}`);
+    lines.push(
+      '',
+      `Your last conversation (${describeAgo(when, now)}${who}): ${oneLine(withoutTags(last.summary))}`,
+    );
   } else if (last && last.turns.length) {
     const when = new Date(last.last_at);
     const who = last.agent ? `, with ${last.agent}` : '';
@@ -144,11 +180,16 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
 }
 
 export function formatRecalled(items: MemoryEngineSearchResult[], now: Date): string {
-  const lines = ['<recalled>', 'From long-term memory, in case it helps. Mention it only if it is relevant:'];
+  const lines = [
+    '<recalled>',
+    'From long-term memory, in case it helps. Mention it only if it is relevant:',
+  ];
   for (const item of items) {
     const when = new Date(item.period_start);
     const label = item.kind === 'fact' ? 'noted' : 'talked';
-    lines.push(`- ${formatDay(when)} (${describeAgo(when, now)}, ${label}): ${oneLine(withoutTags(item.text))}`);
+    lines.push(
+      `- ${formatDay(when)} (${describeAgo(when, now)}, ${label}): ${oneLine(withoutTags(item.text))}`,
+    );
   }
   lines.push('</recalled>');
   return lines.join('\n');
@@ -195,7 +236,10 @@ export function createVoiceMemory(options: VoiceMemoryOptions): VoiceMemory {
           options.recallTimeoutMs ?? RECALL_TIMEOUT_MS,
         );
         if (!result.items.length) return null;
-        return { block: formatRecalled(result.items, now()), ids: result.items.map((item) => item.id) };
+        return {
+          block: formatRecalled(result.items, now()),
+          ids: result.items.map((item) => item.id),
+        };
       } catch (error) {
         options.logger?.debug?.('Auto-recall skipped', {
           message: error instanceof Error ? error.message : String(error),

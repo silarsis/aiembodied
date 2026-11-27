@@ -1,5 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { MCPClient } from './base-client.js';
 import type { MCPToolDefinition } from '../types.js';
 import { normalizeCallToolResult, normalizeToolList, toolsChangedOptions } from './mcp-response.js';

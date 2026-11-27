@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
-import { DEFAULT_IDLE_SETTINGS, sanitizeIdleSettings, type IdleSettings } from '../../../main/src/shared/rooms/idle-settings.js';
-import type { GeneratedObjectSummary, ObjectSettings, ObjectSettingsView } from '../../../main/src/shared/rooms/object-settings.js';
-import type { RoomGenerationProgress } from '../../../main/src/rooms/room-generation.js';
-import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
+import type {
+  BackgroundBridge,
+  BackgroundSummary,
+} from '../../../main/src/shared/backgrounds/types.js';
+import {
+  DEFAULT_IDLE_SETTINGS,
+  sanitizeIdleSettings,
+  type IdleSettings,
+} from '../../../main/src/shared/rooms/idle-settings.js';
+import type {
+  GeneratedObjectSummary,
+  ObjectSettings,
+  ObjectSettingsView,
+} from '../../../main/src/shared/rooms/object-settings.js';
+import type { RoomGenerationProgress } from '../../../main/src/shared/rooms/room-generation-types.js';
+import type { RoomFile, RoomSummary } from '../../../main/src/shared/rooms/types.js';
 
 export const isRoomId = (id: string | null): id is string => Boolean(id?.startsWith('room:'));
 
@@ -112,7 +123,8 @@ export function useBackgrounds(api?: BackgroundBridge, forcedId?: string | null)
     api
       .getMakingRoom?.()
       .then((roomId) => {
-        if (!cancelled && roomId) setRoomMaking((previous) => previous ?? { roomId, message: 'Making new objects…' });
+        if (!cancelled && roomId)
+          setRoomMaking((previous) => previous ?? { roomId, message: 'Making new objects…' });
       })
       .catch(() => undefined);
     return () => {
@@ -236,7 +248,11 @@ export function useBackgrounds(api?: BackgroundBridge, forcedId?: string | null)
       } else if (progress.phase === 'done' && progress.roomId) {
         setRoomMaking(null);
         const notes = progress.warnings ?? [];
-        if (notes.length) setRoomWarnings((previous) => [...previous, ...notes.filter((note) => !previous.includes(note))]);
+        if (notes.length)
+          setRoomWarnings((previous) => [
+            ...previous,
+            ...notes.filter((note) => !previous.includes(note)),
+          ]);
         void refreshGenerated();
       } else {
         setRoomProgress(progress.message);
@@ -275,7 +291,10 @@ export function useBackgrounds(api?: BackgroundBridge, forcedId?: string | null)
         if (!alive.current) return true;
         setRooms(next);
         setRoomWarnings(result.warnings);
-        if (result.making) setRoomMaking((previous) => previous ?? { roomId: result.room.id, message: 'Making new objects…' });
+        if (result.making)
+          setRoomMaking(
+            (previous) => previous ?? { roomId: result.room.id, message: 'Making new objects…' },
+          );
         await api.setActive(result.room.id);
         if (alive.current) setActiveId(result.room.id);
         return true;
@@ -325,7 +344,8 @@ export function useBackgrounds(api?: BackgroundBridge, forcedId?: string | null)
         const current = activeIdRef.current;
         if (isRoomId(current)) {
           const room = await api.loadRoom(current);
-          if (alive.current && activeIdRef.current === current) setLoadedRoom({ id: current, room });
+          if (alive.current && activeIdRef.current === current)
+            setLoadedRoom({ id: current, room });
         }
       } catch (cause) {
         if (alive.current) setError(message(cause));

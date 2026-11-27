@@ -5,9 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { PlaceManager } from '../../src/places/place-manager.js';
 import { RoomDeviceRegistry } from '../../src/room-hub/room-devices.js';
-import { FIREWALL_NOTE, RoomHub, fileMarker, isLoopback, isTailscaleAddress, slugPlaceId, tailscaleAddresses } from '../../src/room-hub/room-hub.js';
+import {
+  FIREWALL_NOTE,
+  RoomHub,
+  fileMarker,
+  isLoopback,
+  isTailscaleAddress,
+  slugPlaceId,
+  tailscaleAddresses,
+} from '../../src/room-hub/room-hub.js';
 import { isAllowedChannel } from '../../src/room-hub/allowlist.js';
-import { decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../../src/shared/room-hub/frames.js';
+import {
+  decodeMessage,
+  encodeBinaryFrame,
+  encodeMessage,
+  type Op,
+} from '../../src/shared/room-hub/frames.js';
 import type { TailscaleIdentity, TailscaleLookup } from '../../src/room-hub/tailscale.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
@@ -30,7 +43,11 @@ class Client {
 
   private constructor(readonly ws: WebSocket) {
     ws.on('message', (data: Buffer, isBinary: boolean) => {
-      const decoded = decodeMessage(isBinary ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : data.toString('utf8'));
+      const decoded = decodeMessage(
+        isBinary
+          ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+          : data.toString('utf8'),
+      );
       this.messages.push(decoded);
       this.waiters.splice(0).forEach((wake) => wake());
     });
@@ -56,12 +73,18 @@ class Client {
     this.ws.send(typeof op === 'string' || op instanceof Uint8Array ? op : encodeMessage(op));
   }
 
-  async next(match: (op: Op) => boolean, timeoutMs = 3000): Promise<{ op: Op; payload: Uint8Array | null }> {
+  async next(
+    match: (op: Op) => boolean,
+    timeoutMs = 3000,
+  ): Promise<{ op: Op; payload: Uint8Array | null }> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const index = this.messages.findIndex((message) => match(message.op));
       if (index >= 0) return this.messages.splice(index, 1)[0];
-      if (Date.now() > deadline) throw new Error(`No matching message. Got: ${JSON.stringify(this.messages.map((message) => message.op.op))}`);
+      if (Date.now() > deadline)
+        throw new Error(
+          `No matching message. Got: ${JSON.stringify(this.messages.map((message) => message.op.op))}`,
+        );
       await new Promise<void>((resolve) => {
         this.waiters.push(resolve);
         setTimeout(resolve, 50);
@@ -90,7 +113,15 @@ interface Options {
   trustLoopback?: boolean;
   platform?: NodeJS.Platform;
   firewallNoted?: { has(): boolean; mark(): void };
-  handlers?: Record<string, (event: { sender: { send: (channel: string, ...args: unknown[]) => void; isDestroyed(): boolean } }, ...args: unknown[]) => unknown>;
+  handlers?: Record<
+    string,
+    (
+      event: {
+        sender: { send: (channel: string, ...args: unknown[]) => void; isDestroyed(): boolean };
+      },
+      ...args: unknown[]
+    ) => unknown
+  >;
 }
 
 async function startHub(options: Options = {}) {
@@ -98,12 +129,25 @@ async function startHub(options: Options = {}) {
   cleanups.push(() => rmSync(folder, { recursive: true, force: true }));
   const assetRoot = path.join(folder, 'assets');
   mkdirSync(path.join(assetRoot, 'polyhaven', 'chair'), { recursive: true });
-  writeFileSync(path.join(assetRoot, 'polyhaven', 'chair', 'chair.glb'), Buffer.from([1, 2, 3, 4, 5]));
+  writeFileSync(
+    path.join(assetRoot, 'polyhaven', 'chair', 'chair.glb'),
+    Buffer.from([1, 2, 3, 4, 5]),
+  );
   const data = new Map<string, string>();
-  const store = { getValue: (key: string) => data.get(key) ?? null, setValue: (key: string, value: string) => void data.set(key, value) };
+  const store = {
+    getValue: (key: string) => data.get(key) ?? null,
+    setValue: (key: string, value: string) => void data.set(key, value),
+  };
   const published: SwitchboardEventInput[] = [];
-  const bus = { publish: (event: SwitchboardEventInput) => (published.push(event), null) } as unknown as SwitchboardBus;
-  const places = new PlaceManager({ store, registry: { list: () => PROFILES }, bus: () => bus, graceMs: options.graceMs ?? 60_000 });
+  const bus = {
+    publish: (event: SwitchboardEventInput) => (published.push(event), null),
+  } as unknown as SwitchboardBus;
+  const places = new PlaceManager({
+    store,
+    registry: { list: () => PROFILES },
+    bus: () => bus,
+    graceMs: options.graceMs ?? 60_000,
+  });
   const registry = new RoomDeviceRegistry(path.join(folder, 'room-devices.json'));
   const handlers = options.handlers ?? {};
   const hub = new RoomHub({
@@ -134,14 +178,25 @@ async function pair(hub: RoomHub, body: Record<string, unknown> = {}) {
   const response = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: started.code, deviceName: "Kevin's desk", placeName: 'the study', ...body }),
+    body: JSON.stringify({
+      code: started.code,
+      deviceName: "Kevin's desk",
+      placeName: 'the study',
+      ...body,
+    }),
   });
   return { response, json: (await response.json()) as Record<string, unknown>, code: started.code };
 }
 
 async function connect(hub: RoomHub, paired: Record<string, unknown>) {
   const client = await Client.open(hub.port() as number);
-  client.send({ op: 'hello', protocol: 1, deviceId: paired.deviceId, token: paired.token, appVersion: 'test' });
+  client.send({
+    op: 'hello',
+    protocol: 1,
+    deviceId: paired.deviceId,
+    token: paired.token,
+    appVersion: 'test',
+  });
   return client;
 }
 
@@ -166,10 +221,18 @@ describe('RoomHub', () => {
     const folder = mkdtempSync(path.join(tmpdir(), 'room-hub-firewall-'));
     cleanups.push(() => rmSync(folder, { recursive: true, force: true }));
     const marker = fileMarker(path.join(folder, 'noted'));
-    const first = await startHub({ platform: 'win32', firewallNoted: marker, env: { ROOM_HUB_ENABLED: '1' } });
+    const first = await startHub({
+      platform: 'win32',
+      firewallNoted: marker,
+      env: { ROOM_HUB_ENABLED: '1' },
+    });
     expect(first.hub.status().firewallNote).toBe(FIREWALL_NOTE);
     expect(marker.has()).toBe(true);
-    const later = await startHub({ platform: 'win32', firewallNoted: marker, env: { ROOM_HUB_ENABLED: '1' } });
+    const later = await startHub({
+      platform: 'win32',
+      firewallNoted: marker,
+      env: { ROOM_HUB_ENABLED: '1' },
+    });
     expect(later.hub.status().firewallNote).toBeNull();
     const linux = await startHub({ platform: 'linux', env: { ROOM_HUB_ENABLED: '1' } });
     expect(linux.hub.status().firewallNote).toBeNull();
@@ -185,10 +248,17 @@ describe('RoomHub', () => {
     expect(json.deviceId).toMatch(/^room-/);
     expect(typeof json.token).toBe('string');
     expect(places.get('study')).toMatchObject({ name: 'the study', node: json.deviceId });
-    expect(registry.get(json.deviceId as string)).toMatchObject({ name: "Kevin's desk", placeId: 'study', tailscaleNode: null });
+    expect(registry.get(json.deviceId as string)).toMatchObject({
+      name: "Kevin's desk",
+      placeId: 'study',
+      tailscaleNode: null,
+    });
     expect(published.map((event) => event.type)).toContain('place.paired');
     // The code is one-time.
-    const again = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, { method: 'POST', body: JSON.stringify({ code }) });
+    const again = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
     expect(again.status).toBe(401);
     // The hub keeps running because a device is paired now.
     expect(hub.status().running).toBe(true);
@@ -197,25 +267,47 @@ describe('RoomHub', () => {
   it('uses the room name typed on bija over the one the satellite sends, and keeps place ids unique', async () => {
     const { hub, places } = await startHub();
     await hub.startPairing('Attic');
-    let response = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, { method: 'POST', body: JSON.stringify({ code: hub.status().pairing?.code, placeName: 'the study' }) });
+    let response = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, {
+      method: 'POST',
+      body: JSON.stringify({ code: hub.status().pairing?.code, placeName: 'the study' }),
+    });
     expect(((await response.json()) as { placeId: string }).placeId).toBe('attic');
     await hub.startPairing('Attic');
-    response = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, { method: 'POST', body: JSON.stringify({ code: hub.status().pairing?.code }) });
+    response = await fetch(`http://127.0.0.1:${hub.port()}/v1/pair`, {
+      method: 'POST',
+      body: JSON.stringify({ code: hub.status().pairing?.code }),
+    });
     expect(((await response.json()) as { placeId: string }).placeId).toBe('attic-2');
-    expect(places.list().map((place) => place.id)).toEqual(['home', 'next-door', 'attic', 'attic-2']);
+    expect(places.list().map((place) => place.id)).toEqual([
+      'home',
+      'next-door',
+      'attic',
+      'attic-2',
+    ]);
   });
 
   it('refuses a wrong code (401), journals it, and locks the address out after 10 (429)', async () => {
     const { hub, published } = await startHub();
     await hub.startPairing();
     const url = `http://127.0.0.1:${hub.port()}/v1/pair`;
-    const wrong = async () => (await fetch(url, { method: 'POST', body: JSON.stringify({ code: '000000x' }) })).status;
+    const wrong = async () =>
+      (await fetch(url, { method: 'POST', body: JSON.stringify({ code: '000000x' }) })).status;
     for (let i = 0; i < 9; i += 1) expect(await wrong()).toBe(401);
     expect(await wrong()).toBe(429);
     // Even the right code is refused now.
-    expect((await fetch(url, { method: 'POST', body: JSON.stringify({ code: hub.status().pairing?.code }) })).status).toBe(429);
+    expect(
+      (
+        await fetch(url, {
+          method: 'POST',
+          body: JSON.stringify({ code: hub.status().pairing?.code }),
+        })
+      ).status,
+    ).toBe(429);
     expect(published.filter((event) => event.type === 'place.refused')).toHaveLength(10);
-    expect(published.find((event) => event.type === 'place.refused')?.payload).toMatchObject({ address: '127.0.0.1', code: 'pairing-code' });
+    expect(published.find((event) => event.type === 'place.refused')?.payload).toMatchObject({
+      address: '127.0.0.1',
+      code: 'pairing-code',
+    });
   });
 
   it('answers 404 to other paths and 400 to a body that is not JSON', async () => {
@@ -243,7 +335,10 @@ describe('RoomHub', () => {
     expect(snapshot.places.find((place) => place.id === 'study')?.online).toBe(true);
     expect(places.isOnline('study')).toBe(true);
     expect(hub.status().devices[0]).toMatchObject({ placeId: 'study', online: true });
-    expect(published.find((event) => event.type === 'place.online')).toMatchObject({ scene: 'study', payload: { placeId: 'study', deviceId: json.deviceId } });
+    expect(published.find((event) => event.type === 'place.online')).toMatchObject({
+      scene: 'study',
+      payload: { placeId: 'study', deviceId: json.deviceId },
+    });
     client.send({ op: 'ping', t: 42 });
     expect((await client.next((message) => message.op === 'pong')).op.t).toBe(42);
   });
@@ -252,15 +347,23 @@ describe('RoomHub', () => {
     const { hub } = await startHub();
     const { json } = await pair(hub);
     const bad = await connect(hub, { ...json, token: 'x'.repeat(43) });
-    expect((await bad.next((message) => message.op === 'error')).op).toMatchObject({ code: 'auth' });
+    expect((await bad.next((message) => message.op === 'error')).op).toMatchObject({
+      code: 'auth',
+    });
     expect((await bad.waitClosed()).code).toBe(1008);
     const unknown = await connect(hub, { deviceId: 'room-nope', token: json.token });
-    expect((await unknown.next((message) => message.op === 'error')).op).toMatchObject({ code: 'auth' });
+    expect((await unknown.next((message) => message.op === 'error')).op).toMatchObject({
+      code: 'auth',
+    });
     const silent = await Client.open(hub.port() as number);
-    expect((await silent.next((message) => message.op === 'error')).op).toMatchObject({ code: 'hello-timeout' });
+    expect((await silent.next((message) => message.op === 'error')).op).toMatchObject({
+      code: 'hello-timeout',
+    });
     const early = await Client.open(hub.port() as number);
     early.send({ op: 'ping', t: 1 });
-    expect((await early.next((message) => message.op === 'error')).op).toMatchObject({ code: 'auth' });
+    expect((await early.next((message) => message.op === 'error')).op).toMatchObject({
+      code: 'auth',
+    });
   });
 
   it('refuses a protocol mismatch with both versions', async () => {
@@ -268,7 +371,11 @@ describe('RoomHub', () => {
     const { json } = await pair(hub);
     const client = await Client.open(hub.port() as number);
     client.send({ op: 'hello', protocol: 2, deviceId: json.deviceId, token: json.token });
-    expect((await client.next((message) => message.op === 'error')).op).toMatchObject({ code: 'protocol', hub: 1, client: 2 });
+    expect((await client.next((message) => message.op === 'error')).op).toMatchObject({
+      code: 'protocol',
+      hub: 1,
+      client: 2,
+    });
     expect((await client.waitClosed()).code).toBe(1008);
   });
 
@@ -281,7 +388,9 @@ describe('RoomHub', () => {
     expect((await client.waitClosed()).code).toBe(1008);
     expect(places.get('study')).toBeNull();
     const again = await connect(hub, json);
-    expect((await again.next((message) => message.op === 'error')).op).toMatchObject({ code: 'auth' });
+    expect((await again.next((message) => message.op === 'error')).op).toMatchObject({
+      code: 'auth',
+    });
   });
 
   it('keeps one connection per device: a new hello closes the old socket', async () => {
@@ -300,9 +409,15 @@ describe('RoomHub', () => {
 
   describe('peer check (Tailscale)', () => {
     // The tests connect from 127.0.0.1; `trustLoopback: false` makes the hub treat that address like a remote one.
-    function remote(peer: TailscaleIdentity | null, self: TailscaleIdentity | null = { node: 'bija', login: 'kevin@example.com' }) {
+    function remote(
+      peer: TailscaleIdentity | null,
+      self: TailscaleIdentity | null = { node: 'bija', login: 'kevin@example.com' },
+    ) {
       const state = { peer, self };
-      const tailscale: TailscaleLookup = { whois: async () => state.peer, self: async () => state.self };
+      const tailscale: TailscaleLookup = {
+        whois: async () => state.peer,
+        self: async () => state.self,
+      };
       return { state, tailscale };
     }
     const desk = { node: 'kevins-desk', login: 'kevin@example.com' };
@@ -312,9 +427,14 @@ describe('RoomHub', () => {
       const { hub, registry } = await startHub({ tailscale, trustLoopback: false });
       const { response, json } = await pair(hub);
       expect(response.status).toBe(200);
-      expect(registry.get(json.deviceId as string)).toMatchObject({ tailscaleNode: 'kevins-desk', tailscaleLogin: 'kevin@example.com' });
+      expect(registry.get(json.deviceId as string)).toMatchObject({
+        tailscaleNode: 'kevins-desk',
+        tailscaleLogin: 'kevin@example.com',
+      });
       const client = await connect(hub, json);
-      expect((await client.next((message) => message.op === 'welcome' || message.op === 'error')).op.op).toBe('welcome');
+      expect(
+        (await client.next((message) => message.op === 'welcome' || message.op === 'error')).op.op,
+      ).toBe('welcome');
     });
 
     it('refuses pairing from another login, or when Tailscale cannot say who it is', async () => {
@@ -328,7 +448,9 @@ describe('RoomHub', () => {
       expect(attempt.response.status).toBe(403);
       // The code was not used up by the refusal.
       expect(second.hub.status().pairing?.code).toBe(attempt.code);
-      expect(second.published.find((event) => event.type === 'place.refused')?.payload).toMatchObject({ code: 'peer' });
+      expect(
+        second.published.find((event) => event.type === 'place.refused')?.payload,
+      ).toMatchObject({ code: 'peer' });
     });
 
     it('refuses a connection from another node, another login, or when the CLI fails', async () => {
@@ -336,8 +458,16 @@ describe('RoomHub', () => {
       const { hub } = await startHub({ tailscale, trustLoopback: false });
       const { json } = await pair(hub);
       const cases: Array<[string, TailscaleIdentity | null, TailscaleIdentity | null]> = [
-        ['another node', { node: 'laptop', login: 'kevin@example.com' }, { node: 'bija', login: 'kevin@example.com' }],
-        ['another login', { node: 'kevins-desk', login: 'eve@example.com' }, { node: 'bija', login: 'kevin@example.com' }],
+        [
+          'another node',
+          { node: 'laptop', login: 'kevin@example.com' },
+          { node: 'bija', login: 'kevin@example.com' },
+        ],
+        [
+          'another login',
+          { node: 'kevins-desk', login: 'eve@example.com' },
+          { node: 'bija', login: 'kevin@example.com' },
+        ],
         ['no whois', null, { node: 'bija', login: 'kevin@example.com' }],
         ['no self', desk, null],
       ];
@@ -345,7 +475,9 @@ describe('RoomHub', () => {
         state.peer = peer;
         state.self = self;
         const client = await connect(hub, json);
-        expect((await client.next((message) => message.op === 'error')).op).toMatchObject({ code: 'peer' });
+        expect((await client.next((message) => message.op === 'error')).op).toMatchObject({
+          code: 'peer',
+        });
         expect((await client.waitClosed()).code).toBe(1008);
       }
     });
@@ -379,7 +511,9 @@ describe('RoomHub', () => {
       client.send({ op: 'call', ref: 'r1', channel: 'avatar-model:load', args: ['m1'] });
       const ipc = await client.next((message) => message.op === 'ipc');
       expect(ipc.op).toMatchObject({ channel: 'avatar-model:progress', args: ['half'] });
-      const result = await client.next((message) => message.op === 'result' && message.ref === 'r1');
+      const result = await client.next(
+        (message) => message.op === 'result' && message.ref === 'r1',
+      );
       const value = result.op.value as { id: string; data: Uint8Array };
       expect(value.id).toBe('m1');
       expect([...value.data]).toEqual([9, 8, 7]);
@@ -389,42 +523,73 @@ describe('RoomHub', () => {
     });
 
     it('takes binary values in args', async () => {
-      const { hub } = await startHub({ handlers: { 'avatar-model:load': (_event, ...args) => (args[0] as Uint8Array).byteLength } });
+      const { hub } = await startHub({
+        handlers: { 'avatar-model:load': (_event, ...args) => (args[0] as Uint8Array).byteLength },
+      });
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
-      client.send({ op: 'call', ref: 'b', channel: 'avatar-model:load', args: [new Uint8Array(1000)] });
+      client.send({
+        op: 'call',
+        ref: 'b',
+        channel: 'avatar-model:load',
+        args: [new Uint8Array(1000)],
+      });
       expect((await client.next((message) => message.ref === 'b')).op.value).toBe(1000);
     });
 
     it('denies channels outside the allowlist, without running them', async () => {
       const secret = vi.fn();
-      const { hub } = await startHub({ handlers: { 'config:get-secret': secret, 'models:set-key': secret, 'app:quit': secret } });
+      const { hub } = await startHub({
+        handlers: { 'config:get-secret': secret, 'models:set-key': secret, 'app:quit': secret },
+      });
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
-      for (const channel of ['config:get-secret', 'models:set-key', 'app:quit', 'avatar-model:delete', '']) {
+      for (const channel of [
+        'config:get-secret',
+        'models:set-key',
+        'app:quit',
+        'avatar-model:delete',
+        '',
+      ]) {
         client.send({ op: 'call', ref: channel || 'empty', channel, args: [] });
-        expect((await client.next((message) => message.ref === (channel || 'empty'))).op).toMatchObject({ op: 'error', code: 'denied' });
+        expect(
+          (await client.next((message) => message.ref === (channel || 'empty'))).op,
+        ).toMatchObject({ op: 'error', code: 'denied' });
       }
       expect(secret).not.toHaveBeenCalled();
       expect(isAllowedChannel('places:move')).toBe(true);
       expect(isAllowedChannel('coding:set')).toBe(false);
     });
 
-    it('runs a handler with the caller\'s place on the event, so the handler can answer for that place', async () => {
+    it("runs a handler with the caller's place on the event, so the handler can answer for that place", async () => {
       const seen: unknown[] = [];
       const { hub } = await startHub({
         handlers: {
-          'local-voice:respond': ((event: { placeId?: string }) => (seen.push(event.placeId), 'ok')) as never,
-          'avatars:set-tag-instructions': ((event: { placeId?: string }) => (seen.push(event.placeId), undefined)) as never,
+          'local-voice:respond': ((event: { placeId?: string }) => (
+            seen.push(event.placeId),
+            'ok'
+          )) as never,
+          'avatars:set-tag-instructions': ((event: { placeId?: string }) => (
+            seen.push(event.placeId),
+            undefined
+          )) as never,
         },
       });
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
-      client.send({ op: 'call', ref: 'talk', channel: 'local-voice:respond', args: [{ requestId: 'r', text: 'hi' }] });
-      expect((await client.next((message) => message.ref === 'talk')).op).toMatchObject({ op: 'result', value: 'ok' });
+      client.send({
+        op: 'call',
+        ref: 'talk',
+        channel: 'local-voice:respond',
+        args: [{ requestId: 'r', text: 'hi' }],
+      });
+      expect((await client.next((message) => message.ref === 'talk')).op).toMatchObject({
+        op: 'result',
+        value: 'ok',
+      });
       client.send({ op: 'call', ref: 'tags', channel: 'avatars:set-tag-instructions', args: [{}] });
       await client.next((message) => message.ref === 'tags');
       expect(seen).toEqual(['study', 'study']);
@@ -432,17 +597,56 @@ describe('RoomHub', () => {
 
     it('allows what talking and moving need, and still no writes to settings, models, keys, avatars, coding or the app', () => {
       for (const channel of [
-        'local-voice:respond', 'local-voice:cancel', 'local-voice:status', 'local-voice:system-status', 'local-voice:voice-options', 'local-voice:transcribe',
-        'avatar-motion:stream', 'avatar-motion:cancel', 'avatar-motion:status', 'floor:interrupt', 'avatars:set-tag-instructions', 'avatars:idle-personas',
-        'presence:update', 'presence:get-dnd', 'rooms:idle-pick', 'conversation:get-history',
+        'local-voice:respond',
+        'local-voice:cancel',
+        'local-voice:status',
+        'local-voice:system-status',
+        'local-voice:voice-options',
+        'local-voice:transcribe',
+        'avatar-motion:stream',
+        'avatar-motion:cancel',
+        'avatar-motion:status',
+        'floor:interrupt',
+        'avatars:set-tag-instructions',
+        'avatars:idle-personas',
+        'presence:update',
+        'presence:get-dnd',
+        'rooms:idle-pick',
+        'conversation:get-history',
       ]) {
         expect(isAllowedChannel(channel), channel).toBe(true);
       }
       for (const channel of [
-        'presence:set-dnd', 'floor:set-hear-chatter', 'local-voice:reset', 'config:set-providers', 'config:set-secret', 'config:get-secret', 'models:set-key', 'models:save-server',
-        'avatars:add', 'avatars:update', 'avatars:remove', 'avatar-model:upload', 'avatar-model:delete', 'avatar-model:set-active', 'background:set-active', 'background:generate',
-        'coding:start-task', 'coding:set', 'mcp:execute-tool', 'rooms:generate', 'rooms:delete', 'avatar:generation-start', 'avatar:prompt:set-preference', 'avatar:voice:set-preference',
-        'realtime:mint-ephemeral-token', 'app:quit', 'room-hub:revoke', 'room-hub:start-pairing', 'memory-engine:add-fact', 'approvals:approve',
+        'presence:set-dnd',
+        'floor:set-hear-chatter',
+        'local-voice:reset',
+        'config:set-providers',
+        'config:set-secret',
+        'config:get-secret',
+        'models:set-key',
+        'models:save-server',
+        'avatars:add',
+        'avatars:update',
+        'avatars:remove',
+        'avatar-model:upload',
+        'avatar-model:delete',
+        'avatar-model:set-active',
+        'background:set-active',
+        'background:generate',
+        'coding:start-task',
+        'coding:set',
+        'mcp:execute-tool',
+        'rooms:generate',
+        'rooms:delete',
+        'avatar:generation-start',
+        'avatar:prompt:set-preference',
+        'avatar:voice:set-preference',
+        'realtime:mint-ephemeral-token',
+        'app:quit',
+        'room-hub:revoke',
+        'room-hub:start-pairing',
+        'memory-engine:add-fact',
+        'approvals:approve',
       ]) {
         expect(isAllowedChannel(channel), channel).toBe(false);
       }
@@ -453,11 +657,25 @@ describe('RoomHub', () => {
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
-      expect(hub.sendToPlace('study', { op: 'ipc', channel: 'local-voice:event', args: [{ requestId: 'c1', type: 'sentence' }] })).toBe(true);
-      expect((await client.next((message) => message.op === 'ipc' && message.channel === 'local-voice:event')).op.args).toEqual([{ requestId: 'c1', type: 'sentence' }]);
+      expect(
+        hub.sendToPlace('study', {
+          op: 'ipc',
+          channel: 'local-voice:event',
+          args: [{ requestId: 'c1', type: 'sentence' }],
+        }),
+      ).toBe(true);
+      expect(
+        (
+          await client.next(
+            (message) => message.op === 'ipc' && message.channel === 'local-voice:event',
+          )
+        ).op.args,
+      ).toEqual([{ requestId: 'c1', type: 'sentence' }]);
       expect(hub.sendToPlace('home', { op: 'ipc', channel: 'x', args: [] })).toBe(false);
       hub.sendToAll({ op: 'ipc', channel: 'rooms:updated', args: ['room:abc'] });
-      expect((await client.next((message) => message.channel === 'rooms:updated')).op.args).toEqual(['room:abc']);
+      expect((await client.next((message) => message.channel === 'rooms:updated')).op.args).toEqual(
+        ['room:abc'],
+      );
     });
 
     it('answers unknown ops and calls with no handler with an error', async () => {
@@ -466,11 +684,17 @@ describe('RoomHub', () => {
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
       client.send({ op: 'call', ref: 'x', channel: 'avatars:list', args: [] });
-      expect((await client.next((message) => message.ref === 'x')).op).toMatchObject({ code: 'unavailable' });
+      expect((await client.next((message) => message.ref === 'x')).op).toMatchObject({
+        code: 'unavailable',
+      });
       client.send({ op: 'dance', ref: 'y' });
-      expect((await client.next((message) => message.ref === 'y')).op).toMatchObject({ code: 'unknown-op' });
+      expect((await client.next((message) => message.ref === 'y')).op).toMatchObject({
+        code: 'unknown-op',
+      });
       client.send('{not json');
-      expect((await client.next((message) => message.op === 'error')).op).toMatchObject({ code: 'bad-frame' });
+      expect((await client.next((message) => message.op === 'error')).op).toMatchObject({
+        code: 'bad-frame',
+      });
     });
 
     it('reports a handler that throws', async () => {
@@ -485,7 +709,10 @@ describe('RoomHub', () => {
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
       client.send({ op: 'call', ref: 'e', channel: 'avatars:list', args: [] });
-      expect((await client.next((message) => message.ref === 'e')).op).toMatchObject({ code: 'failed', message: 'registry is down' });
+      expect((await client.next((message) => message.ref === 'e')).op).toMatchObject({
+        code: 'failed',
+        message: 'registry is down',
+      });
     });
 
     it('answers places:snapshot relative to the satellite', async () => {
@@ -494,13 +721,17 @@ describe('RoomHub', () => {
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
       client.send({ op: 'call', ref: 's', channel: 'places:snapshot', args: [] });
-      const snapshot = (await client.next((message) => message.ref === 's')).op.value as { localPlaceId: string };
+      const snapshot = (await client.next((message) => message.ref === 's')).op.value as {
+        localPlaceId: string;
+      };
       expect(snapshot.localPlaceId).toBe('study');
     });
 
     it('lets only the destination place confirm an arrival', async () => {
       const arrived = vi.fn();
-      const { hub, places } = await startHub({ handlers: { 'places:arrived': (_event, ...args) => arrived(...args) } });
+      const { hub, places } = await startHub({
+        handlers: { 'places:arrived': (_event, ...args) => arrived(...args) },
+      });
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
@@ -521,7 +752,11 @@ describe('RoomHub', () => {
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
-      client.send({ op: 'asset.get', ref: 'a', url: 'aiembodied-asset://polyhaven/chair/chair.glb' });
+      client.send({
+        op: 'asset.get',
+        ref: 'a',
+        url: 'aiembodied-asset://polyhaven/chair/chair.glb',
+      });
       const asset = await client.next((message) => message.op === 'asset');
       expect(asset.op).toMatchObject({ ref: 'a', mime: 'model/gltf-binary' });
       expect([...(asset.payload ?? [])]).toEqual([1, 2, 3, 4, 5]);
@@ -532,9 +767,17 @@ describe('RoomHub', () => {
       const { json } = await pair(hub);
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
-      for (const url of ['aiembodied-asset://polyhaven/../secret', 'aiembodied-asset://polyhaven/chair/missing.glb', 'file:///etc/passwd', 'aiembodied-asset://polyhaven']) {
+      for (const url of [
+        'aiembodied-asset://polyhaven/../secret',
+        'aiembodied-asset://polyhaven/chair/missing.glb',
+        'file:///etc/passwd',
+        'aiembodied-asset://polyhaven',
+      ]) {
         client.send({ op: 'asset.get', ref: url, url });
-        expect((await client.next((message) => message.ref === url)).op).toMatchObject({ op: 'error', code: 'not-found' });
+        expect((await client.next((message) => message.ref === url)).op).toMatchObject({
+          op: 'error',
+          code: 'not-found',
+        });
       }
     });
   });
@@ -546,8 +789,15 @@ describe('RoomHub', () => {
       const client = await connect(hub, json);
       await client.next((message) => message.op === 'welcome');
       places.rename('next-door', 'the shed');
-      const pushed = await client.next((message) => message.op === 'ipc' && message.channel === 'places:changed');
-      const snapshot = (pushed.op.args as Array<{ localPlaceId: string; places: Array<{ id: string; name: string }> }>)[0];
+      const pushed = await client.next(
+        (message) => message.op === 'ipc' && message.channel === 'places:changed',
+      );
+      const snapshot = (
+        pushed.op.args as Array<{
+          localPlaceId: string;
+          places: Array<{ id: string; name: string }>;
+        }>
+      )[0];
       expect(snapshot.localPlaceId).toBe('study');
       expect(snapshot.places.find((place) => place.id === 'next-door')?.name).toBe('the shed');
     });
@@ -564,10 +814,15 @@ describe('RoomHub', () => {
       expect(places.locationOf('sage')).toBe('study');
       client.ws.close();
       await vi.waitFor(() => expect(places.isOnline('study')).toBe(false));
-      expect(published.find((event) => event.type === 'place.offline')).toMatchObject({ scene: 'study' });
+      expect(published.find((event) => event.type === 'place.offline')).toMatchObject({
+        scene: 'study',
+      });
       // Grace: still there, and nobody can walk in.
       expect(places.locationOf('sage')).toBe('study');
-      expect(places.startMove('echo', 'study', 'chose to')).toEqual({ ok: false, reason: 'the study is closed' });
+      expect(places.startMove('echo', 'study', 'chose to')).toEqual({
+        ok: false,
+        reason: 'the study is closed',
+      });
       await vi.waitFor(() => expect(places.inTransit('sage')).toBe(true));
       expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'study', to: 'home' }]);
       expect(published.at(-1)?.payload).toMatchObject({ reason: 'room closed' });
@@ -594,7 +849,9 @@ describe('RoomHub', () => {
     const client = await connect(hub, json);
     await client.next((message) => message.op === 'welcome');
     expect(hub.deviceOff(json.deviceId as string, 'locked')).toBe(true);
-    expect((await client.next((message) => message.op === 'device.off')).op).toMatchObject({ reason: 'locked' });
+    expect((await client.next((message) => message.op === 'device.off')).op).toMatchObject({
+      reason: 'locked',
+    });
     expect(hub.deviceOff('room-nope', 'x')).toBe(false);
   });
 
@@ -603,7 +860,10 @@ describe('RoomHub', () => {
     const folder = mkdtempSync(path.join(tmpdir(), 'room-hub-'));
     cleanups.push(() => rmSync(folder, { recursive: true, force: true }));
     const data = new Map<string, string>();
-    const places = new PlaceManager({ store: { getValue: (k) => data.get(k) ?? null, setValue: (k, v) => void data.set(k, v) }, registry: { list: () => PROFILES } });
+    const places = new PlaceManager({
+      store: { getValue: (k) => data.get(k) ?? null, setValue: (k, v) => void data.set(k, v) },
+      registry: { list: () => PROFILES },
+    });
     const hub = new RoomHub({
       registry: new RoomDeviceRegistry(null),
       places,
@@ -621,11 +881,21 @@ describe('RoomHub', () => {
     const { json } = await pair(hub);
     const client = await connect(hub, json);
     await client.next((message) => message.op === 'welcome');
-    client.send({ op: 'device.state', mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: false });
+    client.send({
+      op: 'device.state',
+      mic: 'live',
+      camera: 'off',
+      speakers: 'live',
+      locked: false,
+      closed: false,
+    });
     client.send({ op: 'ping', t: 1 });
     await client.next((message) => message.op === 'pong');
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ from: { placeId: 'study' }, op: { op: 'device.state', mic: 'live' } });
+    expect(seen[0]).toMatchObject({
+      from: { placeId: 'study' },
+      op: { op: 'device.state', mic: 'live' },
+    });
   });
 
   it('exports a frame helper that a binary hello can use', () => {
@@ -637,12 +907,23 @@ describe('RoomHub', () => {
 
 describe('room hub helpers', () => {
   it('knows the Tailscale range 100.64.0.0/10', () => {
-    for (const address of ['100.64.0.1', '100.101.102.103', '100.127.255.254']) expect(isTailscaleAddress(address)).toBe(true);
-    for (const address of ['100.63.0.1', '100.128.0.1', '192.168.1.5', '10.0.0.1', '0.0.0.0', '100.64.0', 'fe80::1']) expect(isTailscaleAddress(address)).toBe(false);
+    for (const address of ['100.64.0.1', '100.101.102.103', '100.127.255.254'])
+      expect(isTailscaleAddress(address)).toBe(true);
+    for (const address of [
+      '100.63.0.1',
+      '100.128.0.1',
+      '192.168.1.5',
+      '10.0.0.1',
+      '0.0.0.0',
+      '100.64.0',
+      'fe80::1',
+    ])
+      expect(isTailscaleAddress(address)).toBe(false);
   });
 
   it('picks only IPv4 Tailscale addresses from the interfaces, never 0.0.0.0', () => {
-    const entry = (address: string, family: 'IPv4' | 'IPv6' = 'IPv4') => ({ address, family, internal: false, netmask: '', cidr: null, mac: '' }) as never;
+    const entry = (address: string, family: 'IPv4' | 'IPv6' = 'IPv4') =>
+      ({ address, family, internal: false, netmask: '', cidr: null, mac: '' }) as never;
     expect(
       tailscaleAddresses({
         Ethernet: [entry('192.168.1.20'), entry('fe80::1', 'IPv6')],

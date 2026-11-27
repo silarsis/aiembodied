@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { PageActivity } from '../../src/web-satellite/page-activity.js';
 
 function setup(options: { foreground?: boolean; linkUp?: boolean } = {}) {
-  const state = { now: 1_000_000, foreground: options.foreground ?? true, linkUp: options.linkUp ?? true };
+  const state = {
+    now: 1_000_000,
+    foreground: options.foreground ?? true,
+    linkUp: options.linkUp ?? true,
+  };
   const sent: number[] = [];
   let tick: (() => void) | null = null;
   const clear = vi.fn();

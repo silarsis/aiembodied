@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeMicNode, fakeAudioWorklet, micNodeOf } from './fake-mic.js';
 import { LocalVoiceClient } from '../../src/realtime/local-voice-client.js';
 import type { LocalVoiceBridge } from '../../src/preload-api.js';
-import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceEvent } from '../../../main/src/shared/local-voice/types.js';
 import type { VoiceActivity } from '../../src/realtime/voice-activity.js';
 
 const SAMPLE_RATE = 16000;
@@ -24,7 +24,13 @@ function createFakeContext() {
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
-    createBufferSource: vi.fn(() => ({ ...node(), buffer: null, start: vi.fn(), stop: vi.fn(), onended: null })),
+    createBufferSource: vi.fn(() => ({
+      ...node(),
+      buffer: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      onended: null,
+    })),
   };
   return { context: context as unknown as AudioContext, processor };
 }
@@ -36,9 +42,16 @@ function createBridge(overrides: Partial<LocalVoiceBridge> = {}) {
       llm: { available: true, baseUrl: 'http://llm' },
       speech: { available: true, ready: true, error: null },
     })) as unknown as LocalVoiceBridge['getStatus'],
-    transcribe: vi.fn(async () => ({ text: 'Hey Jarvis, what time is it?' })) as unknown as LocalVoiceBridge['transcribe'],
+    transcribe: vi.fn(async () => ({
+      text: 'Hey Jarvis, what time is it?',
+    })) as unknown as LocalVoiceBridge['transcribe'],
     respond: vi.fn(async (request: { requestId: string }) => {
-      listener?.({ type: 'sentence', requestId: request.requestId, text: 'It is noon.', wav: new Uint8Array([1]) } as LocalVoiceEvent);
+      listener?.({
+        type: 'sentence',
+        requestId: request.requestId,
+        text: 'It is noon.',
+        wav: new Uint8Array([1]),
+      } as LocalVoiceEvent);
       return { text: 'It is noon.', cancelled: false };
     }) as unknown as LocalVoiceBridge['respond'],
     cancel: vi.fn(async () => undefined),
@@ -72,7 +85,8 @@ describe('LocalVoiceClient talk (push-to-talk and tap)', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => context,
+      createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks: { onActivity: (next) => activity.push(next) },
     });
@@ -93,15 +107,27 @@ describe('LocalVoiceClient talk (push-to-talk and tap)', () => {
   it('answers speech without the wake word after talk()', async () => {
     const { client, bridge, speak, phases } = await setup();
     client.talk();
-    expect(client.getActivity()).toMatchObject({ phase: 'listening', detail: 'Listening: no wake word needed' });
+    expect(client.getActivity()).toMatchObject({
+      phase: 'listening',
+      detail: 'Listening: no wake word needed',
+    });
 
     speak(8, true);
     speak(8, false);
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(bridge.transcribe).toHaveBeenCalledTimes(1);
-    expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({ text: 'what time is it?' }));
-    expect(phases()).toEqual(['waiting', 'listening', 'transcribing', 'thinking', 'responding', 'listening']);
+    expect(bridge.respond).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'what time is it?' }),
+    );
+    expect(phases()).toEqual([
+      'waiting',
+      'listening',
+      'transcribing',
+      'thinking',
+      'responding',
+      'listening',
+    ]);
   });
 
   it('goes back to waiting for the wake word if nothing is said', async () => {
@@ -149,7 +175,10 @@ describe('LocalVoiceClient talk (push-to-talk and tap)', () => {
     client.talk();
     await vi.advanceTimersByTimeAsync(1000);
     expect(bridge.cancel).toHaveBeenCalledTimes(1);
-    expect(client.getActivity()).toMatchObject({ phase: 'listening', detail: 'Follow-up: no wake word needed' });
+    expect(client.getActivity()).toMatchObject({
+      phase: 'listening',
+      detail: 'Follow-up: no wake word needed',
+    });
   });
 
   it('listens as soon as it connects when talk() came first', async () => {

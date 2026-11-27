@@ -46,13 +46,18 @@ export function createChatCompletionsResponsesClient(options: {
           // llama-server's Qwen template: answer directly instead of thinking first.
           chat_template_kwargs: { enable_thinking: false },
         };
-        if (typeof params.max_output_tokens === 'number' && params.max_output_tokens > 0) body.max_tokens = Math.floor(params.max_output_tokens);
+        if (typeof params.max_output_tokens === 'number' && params.max_output_tokens > 0)
+          body.max_tokens = Math.floor(params.max_output_tokens);
         if (typeof params.temperature === 'number') body.temperature = params.temperature;
         const format = params.text?.format;
         if (format?.type === 'json_schema') {
           body.response_format = {
             type: 'json_schema',
-            json_schema: { name: format.name ?? 'output', schema: format.schema, strict: format.strict ?? true },
+            json_schema: {
+              name: format.name ?? 'output',
+              schema: format.schema,
+              strict: format.strict ?? true,
+            },
           };
         } else if (format?.type === 'json_object') {
           body.response_format = { type: 'json_object' };
@@ -68,9 +73,13 @@ export function createChatCompletionsResponsesClient(options: {
         });
         if (!response.ok) {
           const detail = (await response.text().catch(() => '')).slice(0, 300);
-          throw new Error(`The chat server at ${baseUrl} answered ${response.status}${detail ? `: ${detail}` : '.'}`);
+          throw new Error(
+            `The chat server at ${baseUrl} answered ${response.status}${detail ? `: ${detail}` : '.'}`,
+          );
         }
-        const json = (await response.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+        const json = (await response.json()) as {
+          choices?: Array<{ message?: { content?: unknown } }>;
+        };
         const content = json.choices?.[0]?.message?.content;
         return { output_text: typeof content === 'string' ? stripThinking(content) : '' };
       },
@@ -87,7 +96,7 @@ export function toChatMessages(params: ResponsesParams): Array<{ role: string; c
     return messages;
   }
   for (const message of params.input ?? []) {
-    const role = message.role === 'developer' ? 'system' : message.role ?? 'user';
+    const role = message.role === 'developer' ? 'system' : (message.role ?? 'user');
     if (typeof message.content === 'string') {
       messages.push({ role, content: message.content });
       continue;
@@ -100,7 +109,9 @@ export function toChatMessages(params: ResponsesParams): Array<{ role: string; c
     // A text-only message goes as a plain string: some servers reject part lists for system messages.
     messages.push({
       role,
-      content: parts.every((part) => part.type === 'text') ? parts.map((part) => (part as { text: string }).text).join('\n') : parts,
+      content: parts.every((part) => part.type === 'text')
+        ? parts.map((part) => (part as { text: string }).text).join('\n')
+        : parts,
     });
   }
   return messages;

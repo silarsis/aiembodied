@@ -3,7 +3,10 @@ import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
-type Processor = { process(inputs: Float32Array[][]): boolean; port: { postMessage: (m: Float32Array, t: unknown[]) => void } };
+type Processor = {
+  process(inputs: Float32Array[][]): boolean;
+  port: { postMessage: (m: Float32Array, t: unknown[]) => void };
+};
 
 function loadProcessor(frameSize?: number) {
   const posted: Float32Array[] = [];
@@ -11,7 +14,10 @@ function loadProcessor(frameSize?: number) {
   class AudioWorkletProcessor {
     port = { postMessage: (frame: Float32Array) => posted.push(frame) };
   }
-  const source = readFileSync(resolve(process.cwd(), 'src/realtime/mic-capture.worklet.js'), 'utf8');
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/realtime/mic-capture.worklet.js'),
+    'utf8',
+  );
   runInNewContext(source, {
     AudioWorkletProcessor,
     Float32Array,

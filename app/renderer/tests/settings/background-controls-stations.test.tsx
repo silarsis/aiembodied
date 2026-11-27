@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundControls } from '../../src/backgrounds/background-controls.js';
 import { useBackgrounds } from '../../src/backgrounds/use-backgrounds.js';
-import type { BackgroundBridge } from '../../../main/src/backgrounds/types.js';
-import type { StationView } from '../../../main/src/stations/types.js';
+import type { BackgroundBridge } from '../../../main/src/shared/backgrounds/types.js';
+import type { StationView } from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, StationsBridge } from '../../src/preload-api.js';
 import { builtInRoom } from '../rooms/fixtures.js';
 
@@ -23,7 +23,15 @@ const papersStation: StationView = {
   objectName: 'bookshelf',
 };
 
-function Harness({ api, stations, mcp }: { api: BackgroundBridge; stations?: StationsBridge; mcp?: McpBridge }) {
+function Harness({
+  api,
+  stations,
+  mcp,
+}: {
+  api: BackgroundBridge;
+  stations?: StationsBridge;
+  mcp?: McpBridge;
+}) {
   const state = useBackgrounds(api);
   return <BackgroundControls backgrounds={state} stations={stations} mcp={mcp} />;
 }
@@ -36,7 +44,12 @@ function bridges(list: StationView[] = [papersStation]) {
     load: vi.fn().mockResolvedValue(''),
     listRooms: vi.fn().mockResolvedValue([{ id: reading.id, name: 'Reading room', builtIn: true }]),
     loadRoom: vi.fn().mockResolvedValue(reading),
-    getIdleSettings: vi.fn().mockResolvedValue({ enabled: true, restlessness: 'normal', onTalk: 'turn', avatarHeight: 1.6 }),
+    getIdleSettings: vi.fn().mockResolvedValue({
+      enabled: true,
+      restlessness: 'normal',
+      onTalk: 'turn',
+      avatarHeight: 1.6,
+    }),
     setIdleSettings: vi.fn(),
     getObjectSettings: vi.fn().mockResolvedValue({ enabled: true, maxPerRoom: 3, available: true }),
     setObjectSettings: vi.fn(),
@@ -66,9 +79,16 @@ describe('Things kept in the room', () => {
   it('shows each walkable object with what it holds, and the trip choice for one that holds something', async () => {
     const { api, stations, mcp } = bridges();
     render(<Harness api={api} stations={stations} mcp={mcp} />);
-    const bookshelf = (await screen.findByLabelText('What the bookshelf holds')) as HTMLSelectElement;
+    const bookshelf = (await screen.findByLabelText(
+      'What the bookshelf holds',
+    )) as HTMLSelectElement;
     await waitFor(() => expect(bookshelf.value).toBe('mcp:dair'));
-    expect(Array.from(bookshelf.options).map((option) => option.textContent)).toEqual(['None', 'DAIR Academy papers', 'Home Assistant', 'Web search']);
+    expect(Array.from(bookshelf.options).map((option) => option.textContent)).toEqual([
+      'None',
+      'DAIR Academy papers',
+      'Home Assistant',
+      'Web search',
+    ]);
     expect(screen.getByLabelText('What the sofa holds')).toHaveValue('none');
     expect(screen.getByLabelText('When to walk to the bookshelf')).toHaveValue('all');
     // Only objects that hold something show the trip choice.
@@ -78,20 +98,37 @@ describe('Things kept in the room', () => {
   });
 
   it('lets a station pick where to read and what to take, keeping its gestures', async () => {
-    const withBody: StationView = { ...papersStation, body: { prop: 'book', seat: 'armchair', browse: 'browses', read: 'reads' } };
+    const withBody: StationView = {
+      ...papersStation,
+      body: { prop: 'book', seat: 'armchair', browse: 'browses', read: 'reads' },
+    };
     const { api, stations, mcp } = bridges([withBody]);
     render(<Harness api={api} stations={stations} mcp={mcp} />);
-    const seat = (await screen.findByLabelText('Where to read what is kept on the bookshelf')) as HTMLSelectElement;
+    const seat = (await screen.findByLabelText(
+      'Where to read what is kept on the bookshelf',
+    )) as HTMLSelectElement;
     await waitFor(() => expect(seat.value).toBe('armchair'));
     // Seats are the objects with a sit tag; props are dynamic objects with a grab tag.
-    expect(Array.from(seat.options).map((option) => option.value)).toEqual(['', 'sofa', 'armchair']);
+    expect(Array.from(seat.options).map((option) => option.value)).toEqual([
+      '',
+      'sofa',
+      'armchair',
+    ]);
     const take = screen.getByLabelText('What to take from the bookshelf') as HTMLSelectElement;
     expect(take.value).toBe('book');
     expect(Array.from(take.options).map((option) => option.value)).toEqual(['', 'mug', 'book']);
     fireEvent.change(seat, { target: { value: 'sofa' } });
-    await waitFor(() => expect(stations.update).toHaveBeenCalledWith(withBody.id, { body: { prop: 'book', seat: 'sofa', browse: 'browses', read: 'reads' } }));
+    await waitFor(() =>
+      expect(stations.update).toHaveBeenCalledWith(withBody.id, {
+        body: { prop: 'book', seat: 'sofa', browse: 'browses', read: 'reads' },
+      }),
+    );
     fireEvent.change(take, { target: { value: '' } });
-    await waitFor(() => expect(stations.update).toHaveBeenLastCalledWith(withBody.id, { body: { seat: 'armchair', browse: 'browses', read: 'reads' } }));
+    await waitFor(() =>
+      expect(stations.update).toHaveBeenLastCalledWith(withBody.id, {
+        body: { seat: 'armchair', browse: 'browses', read: 'reads' },
+      }),
+    );
     // Only an object that holds something has them.
     expect(screen.queryByLabelText('Where to read what is kept on the sofa')).toBeNull();
   });
@@ -99,13 +136,27 @@ describe('Things kept in the room', () => {
   it('makes an object hold a server, and clears it with None', async () => {
     const { api, stations, mcp } = bridges([]);
     render(<Harness api={api} stations={stations} mcp={mcp} />);
-    fireEvent.change(await screen.findByLabelText('What the sofa holds'), { target: { value: 'mcp:ha' } });
+    fireEvent.change(await screen.findByLabelText('What the sofa holds'), {
+      target: { value: 'mcp:ha' },
+    });
     await waitFor(() =>
-      expect(stations.hold).toHaveBeenCalledWith(reading.id, 'sofa', { kind: 'mcp', serverId: 'ha' }, { verb: 'use', activity: 'uses the sofa' }),
+      expect(stations.hold).toHaveBeenCalledWith(
+        reading.id,
+        'sofa',
+        { kind: 'mcp', serverId: 'ha' },
+        { verb: 'use', activity: 'uses the sofa' },
+      ),
     );
-    fireEvent.change(screen.getByLabelText('What the sofa holds'), { target: { value: 'builtin:web_search' } });
+    fireEvent.change(screen.getByLabelText('What the sofa holds'), {
+      target: { value: 'builtin:web_search' },
+    });
     await waitFor(() =>
-      expect(stations.hold).toHaveBeenCalledWith(reading.id, 'sofa', { kind: 'builtin', toolNames: ['web_search'] }, expect.anything()),
+      expect(stations.hold).toHaveBeenCalledWith(
+        reading.id,
+        'sofa',
+        { kind: 'builtin', toolNames: ['web_search'] },
+        expect.anything(),
+      ),
     );
   });
 
@@ -115,9 +166,18 @@ describe('Things kept in the room', () => {
     const bookshelf = await screen.findByLabelText('What the bookshelf holds');
     await waitFor(() => expect(bookshelf).toHaveValue('mcp:dair'));
     fireEvent.change(bookshelf, { target: { value: 'mcp:ha' } });
-    await waitFor(() => expect(stations.hold).toHaveBeenCalledWith(reading.id, 'bookshelf', { kind: 'mcp', serverId: 'ha' }, {}));
+    await waitFor(() =>
+      expect(stations.hold).toHaveBeenCalledWith(
+        reading.id,
+        'bookshelf',
+        { kind: 'mcp', serverId: 'ha' },
+        {},
+      ),
+    );
     fireEvent.change(bookshelf, { target: { value: 'none' } });
-    await waitFor(() => expect(stations.hold).toHaveBeenLastCalledWith(reading.id, 'bookshelf', null, {}));
+    await waitFor(() =>
+      expect(stations.hold).toHaveBeenLastCalledWith(reading.id, 'bookshelf', null, {}),
+    );
   });
 
   it("saves 'Every use' or 'Only changes'", async () => {
@@ -125,8 +185,12 @@ describe('Things kept in the room', () => {
     render(<Harness api={api} stations={stations} mcp={mcp} />);
     const trip = await screen.findByLabelText('When to walk to the bookshelf');
     fireEvent.change(trip, { target: { value: 'writes' } });
-    await waitFor(() => expect(stations.update).toHaveBeenCalledWith(papersStation.id, { trip: 'writes' }));
-    expect(Array.from((trip as HTMLSelectElement).options).map((option) => option.textContent)).toEqual(['Every use', 'Only changes']);
+    await waitFor(() =>
+      expect(stations.update).toHaveBeenCalledWith(papersStation.id, { trip: 'writes' }),
+    );
+    expect(
+      Array.from((trip as HTMLSelectElement).options).map((option) => option.textContent),
+    ).toEqual(['Every use', 'Only changes']);
   });
 
   it('is not shown without the stations bridge', async () => {

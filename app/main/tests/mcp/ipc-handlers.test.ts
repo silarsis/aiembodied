@@ -17,6 +17,9 @@ describe('MCP IPC Handlers', () => {
   let mockMCPManager: any;
   let mockToolRegistry: any;
   let handlers: Map<string, Function>;
+  const handle = (channel: string, handler: Function) => {
+    handlers.set(channel, handler);
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,7 +42,9 @@ describe('MCP IPC Handlers', () => {
       testConnection: vi.fn().mockResolvedValue({ success: true }),
       signIn: vi.fn().mockResolvedValue({ success: true }),
       signOut: vi.fn().mockResolvedValue(undefined),
-      listPresets: vi.fn().mockReturnValue([{ id: 'p', name: 'P', description: 'd', url: 'https://p' }]),
+      listPresets: vi
+        .fn()
+        .mockReturnValue([{ id: 'p', name: 'P', description: 'd', url: 'https://p' }]),
       addPreset: vi.fn().mockResolvedValue({ id: 'server-2', name: 'P' }),
       listTools: vi.fn().mockReturnValue([]),
       updateToolPreferences: vi.fn().mockResolvedValue(undefined),
@@ -52,7 +57,7 @@ describe('MCP IPC Handlers', () => {
       getOpenAIFunctionDefinitions: vi.fn().mockReturnValue([]),
     };
 
-    registerMCPHandlers(mockMCPManager, mockToolRegistry);
+    registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
   });
 
   describe('server management handlers', () => {
@@ -104,7 +109,10 @@ describe('MCP IPC Handlers', () => {
           stdioEnv: { KEY: 'env-secret' },
         },
       ]);
-      const servers = (await handlers.get('mcp:list-servers')!({}, undefined)) as Record<string, unknown>[];
+      const servers = (await handlers.get('mcp:list-servers')!({}, undefined)) as Record<
+        string,
+        unknown
+      >[];
       expect(JSON.stringify(servers)).not.toContain('top-secret');
       expect(JSON.stringify(servers)).not.toContain('env-secret');
       expect(servers[0]).toMatchObject({ hasAuthToken: true, stdioEnvKeys: ['KEY'] });
@@ -237,20 +245,14 @@ describe('MCP IPC Handlers', () => {
       const emitter = new EventEmitter();
       mockMCPManager.on = emitter.on.bind(emitter);
       mockMCPManager.emit = emitter.emit.bind(emitter);
-      registerMCPHandlers(mockMCPManager, mockToolRegistry);
+      registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
 
       // Emit event
       const event = { serverId: 'server-1', status: 'connected' as const };
       emitter.emit('server-status-changed', event);
 
-      expect(mockWindow1.webContents.send).toHaveBeenCalledWith(
-        'mcp:server-status-changed',
-        event,
-      );
-      expect(mockWindow2.webContents.send).toHaveBeenCalledWith(
-        'mcp:server-status-changed',
-        event,
-      );
+      expect(mockWindow1.webContents.send).toHaveBeenCalledWith('mcp:server-status-changed', event);
+      expect(mockWindow2.webContents.send).toHaveBeenCalledWith('mcp:server-status-changed', event);
     });
 
     it('forwards tools-discovered events to all windows', () => {
@@ -266,7 +268,7 @@ describe('MCP IPC Handlers', () => {
       const emitter = new EventEmitter();
       mockMCPManager.on = emitter.on.bind(emitter);
       mockMCPManager.emit = emitter.emit.bind(emitter);
-      registerMCPHandlers(mockMCPManager, mockToolRegistry);
+      registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
 
       // Emit event
       emitter.emit('tools-discovered', 'server-1', 5);
@@ -284,7 +286,7 @@ describe('MCP IPC Handlers', () => {
       const emitter = new EventEmitter();
       mockMCPManager.on = emitter.on.bind(emitter);
       mockMCPManager.emit = emitter.emit.bind(emitter);
-      registerMCPHandlers(mockMCPManager, mockToolRegistry);
+      registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
 
       // Should not throw when emitting with no windows
       expect(() => {

@@ -8,8 +8,12 @@ import { mkdir, writeFile, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const URL_ = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
-const target = resolve(dirname(fileURLToPath(import.meta.url)), '../app/renderer/public/models/blaze_face_short_range.tflite');
+const URL_ =
+  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+const target = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../app/renderer/public/models/blaze_face_short_range.tflite',
+);
 
 const have = await stat(target).catch(() => null);
 if (have && have.size > 100_000) {

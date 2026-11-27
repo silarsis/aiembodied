@@ -42,7 +42,10 @@ describe('Encryption', () => {
   describe('decryptToken', () => {
     it('decrypts token when encryption is available', async () => {
       vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValue(true);
-      vi.mocked(safeStorage.decryptStringAsync).mockResolvedValue({ shouldReEncrypt: false, result: 'decrypted-token' });
+      vi.mocked(safeStorage.decryptStringAsync).mockResolvedValue({
+        shouldReEncrypt: false,
+        result: 'decrypted-token',
+      });
 
       // Input should be base64-encoded
       const encryptedBase64 = Buffer.from('encrypted-data').toString('base64');
@@ -73,15 +76,16 @@ describe('Encryption', () => {
 
       vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValue(true);
       vi.mocked(safeStorage.encryptStringAsync).mockResolvedValue(encryptedBuffer);
-      vi.mocked(safeStorage.decryptStringAsync).mockResolvedValue({ shouldReEncrypt: false, result: original });
+      vi.mocked(safeStorage.decryptStringAsync).mockResolvedValue({
+        shouldReEncrypt: false,
+        result: original,
+      });
 
       const encrypted = await encryptToken(original);
       const decrypted = await decryptToken(encrypted);
 
       expect(safeStorage.encryptStringAsync).toHaveBeenCalledWith(original);
-      expect(safeStorage.decryptStringAsync).toHaveBeenCalledWith(
-        Buffer.from(encrypted, 'base64'),
-      );
+      expect(safeStorage.decryptStringAsync).toHaveBeenCalledWith(Buffer.from(encrypted, 'base64'));
       expect(decrypted).toBe(original);
     });
   });

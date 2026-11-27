@@ -11,7 +11,11 @@ export function trayRoomName(placeName: string | null): string {
   return bare ? bare.charAt(0).toUpperCase() + bare.slice(1) : 'This room';
 }
 
-const WORDS: Record<DeviceLevel, string> = { live: 'mic live', doorbell: 'doorbell only', off: 'off' };
+const WORDS: Record<DeviceLevel, string> = {
+  live: 'mic live',
+  doorbell: 'doorbell only',
+  off: 'off',
+};
 
 export function trayTooltip(placeName: string | null, state: Pick<DeviceGateState, 'mic'>): string {
   return `${trayRoomName(placeName)}: ${WORDS[state.mic]}`;

@@ -4,7 +4,7 @@
  * shapes to find seat surfaces, so what is drawn, what blocks and what you sit on cannot drift apart.
  */
 import * as THREE from 'three';
-import type { RoomObject, RoomPart, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomObject, RoomPart, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { degToRad } from './room-geometry.js';
 
 export interface Quat {
@@ -50,7 +50,12 @@ const IDENTITY: Quat = { x: 0, y: 0, z: 0, w: 1 };
 function partRotation(part: RoomPart): Quat {
   if (!part.rotation) return IDENTITY;
   const q = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(degToRad(part.rotation[0]), degToRad(part.rotation[1]), degToRad(part.rotation[2]), 'XYZ'),
+    new THREE.Euler(
+      degToRad(part.rotation[0]),
+      degToRad(part.rotation[1]),
+      degToRad(part.rotation[2]),
+      'XYZ',
+    ),
   );
   return { x: q.x, y: q.y, z: q.z, w: q.w };
 }
@@ -58,10 +63,17 @@ function partRotation(part: RoomPart): Quat {
 /** One shape per part. `offset` is the part's centre (room-builder sets the mesh position to it). */
 export function partShapes(parts: readonly RoomPart[]): LocalShape[] {
   return parts.map((part): LocalShape => {
-    const base = { translation: [part.offset[0], part.offset[1], part.offset[2]] as Vec3, rotation: partRotation(part) };
+    const base = {
+      translation: [part.offset[0], part.offset[1], part.offset[2]] as Vec3,
+      rotation: partRotation(part),
+    };
     switch (part.shape) {
       case 'box':
-        return { kind: 'cuboid', halfExtents: [part.size[0] / 2, part.size[1] / 2, part.size[2] / 2], ...base };
+        return {
+          kind: 'cuboid',
+          halfExtents: [part.size[0] / 2, part.size[1] / 2, part.size[2] / 2],
+          ...base,
+        };
       case 'cylinder':
         return { kind: 'cylinder', halfHeight: part.height / 2, radius: part.radius, ...base };
       case 'sphere':
@@ -118,11 +130,20 @@ export function modelShapes(root: THREE.Object3D): LocalShape[] | null {
         position.push(point.x, point.y, point.z);
       }
       for (let i = 0; i + 2 < count; i += 3) {
-        for (let k = 0; k < 3; k += 1) index.push(base + (geo.index ? geo.index.getX(i + k) : i + k));
+        for (let k = 0; k < 3; k += 1)
+          index.push(base + (geo.index ? geo.index.getX(i + k) : i + k));
       }
     });
     if (tooBig || index.length === 0) return null;
-    return [{ kind: 'trimesh', vertices: new Float32Array(position), indices: new Uint32Array(index), translation: [0, 0, 0], rotation: IDENTITY }];
+    return [
+      {
+        kind: 'trimesh',
+        vertices: new Float32Array(position),
+        indices: new Uint32Array(index),
+        translation: [0, 0, 0],
+        rotation: IDENTITY,
+      },
+    ];
   } catch (error) {
     console.warn('[rooms] could not build a collision mesh from the model', error);
     return null;
@@ -135,8 +156,17 @@ export function modelShapes(root: THREE.Object3D): LocalShape[] | null {
  */
 export function shapeTopAt(shape: LocalShape, x: number, z: number, fromY: number): number | null {
   if (shape.kind === 'trimesh') return null;
-  const inverse = new THREE.Quaternion(shape.rotation.x, shape.rotation.y, shape.rotation.z, shape.rotation.w).invert();
-  const origin = new THREE.Vector3(x - shape.translation[0], fromY - shape.translation[1], z - shape.translation[2]).applyQuaternion(inverse);
+  const inverse = new THREE.Quaternion(
+    shape.rotation.x,
+    shape.rotation.y,
+    shape.rotation.z,
+    shape.rotation.w,
+  ).invert();
+  const origin = new THREE.Vector3(
+    x - shape.translation[0],
+    fromY - shape.translation[1],
+    z - shape.translation[2],
+  ).applyQuaternion(inverse);
   const dir = new THREE.Vector3(0, -1, 0).applyQuaternion(inverse);
   let tIn = 0;
   let tOut = Infinity;
@@ -165,10 +195,15 @@ export function shapeTopAt(shape: LocalShape, x: number, z: number, fromY: numbe
   let hit: boolean;
   switch (shape.kind) {
     case 'cuboid':
-      hit = slab(origin.x, dir.x, shape.halfExtents[0]) && slab(origin.y, dir.y, shape.halfExtents[1]) && slab(origin.z, dir.z, shape.halfExtents[2]);
+      hit =
+        slab(origin.x, dir.x, shape.halfExtents[0]) &&
+        slab(origin.y, dir.y, shape.halfExtents[1]) &&
+        slab(origin.z, dir.z, shape.halfExtents[2]);
       break;
     case 'cylinder':
-      hit = slab(origin.y, dir.y, shape.halfHeight) && disc([origin.x, origin.z], [dir.x, dir.z], shape.radius);
+      hit =
+        slab(origin.y, dir.y, shape.halfHeight) &&
+        disc([origin.x, origin.z], [dir.x, dir.z], shape.radius);
       break;
     case 'ball':
       hit = disc([origin.x, origin.y, origin.z], [dir.x, dir.y, dir.z], shape.radius);

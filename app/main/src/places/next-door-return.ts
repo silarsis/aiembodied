@@ -12,7 +12,11 @@ import { wanderRefusal } from '../shared/places/wander.js';
 
 export const NEXT_DOOR_TICK_MS = 60_000;
 /** The chance, each tick, that an avatar next door comes back (when it may). */
-export const RETURN_CHANCE: Record<Restlessness, number> = { calm: 0.05, normal: 0.1, restless: 0.2 };
+export const RETURN_CHANCE: Record<Restlessness, number> = {
+  calm: 0.05,
+  normal: 0.1,
+  restless: 0.2,
+};
 
 type Places = Pick<PlaceManager, 'snapshot' | 'startMove' | 'avatarsAt'>;
 
@@ -42,7 +46,10 @@ export class NextDoorReturn {
 
   stop(): void {
     if (this.handle === null) return;
-    (this.options.clearInterval ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>)))(this.handle);
+    (
+      this.options.clearInterval ??
+      ((handle) => clearInterval(handle as ReturnType<typeof setInterval>))
+    )(this.handle);
     this.handle = null;
   }
 
@@ -51,7 +58,14 @@ export class NextDoorReturn {
     const lively = view.places
       .filter((place) => place.node !== 'offscreen')
       .sort((a, b) => (view.activeAt?.[b.id] ?? 0) - (view.activeAt?.[a.id] ?? 0));
-    return lively.find((place) => wanderRefusal(view, avatarId, place.id, { talkedAgoMs: this.options.talkedAgoMs(avatarId) }) === null)?.id ?? null;
+    return (
+      lively.find(
+        (place) =>
+          wanderRefusal(view, avatarId, place.id, {
+            talkedAgoMs: this.options.talkedAgoMs(avatarId),
+          }) === null,
+      )?.id ?? null
+    );
   }
 
   /** One roll. Returns the avatar that was sent back and where, or null. */
@@ -73,7 +87,10 @@ export class NextDoorReturn {
     if ((this.options.rng ?? Math.random)() >= RETURN_CHANCE[level]) return null;
     const started = places.startMove(first.avatarId, first.placeId, 'wandered');
     if (!started.ok) {
-      this.options.logger?.info('An avatar next door could not come back', { ...first, reason: started.reason });
+      this.options.logger?.info('An avatar next door could not come back', {
+        ...first,
+        reason: started.reason,
+      });
       return null;
     }
     this.options.logger?.info('An avatar came back from next door', first);
@@ -88,12 +105,17 @@ export class NextDoorReturn {
     const { places } = this.options;
     const view = places.snapshot();
     const nextDoor = view.places.filter((place) => place.node === 'offscreen');
-    if (!nextDoor.some((place) => places.avatarsAt(place.id).includes(avatarId))) return { moved: false, reason: 'not next door' };
+    if (!nextDoor.some((place) => places.avatarsAt(place.id).includes(avatarId)))
+      return { moved: false, reason: 'not next door' };
     const target = this.targetFor(view, avatarId);
     if (!target) return { moved: false, reason: 'nobody is anywhere it may go' };
     const started = places.startMove(avatarId, target, 'wandered');
     if (!started.ok) {
-      this.options.logger?.info('An avatar next door could not come back', { avatarId, placeId: target, reason: started.reason });
+      this.options.logger?.info('An avatar next door could not come back', {
+        avatarId,
+        placeId: target,
+        reason: started.reason,
+      });
       return { moved: false, reason: started.reason };
     }
     this.options.logger?.info('An avatar came back from next door', { avatarId, placeId: target });

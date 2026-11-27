@@ -7,7 +7,8 @@ export type ActorKind = 'avatar' | 'person' | 'tool' | 'service' | 'sensor' | 'd
 export type AddressKind = ActorKind | 'scene' | 'cap';
 export type Address = `${AddressKind}:${string}`;
 
-export type TxnState = 'open' | 'accepted' | 'waiting' | 'progress' | 'done' | 'failed' | 'cancelled' | 'expired';
+export type TxnState =
+  'open' | 'accepted' | 'waiting' | 'progress' | 'done' | 'failed' | 'cancelled' | 'expired';
 export type Audience = 'private' | 'household' | 'shareable';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 

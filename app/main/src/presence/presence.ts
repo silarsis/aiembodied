@@ -3,10 +3,19 @@
  * spoke, whether the camera sees a face, and do-not-disturb (persisted). The deliberator reads
  * `describe()` as part of its prompt. Everything here is best effort and never throws.
  */
-export type PresenceVoicePhase = 'off' | 'waiting' | 'listening' | 'transcribing' | 'thinking' | 'responding' | 'error';
+export type PresenceVoicePhase =
+  'off' | 'waiting' | 'listening' | 'transcribing' | 'thinking' | 'responding' | 'error';
 
 export const PRESENCE_DND_KEY = 'presence.doNotDisturb';
-const VOICE_PHASES: readonly PresenceVoicePhase[] = ['off', 'waiting', 'listening', 'transcribing', 'thinking', 'responding', 'error'];
+const VOICE_PHASES: readonly PresenceVoicePhase[] = [
+  'off',
+  'waiting',
+  'listening',
+  'transcribing',
+  'thinking',
+  'responding',
+  'error',
+];
 
 export interface PresenceStore {
   getValue(key: string): string | null;
@@ -40,7 +49,8 @@ export function isVoicePhase(value: unknown): value is PresenceVoicePhase {
   return typeof value === 'string' && (VOICE_PHASES as readonly string[]).includes(value);
 }
 
-const age = (now: number, at: number | null): number | null => (at === null ? null : Math.max(0, Math.round((now - at) / 1000)));
+const age = (now: number, at: number | null): number | null =>
+  at === null ? null : Math.max(0, Math.round((now - at) / 1000));
 
 function span(seconds: number): string {
   if (seconds < 120) return `${seconds} s`;
@@ -54,7 +64,14 @@ export class PresenceTracker {
   private placeLines: ((now: number) => string[]) | null = null;
 
   constructor(private readonly store?: PresenceStore) {
-    this.state = { doNotDisturb: this.readDnd(), listening: false, voicePhase: 'off', lastUserSpeechAt: null, lastAssistantSpokeAt: null, faceSeenAt: null };
+    this.state = {
+      doNotDisturb: this.readDnd(),
+      listening: false,
+      voicePhase: 'off',
+      lastUserSpeechAt: null,
+      lastAssistantSpokeAt: null,
+      faceSeenAt: null,
+    };
   }
 
   private readDnd(): boolean {
@@ -90,7 +107,8 @@ export class PresenceTracker {
     if (isVoicePhase(partial.voicePhase)) next.voicePhase = partial.voicePhase;
     for (const key of ['lastUserSpeechAt', 'lastAssistantSpokeAt', 'faceSeenAt'] as const) {
       const value = partial[key];
-      if (value === null || (typeof value === 'number' && Number.isFinite(value))) next[key] = value;
+      if (value === null || (typeof value === 'number' && Number.isFinite(value)))
+        next[key] = value;
     }
     if (typeof partial.doNotDisturb === 'boolean' && partial.doNotDisturb !== next.doNotDisturb) {
       next.doNotDisturb = partial.doNotDisturb;
@@ -122,10 +140,16 @@ export class PresenceTracker {
   describe(now: number = Date.now()): string {
     const p = this.snapshot(now);
     const lines = [
-      p.secondsSinceUserSpoke === null ? 'Kevin has not spoken since the app started' : `Kevin last spoke ${span(p.secondsSinceUserSpoke)} ago`,
-      p.secondsSinceAssistantSpoke === null ? 'No avatar has spoken yet' : `An avatar last spoke ${span(p.secondsSinceAssistantSpoke)} ago`,
+      p.secondsSinceUserSpoke === null
+        ? 'Kevin has not spoken since the app started'
+        : `Kevin last spoke ${span(p.secondsSinceUserSpoke)} ago`,
+      p.secondsSinceAssistantSpoke === null
+        ? 'No avatar has spoken yet'
+        : `An avatar last spoke ${span(p.secondsSinceAssistantSpoke)} ago`,
       `microphone ${p.listening ? 'on' : 'off'}; voice state: ${p.voicePhase}`,
-      p.secondsSinceFaceSeen === null ? 'camera has not seen a face' : `camera saw a face ${span(p.secondsSinceFaceSeen)} ago`,
+      p.secondsSinceFaceSeen === null
+        ? 'camera has not seen a face'
+        : `camera saw a face ${span(p.secondsSinceFaceSeen)} ago`,
       `do not disturb: ${p.doNotDisturb ? 'on' : 'off'}`,
       `local time ${p.localTime}`,
     ];

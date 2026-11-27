@@ -1,14 +1,35 @@
-import { RoomLinkCore, type RoomLinkOptions, type SocketFactory } from '../../../main/src/shared/satellite/link-core.js';
-import { LOST_TOUCH, parseHubUrl, type LinkStatus, type Welcome } from '../../../main/src/shared/satellite/link-shared.js';
-import { NOT_ON_SATELLITE, channelKind, isDeliverableEvent } from '../../../main/src/shared/satellite/channels.js';
-import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from '../../../main/src/shared/satellite/local-config.js';
+import {
+  RoomLinkCore,
+  type RoomLinkOptions,
+  type SocketFactory,
+} from '../../../main/src/shared/satellite/link-core.js';
+import {
+  LOST_TOUCH,
+  parseHubUrl,
+  type LinkStatus,
+  type Welcome,
+} from '../../../main/src/shared/satellite/link-shared.js';
+import {
+  NOT_ON_SATELLITE,
+  channelKind,
+  isDeliverableEvent,
+} from '../../../main/src/shared/satellite/channels.js';
+import {
+  EMPTY_LOCAL_ANSWERS,
+  keywordOf,
+  satelliteConfig,
+} from '../../../main/src/shared/satellite/local-config.js';
 import { requestPairing } from '../../../main/src/shared/satellite/pairing.js';
 import type { DeviceGateState } from '../../../main/src/shared/satellite/device-gate.js';
-import type { SatelliteStatus } from '../../../main/src/satellite/satellite.js';
-import type { AudioDevicePreferences } from '../../../main/src/config/preferences-store.js';
-import type { RendererConfig } from '../../../main/src/config/config-manager.js';
+import type { SatelliteStatus } from '../../../main/src/shared/satellite/satellite-types.js';
+import type { AudioDevicePreferences } from '../../../main/src/shared/config/preferences-store-types.js';
+import type { RendererConfig } from '../../../main/src/shared/config/config-manager-types.js';
 import type { Op } from '../../../main/src/shared/room-hub/frames.js';
-import { createBridge, type BridgeTransport, type PreloadApi } from '../../../main/src/shared/bridge/create-bridge.js';
+import {
+  createBridge,
+  type BridgeTransport,
+  type PreloadApi,
+} from '../../../main/src/shared/bridge/create-bridge.js';
 import { WebGate } from './web-gate.js';
 import { PageActivity, type PageActivityOptions } from './page-activity.js';
 import { WebStore } from './web-store.js';
@@ -53,7 +74,10 @@ export function parseWebHubUrl(input: string): { ws: string; http: string } | nu
   const secure = url.protocol === 'wss:' || url.protocol === 'https:';
   if (!secure && url.protocol !== 'ws:' && url.protocol !== 'http:') return null;
   if (!url.hostname) return null;
-  return { ws: `${secure ? 'wss' : 'ws'}://${url.host}`, http: `${secure ? 'https' : 'http'}://${url.host}` };
+  return {
+    ws: `${secure ? 'wss' : 'ws'}://${url.host}`,
+    http: `${secure ? 'https' : 'http'}://${url.host}`,
+  };
 }
 
 /**
@@ -74,7 +98,14 @@ export class WebSatellite {
   private audio: AudioDevicePreferences;
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly local = new Map<string, (args: unknown[]) => unknown>();
-  private pairing: { hubUrl: string; deviceId: string; token: string; deviceName: string; placeId: string | null; placeName: string | null } | null;
+  private pairing: {
+    hubUrl: string;
+    deviceId: string;
+    token: string;
+    deviceName: string;
+    placeId: string | null;
+    placeName: string | null;
+  } | null;
   private readonly offs: Array<() => void> = [];
 
   constructor(private readonly deps: WebSatelliteDeps) {
@@ -111,7 +142,9 @@ export class WebSatellite {
     });
 
     this.registerLocal();
-    this.bridge = createBridge(this.transport(), { logError: (message, meta) => deps.logger?.warn(message, meta) });
+    this.bridge = createBridge(this.transport(), {
+      logError: (message, meta) => deps.logger?.warn(message, meta),
+    });
     if (typeof shell?.onForeground === 'function') {
       const off = shell.onForeground(() => {
         this.gate.checkForeground();
@@ -211,7 +244,10 @@ export class WebSatellite {
       try {
         listener(...args);
       } catch (error) {
-        this.deps.logger?.warn('A listener failed', { channel, message: error instanceof Error ? error.message : String(error) });
+        this.deps.logger?.warn('A listener failed', {
+          channel,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -237,8 +273,16 @@ export class WebSatellite {
   private onWelcome(welcome: Welcome): void {
     this.welcome = welcome;
     const pairing = this.pairing;
-    if (pairing && (pairing.placeId !== welcome.placeId || pairing.placeName !== (welcome.place?.name ?? pairing.placeName))) {
-      this.pairing = { ...pairing, placeId: welcome.placeId, placeName: welcome.place?.name ?? pairing.placeName };
+    if (
+      pairing &&
+      (pairing.placeId !== welcome.placeId ||
+        pairing.placeName !== (welcome.place?.name ?? pairing.placeName))
+    ) {
+      this.pairing = {
+        ...pairing,
+        placeId: welcome.placeId,
+        placeName: welcome.place?.name ?? pairing.placeName,
+      };
       if (!this.deps.shell?.token) this.store.setPairing(this.pairing);
     }
     // The page follows the snapshot: after a reconnect it must see the world as it is now.
@@ -258,7 +302,9 @@ export class WebSatellite {
     try {
       this.deps.shell?.onGate?.(state);
     } catch (error) {
-      this.deps.logger?.warn('The shell failed to follow the gate', { message: error instanceof Error ? error.message : String(error) });
+      this.deps.logger?.warn('The shell failed to follow the gate', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -315,14 +361,24 @@ export class WebSatellite {
     local.set('config:set-audio-devices', (args) => {
       const next = (args[0] as AudioDevicePreferences | undefined) ?? {};
       this.audio = { ...this.audio, ...next };
-      if ('audioInputDeviceId' in next || 'audioOutputDeviceId' in next) this.store.setAudio(this.audio);
+      if ('audioInputDeviceId' in next || 'audioOutputDeviceId' in next)
+        this.store.setAudio(this.audio);
       return this.config();
     });
     // No global key in a browser; the page has its own talk button.
     local.set('talk:get-shortcut-status', () => ({ shortcut: '', registered: false }));
     for (const [channel, answer] of Object.entries(EMPTY_LOCAL_ANSWERS)) local.set(channel, answer);
     local.set('satellite:status', () => this.status());
-    local.set('satellite:pair', (args) => this.pair((args[0] ?? {}) as { hubUrl: string; code: string; placeName?: string; deviceName?: string }));
+    local.set('satellite:pair', (args) =>
+      this.pair(
+        (args[0] ?? {}) as {
+          hubUrl: string;
+          code: string;
+          placeName?: string;
+          deviceName?: string;
+        },
+      ),
+    );
     local.set('satellite:forget', () => this.forget());
     // Nothing to start at login in a page.
     local.set('satellite:start-at-login', () => false);
@@ -333,7 +389,11 @@ export class WebSatellite {
   }
 
   private config(): RendererConfig {
-    return satelliteConfig({ keyword: keywordOf(this.welcome?.settings?.wakeWord), audioPreferences: this.audio, kind: 'browser' });
+    return satelliteConfig({
+      keyword: keywordOf(this.welcome?.settings?.wakeWord),
+      audioPreferences: this.audio,
+      kind: 'browser',
+    });
   }
 
   /** What the page does with one IPC channel (the same table as the Electron satellite). */
@@ -366,8 +426,19 @@ export class WebSatellite {
 
   // -- Pairing ----------------------------------------------------------------------------------
 
-  async pair(input: { hubUrl: string; code: string; placeName?: string; deviceName?: string }): Promise<SatelliteStatus> {
-    const paired = await requestPairing({ ...input, parseHub: parseWebHubUrl, defaultDeviceName: this.deps.deviceName, fetchFn: this.deps.fetchFn, kind: this.deps.shell?.kind ?? 'browser' });
+  async pair(input: {
+    hubUrl: string;
+    code: string;
+    placeName?: string;
+    deviceName?: string;
+  }): Promise<SatelliteStatus> {
+    const paired = await requestPairing({
+      ...input,
+      parseHub: parseWebHubUrl,
+      defaultDeviceName: this.deps.deviceName,
+      fetchFn: this.deps.fetchFn,
+      kind: this.deps.shell?.kind ?? 'browser',
+    });
     this.pairing = {
       hubUrl: paired.hub.ws,
       deviceId: paired.body.deviceId,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createTailscaleLookup, parseSelf, parseWhois, shortNodeName, tailscaleCommand } from '../../src/room-hub/tailscale.js';
+import {
+  createTailscaleLookup,
+  parseSelf,
+  parseWhois,
+  shortNodeName,
+  tailscaleCommand,
+} from '../../src/room-hub/tailscale.js';
 
 // Hand-written from the shapes in Tailscale's documentation (`tailscale whois --json`, `tailscale status --json`).
 const WHOIS = {
@@ -16,7 +22,13 @@ const WHOIS = {
 
 const STATUS = {
   Version: '1.80.0',
-  Self: { ID: 'n1', HostName: 'bija', DNSName: 'bija.tail1234.ts.net.', UserID: 77, TailscaleIPs: ['100.64.0.1'] },
+  Self: {
+    ID: 'n1',
+    HostName: 'bija',
+    DNSName: 'bija.tail1234.ts.net.',
+    UserID: 77,
+    TailscaleIPs: ['100.64.0.1'],
+  },
   User: { '77': { ID: 77, LoginName: 'kevin@example.com', DisplayName: 'Kevin' } },
 };
 
@@ -28,9 +40,18 @@ describe('tailscale parsing', () => {
 
   it('reads whois: ComputedName first, then Name, then Hostinfo.Hostname', () => {
     expect(parseWhois(WHOIS)).toEqual({ node: 'kevins-desk', login: 'kevin@example.com' });
-    expect(parseWhois({ ...WHOIS, Node: { Name: 'desk.t.ts.net.' } })).toEqual({ node: 'desk', login: 'kevin@example.com' });
-    expect(parseWhois({ ...WHOIS, Node: { Hostinfo: { Hostname: 'Laptop' } } })).toEqual({ node: 'laptop', login: 'kevin@example.com' });
-    expect(parseWhois({ ...WHOIS, Node: { HostInfo: { Hostname: 'Laptop' } } })).toEqual({ node: 'laptop', login: 'kevin@example.com' });
+    expect(parseWhois({ ...WHOIS, Node: { Name: 'desk.t.ts.net.' } })).toEqual({
+      node: 'desk',
+      login: 'kevin@example.com',
+    });
+    expect(parseWhois({ ...WHOIS, Node: { Hostinfo: { Hostname: 'Laptop' } } })).toEqual({
+      node: 'laptop',
+      login: 'kevin@example.com',
+    });
+    expect(parseWhois({ ...WHOIS, Node: { HostInfo: { Hostname: 'Laptop' } } })).toEqual({
+      node: 'laptop',
+      login: 'kevin@example.com',
+    });
   });
 
   it('gives null for anything it cannot read', () => {
@@ -44,14 +65,20 @@ describe('tailscale parsing', () => {
 
   it('reads this PC from status: HostName or DNSName, login from the User map', () => {
     expect(parseSelf(STATUS)).toEqual({ node: 'bija', login: 'kevin@example.com' });
-    expect(parseSelf({ ...STATUS, Self: { DNSName: 'bija.tail1234.ts.net.', UserID: 77 } })).toEqual({ node: 'bija', login: 'kevin@example.com' });
+    expect(
+      parseSelf({ ...STATUS, Self: { DNSName: 'bija.tail1234.ts.net.', UserID: 77 } }),
+    ).toEqual({ node: 'bija', login: 'kevin@example.com' });
     expect(parseSelf({ ...STATUS, Self: { HostName: 'bija', UserID: 5 } })).toBeNull();
   });
 
   it('finds the CLI: PATH, else the Windows install folder', () => {
     expect(tailscaleCommand({}, 'linux')).toBe('tailscale');
-    expect(tailscaleCommand({ ProgramFiles: 'C:\\Program Files' }, 'win32', () => true)).toBe('C:\\Program Files\\Tailscale\\tailscale.exe');
-    expect(tailscaleCommand({ ProgramFiles: 'C:\\Program Files' }, 'win32', () => false)).toBe('tailscale');
+    expect(tailscaleCommand({ ProgramFiles: 'C:\\Program Files' }, 'win32', () => true)).toBe(
+      'C:\\Program Files\\Tailscale\\tailscale.exe',
+    );
+    expect(tailscaleCommand({ ProgramFiles: 'C:\\Program Files' }, 'win32', () => false)).toBe(
+      'tailscale',
+    );
   });
 });
 
@@ -65,7 +92,10 @@ describe('createTailscaleLookup', () => {
         return args[0] === 'whois' ? WHOIS : STATUS;
       },
     });
-    expect(await lookup.whois('100.101.102.103')).toEqual({ node: 'kevins-desk', login: 'kevin@example.com' });
+    expect(await lookup.whois('100.101.102.103')).toEqual({
+      node: 'kevins-desk',
+      login: 'kevin@example.com',
+    });
     expect(await lookup.self()).toEqual({ node: 'bija', login: 'kevin@example.com' });
     expect(calls).toEqual([
       ['ts', 'whois', '--json', '100.101.102.103'],

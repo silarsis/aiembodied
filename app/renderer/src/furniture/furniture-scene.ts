@@ -25,7 +25,13 @@ function labelSprite(text: string): THREE.Sprite {
     context.textBaseline = 'middle';
     context.fillText(text, 128, 48);
   }
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }));
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(canvas),
+      depthTest: false,
+      transparent: true,
+    }),
+  );
   sprite.scale.set(0.5, 0.1875, 1);
   return sprite;
 }
@@ -34,7 +40,10 @@ function labelSprite(text: string): THREE.Sprite {
  * An isolated scene for one furniture GLB (which is already in metres, standing on y=0): a floor grid with
  * 0.5 m squares, a 1.7 m person beside it, orbit/zoom/pan like the avatar review. Not tied to any room.
  */
-export async function createFurnitureScene(host: HTMLElement, modelData: ArrayBuffer): Promise<FurnitureScene> {
+export async function createFurnitureScene(
+  host: HTMLElement,
+  modelData: ArrayBuffer,
+): Promise<FurnitureScene> {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101c30);
   const url = URL.createObjectURL(new Blob([modelData], { type: 'model/gltf-binary' }));
@@ -48,8 +57,16 @@ export async function createFurnitureScene(host: HTMLElement, modelData: ArrayBu
     observer?.disconnect();
     controls?.dispose();
     scene.traverse((object) => {
-      if (!(object instanceof THREE.Mesh || object instanceof THREE.Sprite || object instanceof THREE.LineSegments)) return;
-      const { geometry, material: materials } = object as { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[] };
+      if (!(
+        object instanceof THREE.Mesh ||
+        object instanceof THREE.Sprite ||
+        object instanceof THREE.LineSegments
+      ))
+        return;
+      const { geometry, material: materials } = object as {
+        geometry: THREE.BufferGeometry;
+        material: THREE.Material | THREE.Material[];
+      };
       geometry.dispose();
       for (const material of [materials].flat() as THREE.MeshStandardMaterial[]) {
         material.map?.dispose();
@@ -74,7 +91,12 @@ export async function createFurnitureScene(host: HTMLElement, modelData: ArrayBu
     const personX = bounds.min.x - 0.6;
     const person = new THREE.Mesh(
       new THREE.CapsuleGeometry(HUMAN_RADIUS, HUMAN_HEIGHT - 2 * HUMAN_RADIUS, 6, 16),
-      new THREE.MeshStandardMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.35, depthWrite: false }),
+      new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+      }),
     );
     person.position.set(personX, HUMAN_HEIGHT / 2, 0);
     const label = labelSprite('1.7 m');
@@ -82,7 +104,9 @@ export async function createFurnitureScene(host: HTMLElement, modelData: ArrayBu
     scene.add(person, label);
     setupLighting(scene);
 
-    const frame = new THREE.Box3().union(bounds).expandByPoint(new THREE.Vector3(personX - HUMAN_RADIUS, HUMAN_HEIGHT + 0.3, 0));
+    const frame = new THREE.Box3()
+      .union(bounds)
+      .expandByPoint(new THREE.Vector3(personX - HUMAN_RADIUS, HUMAN_HEIGHT + 0.3, 0));
     const center = frame.getCenter(new THREE.Vector3());
     const size = frame.getSize(new THREE.Vector3());
     const extent = Math.max(size.x, size.y, size.z, 0.5);
@@ -92,7 +116,10 @@ export async function createFurnitureScene(host: HTMLElement, modelData: ArrayBu
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.tabIndex = 0;
-    renderer.domElement.setAttribute('aria-label', 'Interactive furniture: drag to rotate, scroll to zoom');
+    renderer.domElement.setAttribute(
+      'aria-label',
+      'Interactive furniture: drag to rotate, scroll to zoom',
+    );
     host.append(renderer.domElement);
     controls = new OrbitControls(camera, renderer.domElement);
     const orbit = controls;
@@ -107,9 +134,12 @@ export async function createFurnitureScene(host: HTMLElement, modelData: ArrayBu
     const reset = () => {
       orbit.target.copy(center);
       const tangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-      const distance = 1.2 * Math.max(size.y / (2 * tangent), size.x / (2 * tangent * camera.aspect)) + size.z / 2;
+      const distance =
+        1.2 * Math.max(size.y / (2 * tangent), size.x / (2 * tangent * camera.aspect)) + size.z / 2;
       // Three-quarter view from the front and a little above.
-      camera.position.copy(center).add(new THREE.Vector3(distance * 0.5, distance * 0.3, distance * 0.85));
+      camera.position
+        .copy(center)
+        .add(new THREE.Vector3(distance * 0.5, distance * 0.3, distance * 0.85));
       camera.up.set(0, 1, 0);
       orbit.update();
       render();

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlaceManager } from '../../src/places/place-manager.js';
 import { callToPlace } from '../../src/places/summon.js';
-import { FULLSCREEN_HOME_MS, LOCKED_HOME_MS, PlaceDevices } from '../../src/room-hub/place-devices.js';
+import {
+  FULLSCREEN_HOME_MS,
+  LOCKED_HOME_MS,
+  PlaceDevices,
+} from '../../src/room-hub/place-devices.js';
 import { PlacePresence } from '../../src/presence/place-presence.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
@@ -13,9 +17,14 @@ const PROFILES = [
 
 function setup() {
   const data = new Map<string, string>();
-  const store = { getValue: (key: string) => data.get(key) ?? null, setValue: (key: string, value: string) => void data.set(key, value) };
+  const store = {
+    getValue: (key: string) => data.get(key) ?? null,
+    setValue: (key: string, value: string) => void data.set(key, value),
+  };
   const published: SwitchboardEventInput[] = [];
-  const bus = { publish: (event: SwitchboardEventInput) => (published.push(event), null) } as unknown as SwitchboardBus;
+  const bus = {
+    publish: (event: SwitchboardEventInput) => (published.push(event), null),
+  } as unknown as SwitchboardBus;
   const places = new PlaceManager({ store, registry: { list: () => PROFILES }, bus: () => bus });
   places.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
   places.setOnline('study', true);
@@ -27,7 +36,16 @@ function setup() {
     places.startMove(avatarId, 'study', 'called');
     places.arrived(avatarId);
   };
-  const state = (fields: Record<string, unknown> = {}) => ({ op: 'device.state', mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: false, fullscreen: false, ...fields });
+  const state = (fields: Record<string, unknown> = {}) => ({
+    op: 'device.state',
+    mic: 'live',
+    camera: 'off',
+    speakers: 'live',
+    locked: false,
+    closed: false,
+    fullscreen: false,
+    ...fields,
+  });
   return { places, presence, devices, published, changed, walkIn, state };
 }
 
@@ -42,7 +60,12 @@ describe('PlaceDevices', () => {
     devices.onMessage('study', state({ mic: 'off', fullscreen: true }));
     const events = published.filter((event) => event.type === 'place.device');
     expect(events).toHaveLength(2);
-    expect(events[1].payload).toMatchObject({ placeId: 'study', changed: ['mic', 'fullscreen'], state: { mic: 'off', fullscreen: true }, previous: { mic: 'live' } });
+    expect(events[1].payload).toMatchObject({
+      placeId: 'study',
+      changed: ['mic', 'fullscreen'],
+      state: { mic: 'off', fullscreen: true },
+      previous: { mic: 'live' },
+    });
     // The same state again is not news.
     devices.onMessage('study', state({ mic: 'off', fullscreen: true }));
     expect(published.filter((event) => event.type === 'place.device')).toHaveLength(2);
@@ -89,7 +112,10 @@ describe('PlaceDevices', () => {
     places.arrived('echo');
     places.arrived('sage');
     expect(places.locationOf('echo')).toBe('home');
-    expect(places.startMove('echo', 'study', 'called')).toEqual({ ok: false, reason: 'the study is closed' });
+    expect(places.startMove('echo', 'study', 'called')).toEqual({
+      ok: false,
+      reason: 'the study is closed',
+    });
     devices.onMessage('study', { op: 'room.open' });
     expect(places.startMove('echo', 'study', 'called').ok).toBe(true);
     // The PC's own report agrees with it.
@@ -122,35 +148,64 @@ describe('callToPlace (places:summon)', () => {
 
   it('calls the recent partner, else Echo, else the first avatar', () => {
     const a = setup();
-    expect(callToPlace(a.places, 'study', 'sage', avatars)).toEqual({ ok: true, avatarId: 'sage', name: 'Sage', alreadyHere: false });
+    expect(callToPlace(a.places, 'study', 'sage', avatars)).toEqual({
+      ok: true,
+      avatarId: 'sage',
+      name: 'Sage',
+      alreadyHere: false,
+    });
     expect(a.places.inTransit('sage')).toBe(true);
     const b = setup();
-    expect(callToPlace(b.places, 'study', null, avatars)).toMatchObject({ ok: true, avatarId: 'echo' });
+    expect(callToPlace(b.places, 'study', null, avatars)).toMatchObject({
+      ok: true,
+      avatarId: 'echo',
+    });
     const c = setup();
-    expect(callToPlace(c.places, 'study', null, [{ id: 'sage', name: 'Sage' }])).toMatchObject({ ok: true, avatarId: 'sage' });
-    expect(callToPlace(c.places, 'study', null, [])).toEqual({ ok: false, reason: 'nobody to call' });
+    expect(callToPlace(c.places, 'study', null, [{ id: 'sage', name: 'Sage' }])).toMatchObject({
+      ok: true,
+      avatarId: 'sage',
+    });
+    expect(callToPlace(c.places, 'study', null, [])).toEqual({
+      ok: false,
+      reason: 'nobody to call',
+    });
   });
 
   it('calls nobody when someone is there, and says who is already coming', () => {
     const { places, walkIn } = setup();
     walkIn('sage');
-    expect(callToPlace(places, 'study', null, avatars)).toMatchObject({ ok: true, avatarId: 'sage', alreadyHere: true });
+    expect(callToPlace(places, 'study', null, avatars)).toMatchObject({
+      ok: true,
+      avatarId: 'sage',
+      alreadyHere: true,
+    });
     expect(places.inTransit('echo')).toBe(false);
     const other = setup();
     other.places.startMove('echo', 'study', 'called');
-    expect(callToPlace(other.places, 'study', 'sage', avatars)).toMatchObject({ ok: true, avatarId: 'echo', alreadyHere: false });
+    expect(callToPlace(other.places, 'study', 'sage', avatars)).toMatchObject({
+      ok: true,
+      avatarId: 'echo',
+      alreadyHere: false,
+    });
     expect(other.places.inTransit('sage')).toBe(false);
   });
 
   it('is refused for a closed room', () => {
     const { places } = setup();
     places.setClosed('study', true);
-    expect(callToPlace(places, 'study', null, avatars)).toEqual({ ok: false, reason: 'the study is closed' });
+    expect(callToPlace(places, 'study', null, avatars)).toEqual({
+      ok: false,
+      reason: 'the study is closed',
+    });
   });
 
-  it('works for the local place too (bija\'s own window)', () => {
+  it("works for the local place too (bija's own window)", () => {
     const { places, walkIn } = setup();
     walkIn('echo');
-    expect(callToPlace(places, 'home', 'echo', avatars)).toMatchObject({ ok: true, avatarId: 'sage', alreadyHere: true });
+    expect(callToPlace(places, 'home', 'echo', avatars)).toMatchObject({
+      ok: true,
+      avatarId: 'sage',
+      alreadyHere: true,
+    });
   });
 });

@@ -1,7 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CodingTasksBridge, RunnerEvent, RunnerTask } from '../../../main/src/coding/bridge-types.js';
-import type { ApprovalView, ApprovalsBridge } from '../../../main/src/tools/approvals-ipc.js';
+import type {
+  CodingTasksBridge,
+  RunnerEvent,
+  RunnerTask,
+} from '../../../main/src/shared/coding/bridge-types.js';
+import type {
+  ApprovalView,
+  ApprovalsBridge,
+} from '../../../main/src/shared/tools/approvals-ipc-types.js';
 import { ApprovalsCard } from '../../src/status/approvals-card.js';
 import { CodingTasksPanel, sortTasks } from '../../src/status/coding-tasks.js';
 
@@ -20,7 +27,12 @@ const view = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
 
 describe('ApprovalsCard', () => {
   it('shows nothing when nothing waits', async () => {
-    const api: ApprovalsBridge = { list: vi.fn(async () => []), approve: vi.fn(), decline: vi.fn(), onChanged: vi.fn(() => () => undefined) };
+    const api: ApprovalsBridge = {
+      list: vi.fn(async () => []),
+      approve: vi.fn(),
+      decline: vi.fn(),
+      onChanged: vi.fn(() => () => undefined),
+    };
     const { container } = render(<ApprovalsCard api={api} />);
     await waitFor(() => expect(api.list).toHaveBeenCalled());
     expect(container.innerHTML).toBe('');
@@ -97,7 +109,19 @@ function tasksApi(tasks: RunnerTask[]) {
 
 const codingApi = {
   get: vi.fn(async () => ({
-    coding: { runner: 'r', workspaces: [{ id: 'aiembodied', name: 'aiembodied', path: '/a', kind: 'self' as const, baseBranch: 'main' }, { id: 'notes', name: 'Notes', path: '/n', kind: 'project' as const, baseBranch: 'main' }] },
+    coding: {
+      runner: 'r',
+      workspaces: [
+        {
+          id: 'aiembodied',
+          name: 'aiembodied',
+          path: '/a',
+          kind: 'self' as const,
+          baseBranch: 'main',
+        },
+        { id: 'notes', name: 'Notes', path: '/n', kind: 'project' as const, baseBranch: 'main' },
+      ],
+    },
     runnerId: 'r',
     status: {} as never,
   })),
@@ -105,7 +129,11 @@ const codingApi = {
 
 describe('CodingTasksPanel', () => {
   it('sorts active tasks first and limits the finished ones', () => {
-    const list = [task({ id: 'd1', status: 'done' }), task({ id: 'w', status: 'working' }), ...Array.from({ length: 6 }, (_, i) => task({ id: `d${i + 2}`, status: 'failed' }))];
+    const list = [
+      task({ id: 'd1', status: 'done' }),
+      task({ id: 'w', status: 'working' }),
+      ...Array.from({ length: 6 }, (_, i) => task({ id: `d${i + 2}`, status: 'failed' })),
+    ];
     expect(sortTasks(list).map((t) => t.id)).toEqual(['w', 'd1', 'd2', 'd3', 'd4']);
   });
 
@@ -121,27 +149,58 @@ describe('CodingTasksPanel', () => {
   });
 
   it('answers a question from pi', async () => {
-    const { api } = tasksApi([task({ status: 'question', questions: [{ id: 'a1', kind: 'ask_echo', method: 'input', message: 'Which port?' }] })]);
+    const { api } = tasksApi([
+      task({
+        status: 'question',
+        questions: [{ id: 'a1', kind: 'ask_echo', method: 'input', message: 'Which port?' }],
+      }),
+    ]);
     render(<CodingTasksPanel api={api} codingApi={codingApi} active />);
     const q = await screen.findByTestId('coding-question');
     expect(q.textContent).toContain('Which port?');
     fireEvent.change(within(q).getByLabelText('Your answer'), { target: { value: '8080' } });
     fireEvent.click(within(q).getByRole('button', { name: 'Answer' }));
-    await waitFor(() => expect(api.answer).toHaveBeenCalledWith('t1', { value: '8080', dialog_id: 'a1' }));
+    await waitFor(() =>
+      expect(api.answer).toHaveBeenCalledWith('t1', { value: '8080', dialog_id: 'a1' }),
+    );
   });
 
   it('answers a select question by choosing an option', async () => {
-    const { api } = tasksApi([task({ status: 'question', questions: [{ id: 's1', kind: 'select', method: 'select', title: 'Pick', options: ['red', 'green'] }] })]);
+    const { api } = tasksApi([
+      task({
+        status: 'question',
+        questions: [
+          { id: 's1', kind: 'select', method: 'select', title: 'Pick', options: ['red', 'green'] },
+        ],
+      }),
+    ]);
     render(<CodingTasksPanel api={api} codingApi={codingApi} active />);
     fireEvent.click(await screen.findByRole('button', { name: 'green' }));
-    await waitFor(() => expect(api.answer).toHaveBeenCalledWith('t1', { value: 'green', dialog_id: 's1' }));
+    await waitFor(() =>
+      expect(api.answer).toHaveBeenCalledWith('t1', { value: 'green', dialog_id: 's1' }),
+    );
   });
 
   it('allows or denies a permission question', async () => {
-    const { api } = tasksApi([task({ status: 'question', questions: [{ id: 'c1', kind: 'confirm', method: 'confirm', title: 'Recursive delete', message: 'rm -rf build' }] })]);
+    const { api } = tasksApi([
+      task({
+        status: 'question',
+        questions: [
+          {
+            id: 'c1',
+            kind: 'confirm',
+            method: 'confirm',
+            title: 'Recursive delete',
+            message: 'rm -rf build',
+          },
+        ],
+      }),
+    ]);
     render(<CodingTasksPanel api={api} codingApi={codingApi} active />);
     fireEvent.click(await screen.findByRole('button', { name: 'Deny' }));
-    await waitFor(() => expect(api.answer).toHaveBeenCalledWith('t1', { confirmed: false, dialog_id: 'c1' }));
+    await waitFor(() =>
+      expect(api.answer).toHaveBeenCalledWith('t1', { confirmed: false, dialog_id: 'c1' }),
+    );
   });
 
   it('shows a review with flags and checks, the diff, follow-up, apply and discard', async () => {
@@ -150,7 +209,11 @@ describe('CodingTasksPanel', () => {
         status: 'review',
         checks_ok: false,
         checks_output: 'FAIL test x',
-        review: { summary: '2 file(s) changed, +10 -3', flags: ['lockfile changed: pnpm-lock.yaml'], protected_violations: [] },
+        review: {
+          summary: '2 file(s) changed, +10 -3',
+          flags: ['lockfile changed: pnpm-lock.yaml'],
+          protected_violations: [],
+        },
       }),
     ]);
     render(<CodingTasksPanel api={api} codingApi={codingApi} active />);
@@ -174,7 +237,12 @@ describe('CodingTasksPanel', () => {
   });
 
   it('does not offer Apply when a protected path changed', async () => {
-    const { api } = tasksApi([task({ status: 'review', review: { summary: 's', protected_violations: ['services/coder/x.py'] } })]);
+    const { api } = tasksApi([
+      task({
+        status: 'review',
+        review: { summary: 's', protected_violations: ['services/coder/x.py'] },
+      }),
+    ]);
     render(<CodingTasksPanel api={api} codingApi={codingApi} active />);
     const button = await screen.findByRole('button', { name: /Approve and open pull request/ });
     expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -187,19 +255,33 @@ describe('CodingTasksPanel', () => {
     await waitFor(() => expect(within(form).getAllByRole('option')).toHaveLength(2));
     fireEvent.change(within(form).getByLabelText('Workspace'), { target: { value: 'notes' } });
     fireEvent.change(within(form).getByLabelText('Goal'), { target: { value: 'Add a README' } });
-    fireEvent.change(within(form).getByLabelText(/Acceptance/), { target: { value: 'it exists\n\nit has a title' } });
+    fireEvent.change(within(form).getByLabelText(/Acceptance/), {
+      target: { value: 'it exists\n\nit has a title' },
+    });
     fireEvent.click(within(form).getByRole('button', { name: 'Start' }));
-    await waitFor(() => expect(api.start).toHaveBeenCalledWith({ workspace_id: 'notes', goal: 'Add a README', acceptance: ['it exists', 'it has a title'] }));
+    await waitFor(() =>
+      expect(api.start).toHaveBeenCalledWith({
+        workspace_id: 'notes',
+        goal: 'Add a README',
+        acceptance: ['it exists', 'it has a title'],
+      }),
+    );
   });
 
   it('refreshes when the runner reports a change, and shows waiting updates', async () => {
     const { api, push } = tasksApi([task()]);
-    const localVoice = { systemStatus: vi.fn(async () => ({ pending: 2, ready: false, texts: [], urgent: false })) };
+    const localVoice = {
+      systemStatus: vi.fn(async () => ({ pending: 2, ready: false, texts: [], urgent: false })),
+    };
     render(<CodingTasksPanel api={api} codingApi={codingApi} localVoice={localVoice} active />);
     await screen.findByTestId('coding-task');
-    expect((await screen.findByTestId('coding-waiting')).textContent).toContain('2 updates waiting');
+    expect((await screen.findByTestId('coding-waiting')).textContent).toContain(
+      '2 updates waiting',
+    );
     const calls = (api.list as ReturnType<typeof vi.fn>).mock.calls.length;
     push({ task_id: 't1', status: 'review' });
-    await waitFor(() => expect((api.list as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(calls));
+    await waitFor(() =>
+      expect((api.list as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(calls),
+    );
   });
 });

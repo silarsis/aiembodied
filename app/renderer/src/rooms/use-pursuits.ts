@@ -1,24 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { PursuitOffer, PursuitsBridge } from '../../../main/src/pursuits/types.js';
-import type { AgentsBridge } from '../../../main/src/agent-time/bridge-types.js';
+import type { PursuitOffer, PursuitsBridge } from '../../../main/src/shared/pursuits/types.js';
+import type { AgentsBridge } from '../../../main/src/shared/agent-time/bridge-types.js';
 import type { IdlePursuit } from './idle-types.js';
 
 /** How often the list of stations that can be read at is read again (tools connect and stations change while the app runs). */
 export const OFFERS_REFRESH_MS = 60_000;
 
 /** The stations of one room that an avatar may use, as the idle director offers them. */
-export function offersFor(offers: readonly PursuitOffer[], roomId: string | null, avatarId: string): IdlePursuit[] {
+export function offersFor(
+  offers: readonly PursuitOffer[],
+  roomId: string | null,
+  avatarId: string,
+): IdlePursuit[] {
   if (!roomId) return [];
   return offers
-    .filter((offer) => offer.roomId === roomId && (offer.characters === 'all' || offer.characters.includes(avatarId)))
-    .map((offer) => ({ stationId: offer.stationId, objectId: offer.objectId, objectName: offer.objectName }));
+    .filter(
+      (offer) =>
+        offer.roomId === roomId &&
+        (offer.characters === 'all' || offer.characters.includes(avatarId)),
+    )
+    .map((offer) => ({
+      stationId: offer.stationId,
+      objectId: offer.objectId,
+      objectName: offer.objectName,
+    }));
 }
 
 /**
  * Keeps what the idle director needs to let a character read on its own: which stations can be read at, and
  * which avatars are reading now (so none is offered a second session). Reading is run by main.
  */
-export function usePursuits(api: PursuitsBridge | undefined, roomId: string | null, agentsApi?: AgentsBridge) {
+export function usePursuits(
+  api: PursuitsBridge | undefined,
+  roomId: string | null,
+  agentsApi?: AgentsBridge,
+) {
   const offers = useRef<PursuitOffer[]>([]);
   const reading = useRef(new Set<string>());
   // Agents asleep (agent time) are kept apart from readers: they are treated as busy, so the idle director skips them.
@@ -72,8 +88,14 @@ export function usePursuits(api: PursuitsBridge | undefined, roomId: string | nu
     // A different room may hold other stations.
   }, [api, roomId]);
 
-  const pursuitsFor = useCallback((avatarId: string) => offersFor(offers.current, roomId, avatarId), [roomId]);
-  const pursuing = useCallback((avatarId: string) => reading.current.has(avatarId) || asleep.current.has(avatarId), []);
+  const pursuitsFor = useCallback(
+    (avatarId: string) => offersFor(offers.current, roomId, avatarId),
+    [roomId],
+  );
+  const pursuing = useCallback(
+    (avatarId: string) => reading.current.has(avatarId) || asleep.current.has(avatarId),
+    [],
+  );
   const startPursuit = useCallback(
     async (avatarId: string, stationId: string) => {
       if (!api) return false;
@@ -90,5 +112,8 @@ export function usePursuits(api: PursuitsBridge | undefined, roomId: string | nu
     },
     [api],
   );
-  return useMemo(() => ({ pursuitsFor, pursuing, startPursuit }), [pursuitsFor, pursuing, startPursuit]);
+  return useMemo(
+    () => ({ pursuitsFor, pursuing, startPursuit }),
+    [pursuitsFor, pursuing, startPursuit],
+  );
 }

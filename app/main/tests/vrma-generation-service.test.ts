@@ -20,10 +20,12 @@ async function createStore() {
 
 function createClient(outputText: string | string[]) {
   const outputs = Array.isArray(outputText) ? [...outputText] : [outputText];
-  const create = vi.fn<[unknown], Promise<{ output_text: string }>>().mockImplementation(async () => {
-    const next = outputs.shift() ?? '';
-    return { output_text: next };
-  });
+  const create = vi
+    .fn<[unknown], Promise<{ output_text: string }>>()
+    .mockImplementation(async () => {
+      const next = outputs.shift() ?? '';
+      return { output_text: next };
+    });
   const client = { responses: { create } } as unknown as OpenAI;
   return { client, create };
 }
@@ -142,7 +144,8 @@ describe('VrmaGenerationService', () => {
       animationsDirectory: path.join(directory, 'vrma-animations'),
     });
 
-    const analystOutput = 'A simple waving motion from the shoulder down through the arm and wrist.';
+    const analystOutput =
+      'A simple waving motion from the shoulder down through the arm and wrist.';
 
     const planOutput = JSON.stringify({
       meta: {
@@ -207,10 +210,18 @@ describe('VrmaGenerationService', () => {
       expressions: [],
     });
 
-    const { client, create } = createClient([analystOutput, planOutput, invalidOutput, validOutput]);
+    const { client, create } = createClient([
+      analystOutput,
+      planOutput,
+      invalidOutput,
+      validOutput,
+    ]);
     const service = new VrmaGenerationService({ client, animationService });
 
-    const result = await service.generateAnimation({ prompt: 'Wave hello', bones: ['hips', 'spine'] });
+    const result = await service.generateAnimation({
+      prompt: 'Wave hello',
+      bones: ['hips', 'spine'],
+    });
     expect(result.animation.name).toBe('valid-bones');
     expect(create).toHaveBeenCalledTimes(4);
 

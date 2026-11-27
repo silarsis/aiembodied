@@ -2,7 +2,8 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { DEFAULT_LLM_SLOTS, type LocalLlmSettings } from '../local-llm/llm-settings.js';
+import { DEFAULT_LLM_SLOTS } from '../local-llm/llm-settings.js';
+import type { LocalLlmSettings } from '../shared/local-llm/llm-settings-types.js';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -82,10 +83,14 @@ export class LocalLlmControl {
 
   private run(command: string): Promise<string> {
     if (this.options.powershell) return this.options.powershell(command);
-    return promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
-      windowsHide: true,
-      timeout: 60_000,
-    }).then((result) => result.stdout);
+    return promisify(execFile)(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', command],
+      {
+        windowsHide: true,
+        timeout: 60_000,
+      },
+    ).then((result) => result.stdout);
   }
 
   /** True when the server was running and has stopped. */
@@ -112,26 +117,41 @@ export class LocalLlmControl {
   async restart(): Promise<LocalLlmRestart> {
     if (this.options.viaController?.()) {
       if (!this.options.useModelViaController) {
-        return { restarted: false, message: 'The model controller runs this server, so the app did not restart it. Which model it runs is set in the controller’s config.' };
+        return {
+          restarted: false,
+          message:
+            'The model controller runs this server, so the app did not restart it. Which model it runs is set in the controller’s config.',
+        };
       }
       const picked = await this.options.model?.().catch(() => null);
       try {
-        return { restarted: true, message: await this.options.useModelViaController(picked ? { path: picked.path, alias: picked.alias } : null) };
+        return {
+          restarted: true,
+          message: await this.options.useModelViaController(
+            picked ? { path: picked.path, alias: picked.alias } : null,
+          ),
+        };
       } catch (error) {
-        return { restarted: false, message: error instanceof Error ? error.message : String(error) };
+        return {
+          restarted: false,
+          message: error instanceof Error ? error.message : String(error),
+        };
       }
     }
     const port = this.port();
     const model = await this.options.model?.().catch(() => null);
     const saved = await this.options.settings?.().catch(() => null);
-    const by = (model ? `-Model "${model.path}" -Alias ${model.alias}` : 'its default model') + (saved ? ` -Slots ${saved.slots} -Context ${saved.contextPerSlot}` : '');
+    const by =
+      (model ? `-Model "${model.path}" -Alias ${model.alias}` : 'its default model') +
+      (saved ? ` -Slots ${saved.slots} -Context ${saved.contextPerSlot}` : '');
     if (!port) {
       return {
         restarted: false,
         message: `Thinking doesn't run on this PC's llama-server${(this.options.platform ?? process.platform) !== 'win32' ? ' (restarting it is Windows only)' : ''}. Start llama-server with ${by} yourself.`,
       };
     }
-    if (!existsSync(this.script)) return { restarted: false, message: `Restart llama-server with ${by} yourself.` };
+    if (!existsSync(this.script))
+      return { restarted: false, message: `Restart llama-server with ${by} yourself.` };
     const output = await this.run(
       [
         `$id = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess;`,
@@ -143,10 +163,16 @@ export class LocalLlmControl {
     ).catch(() => '');
     const other = /other:([^\r\n]+)/.exec(output);
     if (other) {
-      return { restarted: false, message: `Port ${port} is held by ${other[1]}, not llama-server, so it was left alone. Close it, then restart the app.` };
+      return {
+        restarted: false,
+        message: `Port ${port} is held by ${other[1]}, not llama-server, so it was left alone. Close it, then restart the app.`,
+      };
     }
     await this.start();
-    return { restarted: true, message: `llama-server is restarting with ${model ? model.alias : 'its default model'}; loading takes a minute or more.` };
+    return {
+      restarted: true,
+      message: `llama-server is restarting with ${model ? model.alias : 'its default model'}; loading takes a minute or more.`,
+    };
   }
 
   /** Starts the server in its own hidden console, the way pnpm dev:run does. Loading takes minutes. */
@@ -163,7 +189,19 @@ export class LocalLlmControl {
     // The context is per slot; a model's own limit caps it.
     const context = model?.contextLength ? Math.min(model.contextLength, perSlot) : perSlot;
     const modelArgs = model ? ['-Model', model.path, '-Alias', model.alias] : [];
-    const args = ['-NoProfile', '-NonInteractive', '-File', this.script, '-Port', String(port), ...modelArgs, '-Slots', String(slots), '-Context', String(context)]
+    const args = [
+      '-NoProfile',
+      '-NonInteractive',
+      '-File',
+      this.script,
+      '-Port',
+      String(port),
+      ...modelArgs,
+      '-Slots',
+      String(slots),
+      '-Context',
+      String(context),
+    ]
       // Windows PowerShell 5.1 joins -ArgumentList without quoting.
       .map((arg) => psQuote(`"${arg}"`))
       .join(', ');
@@ -183,7 +221,12 @@ export class LocalLlmControl {
     // pnpm dev:run moves the profile folders; the script finds llama-server and its model in the real one.
     const child = spawn(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-EncodedCommand',
+        Buffer.from(command, 'utf16le').toString('base64'),
+      ],
       {
         // No pipes: the server inherits the launcher's handles and would hold them open.
         stdio: 'ignore',

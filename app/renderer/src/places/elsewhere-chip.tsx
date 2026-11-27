@@ -1,4 +1,4 @@
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { describeAbsent, type AbsentAvatar } from './stage-presence.js';
 
 export interface ElsewhereChipProps {

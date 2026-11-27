@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import {
   INITIAL_STATE,
@@ -20,7 +20,12 @@ import {
   type RestLegLengths,
 } from '../../src/rooms/scene-actions.js';
 import type { AvatarMotionTarget } from '../../src/avatar/types.js';
-import { motionPointToWorld, motionToWorld, worldToMotion, type MotionFrame } from '../../src/rooms/scene-frames.js';
+import {
+  motionPointToWorld,
+  motionToWorld,
+  worldToMotion,
+  type MotionFrame,
+} from '../../src/rooms/scene-frames.js';
 import { RoomOccupancy } from '../../src/rooms/room-occupancy.js';
 import { sideStepPath } from '../../src/rooms/scene-actions.js';
 import type { WorldSeatGeometry } from '../../src/rooms/seat-geometry.js';
@@ -36,7 +41,13 @@ beforeAll(async () => {
   stage = await RoomStage.create(room);
 });
 
-function worldAt(x: number, z: number, yawDeg: number, scale = 1, positions: Record<string, Vec3> = {}): PlanWorld {
+function worldAt(
+  x: number,
+  z: number,
+  yawDeg: number,
+  scale = 1,
+  positions: Record<string, Vec3> = {},
+): PlanWorld {
   const frame: MotionFrame = { origin: { x, z, yaw: (yawDeg * Math.PI) / 180 }, scale };
   return {
     room,
@@ -72,7 +83,10 @@ describe('object references', () => {
   });
 
   it('turns tags into actions and drops unknown objects', () => {
-    expect(tagToAction(room, { type: 'sit', object: 'the sofa' })).toEqual({ kind: 'sit', objectId: 'sofa' });
+    expect(tagToAction(room, { type: 'sit', object: 'the sofa' })).toEqual({
+      kind: 'sit',
+      objectId: 'sofa',
+    });
     expect(tagToAction(room, { type: 'put', object: 'mug', surface: 'side table' })).toEqual({
       kind: 'put',
       objectId: 'mug',
@@ -88,11 +102,20 @@ describe('turning before a walk', () => {
   const world = { restHipsHeight: REST_HIPS } as PlanWorld;
 
   it('walks straight off when the path starts roughly ahead', () => {
-    expect(walkStart(world, [[0, 0], [0.3, 2]])).toEqual({ startS: 0.3, targets: [] });
+    expect(
+      walkStart(world, [
+        [0, 0],
+        [0.3, 2],
+      ]),
+    ).toEqual({ startS: 0.3, targets: [] });
   });
 
   it('turns on the spot first when the path starts behind, and waits for the turn before walking', () => {
-    const { startS, targets } = walkStart(world, [[0, 0], [0, -0.1], [0.05, -2]]);
+    const { startS, targets } = walkStart(world, [
+      [0, 0],
+      [0, -0.1],
+      [0.05, -2],
+    ]);
     expect(targets).toHaveLength(1);
     const [turn] = targets as [AvatarMotionTarget];
     expect(turn.root).toEqual([0, 0]);
@@ -102,14 +125,27 @@ describe('turning before a walk', () => {
   });
 
   it('takes a shorter turn for a path that starts to the side', () => {
-    const side = walkStart(world, [[0, 0], [-2, 0]]);
-    const behind = walkStart(world, [[0, 0], [0, -2]]);
+    const side = walkStart(world, [
+      [0, 0],
+      [-2, 0],
+    ]);
+    const behind = walkStart(world, [
+      [0, 0],
+      [0, -2],
+    ]);
     expect(side.targets[0]!.heading).toBeCloseTo(-Math.PI / 2, 3);
     expect(side.targets[0]!.t).toBeLessThan(behind.targets[0]!.t);
   });
 
   it('measures the start direction a little way along the path, not from a tiny first leg', () => {
-    expect(pathStartHeading([[0, 0], [0.01, -0.01], [1, 0.5], [3, 0.5]])).toBeGreaterThan(0.5);
+    expect(
+      pathStartHeading([
+        [0, 0],
+        [0.01, -0.01],
+        [1, 0.5],
+        [3, 0.5],
+      ]),
+    ).toBeGreaterThan(0.5);
     expect(pathStartHeading([[0, 0]])).toBeNull();
   });
 });
@@ -117,7 +153,9 @@ describe('turning before a walk', () => {
 describe('go and come', () => {
   it('walks from the avatar to the stand tag and faces the object', () => {
     const world = worldAt(0, -0.3, 0);
-    const stream = streamOf(planAction(world, INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }));
+    const stream = streamOf(
+      planAction(world, INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }),
+    );
     const path = stream.request.path!;
     expect(path.points[0]).toEqual([0, 0]);
     expect(path.cornerRadius).toBe(0.6);
@@ -141,7 +179,10 @@ describe('go and come', () => {
     expect(path.startS).toBeCloseTo(turn.t + 0.2, 3);
     let length = 0;
     for (let i = 1; i < path.points.length; i += 1) {
-      length += Math.hypot(path.points[i]![0] - path.points[i - 1]![0], path.points[i]![1] - path.points[i - 1]![1]);
+      length += Math.hypot(
+        path.points[i]![0] - path.points[i - 1]![0],
+        path.points[i]![1] - path.points[i - 1]![1],
+      );
     }
     expect(arrive.t).toBeCloseTo(path.startS! + length + 0.5, 2);
     expect(stream.request.duration).toBeCloseTo(path.startS! + length + 1.5, 2);
@@ -151,8 +192,12 @@ describe('go and come', () => {
   });
 
   it('expresses the path in the avatar frame whatever way the avatar faces', () => {
-    const a = streamOf(planAction(worldAt(0, -0.3, 0), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }));
-    const b = streamOf(planAction(worldAt(0, -0.3, 90), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }));
+    const a = streamOf(
+      planAction(worldAt(0, -0.3, 0), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }),
+    );
+    const b = streamOf(
+      planAction(worldAt(0, -0.3, 90), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }),
+    );
     // Same world path, but turned by the avatar's yaw, so the second one differs in the frame.
     const endA = a.request.path!.points.at(-1)!;
     const endB = b.request.path!.points.at(-1)!;
@@ -161,8 +206,12 @@ describe('go and come', () => {
   });
 
   it('divides by the avatar scale', () => {
-    const small = streamOf(planAction(worldAt(0, -0.3, 0, 1), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }));
-    const big = streamOf(planAction(worldAt(0, -0.3, 0, 2), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }));
+    const small = streamOf(
+      planAction(worldAt(0, -0.3, 0, 1), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }),
+    );
+    const big = streamOf(
+      planAction(worldAt(0, -0.3, 0, 2), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' }),
+    );
     const a = small.request.path!.points.at(-1)!;
     const b = big.request.path!.points.at(-1)!;
     expect(b[0]).toBeCloseTo(a[0] / 2, 1);
@@ -171,11 +220,16 @@ describe('go and come', () => {
 
   it('walks to the closest walkable point in front of an object without a stand tag', () => {
     const world = worldAt(0, -0.3, 0);
-    const point = frontOfFace(world, room.objects.find((o) => o.id === 'floor-lamp')!);
+    const point = frontOfFace(
+      world,
+      room.objects.find((o) => o.id === 'floor-lamp')!,
+    );
     expect(stage.isWalkable(point)).toBe(true);
     const lamp = room.objects.find((o) => o.id === 'floor-lamp')!;
     expect(Math.hypot(point[0] - lamp.position[0], point[2] - lamp.position[2])).toBeLessThan(1.6); // boxed in by the sofa and armchair
-    const stream = streamOf(planAction(world, INITIAL_STATE, { kind: 'go', objectId: 'floor-lamp' }));
+    const stream = streamOf(
+      planAction(world, INITIAL_STATE, { kind: 'go', objectId: 'floor-lamp' }),
+    );
     expect(stream.request.path!.points.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -192,8 +246,12 @@ describe('go and come', () => {
 
   it('skips when already there, turning on the spot when only the heading is off', () => {
     const home = room.home.position;
-    expect(planAction(worldAt(home[0], home[2], 0), INITIAL_STATE, { kind: 'come' }).type).toBe('skip');
-    const turn = streamOf(planAction(worldAt(home[0], home[2], 90), INITIAL_STATE, { kind: 'come' }));
+    expect(planAction(worldAt(home[0], home[2], 0), INITIAL_STATE, { kind: 'come' }).type).toBe(
+      'skip',
+    );
+    const turn = streamOf(
+      planAction(worldAt(home[0], home[2], 90), INITIAL_STATE, { kind: 'come' }),
+    );
     expect(turn.request.path).toBeUndefined();
     expect(turn.request.prompt).toBe('a person turns to look at something');
   });
@@ -202,7 +260,9 @@ describe('go and come', () => {
 describe('look', () => {
   it('turns towards the look tag in 2.5 s with the root held', () => {
     const world = worldAt(0, -0.3, 0);
-    const stream = streamOf(planAction(world, INITIAL_STATE, { kind: 'look', objectId: 'bookshelf' }));
+    const stream = streamOf(
+      planAction(world, INITIAL_STATE, { kind: 'look', objectId: 'bookshelf' }),
+    );
     expect(stream.request.prompt).toBe('a person turns to look at something');
     expect(stream.request.duration).toBe(2.5);
     expect(stream.request.path).toBeUndefined();
@@ -215,7 +275,9 @@ describe('look', () => {
 
   it('skips when already within 20 degrees', () => {
     const world = worldAt(0, -0.3, -90);
-    expect(planAction(world, INITIAL_STATE, { kind: 'look', objectId: 'bookshelf' }).type).toBe('skip');
+    expect(planAction(world, INITIAL_STATE, { kind: 'look', objectId: 'bookshelf' }).type).toBe(
+      'skip',
+    );
   });
 });
 
@@ -223,7 +285,13 @@ describe('look at a point', () => {
   const camera: Vec3 = [0, 1.5, 2.1];
 
   it('turns on the spot towards the point, like a look', () => {
-    const stream = streamOf(planAction(worldAt(-2, -1, 0), INITIAL_STATE, { kind: 'lookAtPoint', position: camera, label: 'the camera' }));
+    const stream = streamOf(
+      planAction(worldAt(-2, -1, 0), INITIAL_STATE, {
+        kind: 'lookAtPoint',
+        position: camera,
+        label: 'the camera',
+      }),
+    );
     expect(stream.label).toBe('the camera');
     expect(stream.request.prompt).toBe('a person turns to look at something');
     const target = stream.request.targets?.[0];
@@ -234,10 +302,25 @@ describe('look at a point', () => {
   });
 
   it('skips when already facing it, and never stands a seated avatar up', () => {
-    const facing = planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'lookAtPoint', position: camera });
+    const facing = planAction(worldAt(0, 0, 0), INITIAL_STATE, {
+      kind: 'lookAtPoint',
+      position: camera,
+    });
     expect(facing).toMatchObject({ type: 'skip' });
-    const seated: AvatarState = { posture: 'seated', held: null, seat: { objectId: 'sofa', session: 's', frame: worldAt(0, 0, 0).frame, approach: [0, 0, 0], facing: 0 } };
-    expect(planAction(worldAt(-2, -1, 0), seated, { kind: 'lookAtPoint', position: camera })).toEqual({ type: 'skip', reason: 'seated' });
+    const seated: AvatarState = {
+      posture: 'seated',
+      held: null,
+      seat: {
+        objectId: 'sofa',
+        session: 's',
+        frame: worldAt(0, 0, 0).frame,
+        approach: [0, 0, 0],
+        facing: 0,
+      },
+    };
+    expect(
+      planAction(worldAt(-2, -1, 0), seated, { kind: 'lookAtPoint', position: camera }),
+    ).toEqual({ type: 'skip', reason: 'seated' });
   });
 });
 
@@ -253,7 +336,8 @@ describe('sit and stand', () => {
     expect(phase.startS % 2).toBe(0);
     let length = 0;
     const pts = request.path!.points;
-    for (let i = 1; i < pts.length; i += 1) length += Math.hypot(pts[i]![0] - pts[i - 1]![0], pts[i]![1] - pts[i - 1]![1]);
+    for (let i = 1; i < pts.length; i += 1)
+      length += Math.hypot(pts[i]![0] - pts[i - 1]![0], pts[i]![1] - pts[i - 1]![1]);
     const arrival = request.path!.startS! + length;
     expect(phase.startS).toBeGreaterThanOrEqual(arrival);
     expect(phase.startS - arrival).toBeLessThan(2);
@@ -273,20 +357,28 @@ describe('sit and stand', () => {
   });
 
   it('sends the seat height in avatar metres for a scaled avatar', () => {
-    const stream = streamOf(planAction(worldAt(0, -0.3, 0, 1.25), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
+    const stream = streamOf(
+      planAction(worldAt(0, -0.3, 0, 1.25), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }),
+    );
     expect(stream.request.targets!.at(-1)!.height).toBeCloseTo((0.42 + 0.08) / 1.25, 6);
   });
 
   it('turns the heading into the avatar frame for a rotated armchair', () => {
     const world = worldAt(0, 0, 0);
-    const stream = streamOf(planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'armchair' }));
+    const stream = streamOf(
+      planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'armchair' }),
+    );
     expect(stream.request.targets!.at(-1)!.heading).toBeCloseTo((40 * Math.PI) / 180, 6);
   });
 
   it('sits straight away, with no phases, when already at the seat', () => {
     const sit = stage.worldTag('sofa', 'sit')!;
     const f = ((sit.facing ?? 0) * Math.PI) / 180;
-    const world = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
+    const world = worldAt(
+      sit.position[0] + 0.45 * Math.sin(f),
+      sit.position[2] + 0.45 * Math.cos(f),
+      180,
+    );
     const stream = streamOf(planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
     expect(stream.request.path).toBeUndefined();
     expect(stream.request.phases).toBeUndefined();
@@ -298,8 +390,13 @@ describe('sit and stand', () => {
   it('aims the hips at the measured seat surface instead of the tag height when the world can measure it', () => {
     const sit = stage.worldTag('sofa', 'sit')!;
     const f = ((sit.facing ?? 0) * Math.PI) / 180;
-    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
-    const tagged = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets![0]!;
+    const base = worldAt(
+      sit.position[0] + 0.45 * Math.sin(f),
+      sit.position[2] + 0.45 * Math.cos(f),
+      180,
+    );
+    const tagged = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }))
+      .request.targets![0]!;
     const seen: unknown[] = [];
     const measured = streamOf(
       planAction(
@@ -316,12 +413,19 @@ describe('sit and stand', () => {
     ).request.targets![0]!;
     expect(seen).toEqual([['sofa', sit.position[0], sit.position[2]]]);
     expect(measured.height! - tagged.height!).toBeCloseTo(0.12, 6);
-    const unmeasured = streamOf(planAction({ ...base, seatSurfaceY: () => null }, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
+    const unmeasured = streamOf(
+      planAction({ ...base, seatSurfaceY: () => null }, INITIAL_STATE, {
+        kind: 'sit',
+        objectId: 'sofa',
+      }),
+    );
     expect(unmeasured.request.targets![0]!.height).toBe(tagged.height);
   });
 
   it('skips things that cannot be sat on', () => {
-    expect(planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'sit', objectId: 'rug' }).type).toBe('skip');
+    expect(planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'sit', objectId: 'rug' }).type).toBe(
+      'skip',
+    );
   });
 
   it('stands up from the seat session towards the spot in front of it', () => {
@@ -351,7 +455,13 @@ describe('sit and stand', () => {
     const seated: AvatarState = {
       posture: 'seated',
       held: null,
-      seat: { objectId: 'sofa', session: 's', frame: worldAt(0, 0, 0).frame, approach: [0, 0, 0], facing: 0 },
+      seat: {
+        objectId: 'sofa',
+        session: 's',
+        frame: worldAt(0, 0, 0).frame,
+        approach: [0, 0, 0],
+        facing: 0,
+      },
     };
     for (const action of [
       { kind: 'go', objectId: 'bookshelf' },
@@ -360,10 +470,15 @@ describe('sit and stand', () => {
       { kind: 'pick', objectId: 'mug' },
       { kind: 'sit', objectId: 'armchair' },
     ] as SceneAction[]) {
-      expect(planAction(worldAt(0, 0, 0), seated, action)).toEqual({ type: 'insert', actions: [{ kind: 'stand' }] });
+      expect(planAction(worldAt(0, 0, 0), seated, action)).toEqual({
+        type: 'insert',
+        actions: [{ kind: 'stand' }],
+      });
     }
     expect(planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'stand' }).type).toBe('skip');
-    expect(planAction(worldAt(0, 0, 0), seated, { kind: 'sit', objectId: 'sofa' }).type).toBe('skip');
+    expect(planAction(worldAt(0, 0, 0), seated, { kind: 'sit', objectId: 'sofa' }).type).toBe(
+      'skip',
+    );
   });
 });
 
@@ -377,7 +492,9 @@ describe('pick and put', () => {
     const goto = plan.actions[0]! as Extract<SceneAction, { kind: 'goto' }>;
     expect(goto.kind).toBe('goto');
     expect(stage.isWalkable(goto.position)).toBe(true);
-    expect(Math.hypot(goto.position[0] - mug().position[0], goto.position[2] - mug().position[2])).toBeLessThan(1);
+    expect(
+      Math.hypot(goto.position[0] - mug().position[0], goto.position[2] - mug().position[2]),
+    ).toBeLessThan(1);
   });
 
   it('plans a reach with the nearer hand, held root and an attach at 1.7 s', () => {
@@ -402,15 +519,30 @@ describe('pick and put', () => {
   it('picks the hand on the side of the object', () => {
     const grab = stage.worldTag('mug', 'grab')!.position;
     // Facing -Z (yaw 180) the character's left is world -X; the mug 0.1 m to the world -X is on the left.
-    const left = streamOf(planAction(worldAt(grab[0] + 0.1, grab[2] + 0.5, 180), INITIAL_STATE, { kind: 'pick', objectId: 'mug' }));
-    const right = streamOf(planAction(worldAt(grab[0] - 0.1, grab[2] + 0.5, 180), INITIAL_STATE, { kind: 'pick', objectId: 'mug' }));
+    const left = streamOf(
+      planAction(worldAt(grab[0] + 0.1, grab[2] + 0.5, 180), INITIAL_STATE, {
+        kind: 'pick',
+        objectId: 'mug',
+      }),
+    );
+    const right = streamOf(
+      planAction(worldAt(grab[0] - 0.1, grab[2] + 0.5, 180), INITIAL_STATE, {
+        kind: 'pick',
+        objectId: 'mug',
+      }),
+    );
     expect(left.request.targets![0]!.hand).toBe('left');
     expect(right.request.targets![0]!.hand).toBe('right');
   });
 
   it('turns to face an object that is off to the side', () => {
     const grab = stage.worldTag('mug', 'grab')!.position;
-    const stream = streamOf(planAction(worldAt(grab[0], grab[2] + 0.5, 0), INITIAL_STATE, { kind: 'pick', objectId: 'mug' }));
+    const stream = streamOf(
+      planAction(worldAt(grab[0], grab[2] + 0.5, 0), INITIAL_STATE, {
+        kind: 'pick',
+        objectId: 'mug',
+      }),
+    );
     expect(Math.abs(Math.abs(stream.request.targets![0]!.heading!) - Math.PI)).toBeLessThan(0.01);
   });
 
@@ -423,20 +555,30 @@ describe('pick and put', () => {
   });
 
   it('refuses things that are not grabbable or when the hands are full', () => {
-    expect(planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'pick', objectId: 'sofa' }).type).toBe('skip');
+    expect(
+      planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'pick', objectId: 'sofa' }).type,
+    ).toBe('skip');
     const holding: AvatarState = { posture: 'standing', held: { objectId: 'mug', hand: 'right' } };
-    expect(planAction(worldAt(0, 0, 0), holding, { kind: 'pick', objectId: 'mug' }).type).toBe('skip');
+    expect(planAction(worldAt(0, 0, 0), holding, { kind: 'pick', objectId: 'mug' }).type).toBe(
+      'skip',
+    );
   });
 
   it('puts the held mug on a surface: go near, then reach and detach at 1.7 s', () => {
     const holding: AvatarState = { posture: 'standing', held: { objectId: 'mug', hand: 'right' } };
-    const far = planAction(worldAt(-1, 1.2, 0), holding, { kind: 'put', objectId: 'mug', surfaceId: 'coffee-table' });
+    const far = planAction(worldAt(-1, 1.2, 0), holding, {
+      kind: 'put',
+      objectId: 'mug',
+      surfaceId: 'coffee-table',
+    });
     expect(far.type).toBe('insert');
 
     const table = room.objects.find((o) => o.id === 'coffee-table')!;
     // Stand just south of the table, facing it.
     const world = worldAt(table.position[0], table.position[2] + 0.8, 180);
-    const stream = streamOf(planAction(world, holding, { kind: 'put', objectId: 'mug', surfaceId: 'coffee-table' }));
+    const stream = streamOf(
+      planAction(world, holding, { kind: 'put', objectId: 'mug', surfaceId: 'coffee-table' }),
+    );
     const target = stream.request.targets![0]!;
     expect(target.hand).toBe('right');
     expect([target.t, target.until]).toEqual([1.5, 1.8]);
@@ -450,15 +592,28 @@ describe('pick and put', () => {
 
   it('only puts what is held, on something with a top', () => {
     const holding: AvatarState = { posture: 'standing', held: { objectId: 'mug', hand: 'left' } };
-    expect(planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'put', objectId: 'mug', surfaceId: 'coffee-table' }).type).toBe('skip');
-    expect(planAction(worldAt(0, 0, 0), holding, { kind: 'put', objectId: 'mug', surfaceId: 'sofa' }).type).toBe('skip');
+    expect(
+      planAction(worldAt(0, 0, 0), INITIAL_STATE, {
+        kind: 'put',
+        objectId: 'mug',
+        surfaceId: 'coffee-table',
+      }).type,
+    ).toBe('skip');
+    expect(
+      planAction(worldAt(0, 0, 0), holding, { kind: 'put', objectId: 'mug', surfaceId: 'sofa' })
+        .type,
+    ).toBe('skip');
   });
 });
 
 describe('footprints', () => {
   it('clamps a point onto the top, inset from the edge', () => {
     const table = room.objects.find((o) => o.id === 'coffee-table')!;
-    const [x, z] = nearestFootprintPoint(table, [table.position[0] + 5, 0, table.position[2] + 5], 0.15);
+    const [x, z] = nearestFootprintPoint(
+      table,
+      [table.position[0] + 5, 0, table.position[2] + 5],
+      0.15,
+    );
     expect(x).toBeCloseTo(table.position[0] + 0.5 - 0.15, 6);
     expect(z).toBeCloseTo(table.position[2] + 0.3 - 0.15, 6);
     const centre = nearestFootprintPoint(table, [table.position[0], 0, table.position[2]], 0.15);
@@ -477,9 +632,15 @@ describe('planning with other avatars (occupancy)', () => {
   }
 
   it('plans exactly as before when nobody else is in the room', () => {
-    const alone = planAction(worldAt(0, -0.3, 0), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' });
+    const alone = planAction(worldAt(0, -0.3, 0), INITIAL_STATE, {
+      kind: 'go',
+      objectId: 'bookshelf',
+    });
     const crowded = new RoomOccupancy();
-    const same = planAction(withOthers(worldAt(0, -0.3, 0), crowded), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' });
+    const same = planAction(withOthers(worldAt(0, -0.3, 0), crowded), INITIAL_STATE, {
+      kind: 'go',
+      objectId: 'bookshelf',
+    });
     expect(same).toEqual(alone);
   });
 
@@ -487,11 +648,18 @@ describe('planning with other avatars (occupancy)', () => {
     const stand = stage.worldTag('bookshelf', 'stand')!;
     const occupancy = new RoomOccupancy();
     occupancy.standing('sage', { x: stand.position[0], z: stand.position[2] });
-    const plan = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' });
+    const plan = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, {
+      kind: 'go',
+      objectId: 'bookshelf',
+    });
     expect(plan.type).toBe('stream');
     const goal = occupancy.others('sage')[0]!.goal!;
-    expect(Math.hypot(goal.x - stand.position[0], goal.z - stand.position[2])).toBeGreaterThanOrEqual(0.45);
-    expect(Math.hypot(goal.x - stand.position[0], goal.z - stand.position[2])).toBeLessThanOrEqual(1.0001);
+    expect(
+      Math.hypot(goal.x - stand.position[0], goal.z - stand.position[2]),
+    ).toBeGreaterThanOrEqual(0.45);
+    expect(Math.hypot(goal.x - stand.position[0], goal.z - stand.position[2])).toBeLessThanOrEqual(
+      1.0001,
+    );
   });
 
   it('skips when there is no free spot near the goal', () => {
@@ -527,9 +695,15 @@ describe('planning with other avatars (occupancy)', () => {
     const occupancy = new RoomOccupancy();
     occupancy.setNames({ sage: 'Sage' });
     occupancy.claim('seat', 'sofa', 'sage');
-    const plan = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' });
+    const plan = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, {
+      kind: 'sit',
+      objectId: 'sofa',
+    });
     expect(plan).toEqual({ type: 'skip', reason: 'Sage is sitting on the sofa' });
-    const free = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, { kind: 'sit', objectId: 'armchair' });
+    const free = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, {
+      kind: 'sit',
+      objectId: 'armchair',
+    });
     expect(free.type).toBe('stream');
     expect(occupancy.holder('seat', 'armchair')).toBe('echo');
   });
@@ -538,10 +712,16 @@ describe('planning with other avatars (occupancy)', () => {
     const occupancy = new RoomOccupancy();
     occupancy.setNames({ sage: 'Sage' });
     occupancy.claim('object', 'mug', 'sage');
-    const plan = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, { kind: 'pick', objectId: 'mug' });
+    const plan = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, {
+      kind: 'pick',
+      objectId: 'mug',
+    });
     expect(plan).toEqual({ type: 'skip', reason: 'Sage has it' });
     occupancy.release('object', 'mug', 'sage');
-    const ok = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, { kind: 'pick', objectId: 'mug' });
+    const ok = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, {
+      kind: 'pick',
+      objectId: 'mug',
+    });
     expect(ok.type).toBe('stream');
     expect(occupancy.holder('object', 'mug')).toBe('echo');
   });
@@ -549,16 +729,37 @@ describe('planning with other avatars (occupancy)', () => {
 
 describe('leaving by the door', () => {
   /** The reading room with its openings replaced, to put the door on each wall. */
-  const withOpenings = (openings: NonNullable<RoomFile['shell']['openings']>): RoomFile => ({ ...room, shell: { ...room.shell, openings } });
-  const door = (wall: 'north' | 'south' | 'east' | 'west', offset: number) => ({ wall, kind: 'door' as const, offset, width: 0.95, height: 2.1 });
+  const withOpenings = (openings: NonNullable<RoomFile['shell']['openings']>): RoomFile => ({
+    ...room,
+    shell: { ...room.shell, openings },
+  });
+  const door = (wall: 'north' | 'south' | 'east' | 'west', offset: number) => ({
+    wall,
+    kind: 'door' as const,
+    offset,
+    width: 0.95,
+    height: 2.1,
+  });
 
   it('finds the door in each wall and stands the avatar just inside it', () => {
     // The floor is 6 wide (x) and 5 deep (z), centred on the origin.
-    const cases: Array<{ wall: 'north' | 'south' | 'east' | 'west'; offset: number; door: Vec3; inside: Vec3; into: number }> = [
+    const cases: Array<{
+      wall: 'north' | 'south' | 'east' | 'west';
+      offset: number;
+      door: Vec3;
+      inside: Vec3;
+      into: number;
+    }> = [
       { wall: 'north', offset: 1, door: [1, 0, -2.5], inside: [1, 0, -2.15], into: 0 },
       { wall: 'south', offset: -1, door: [-1, 0, 2.5], inside: [-1, 0, 2.15], into: Math.PI },
       { wall: 'east', offset: 1.2, door: [3, 0, 1.2], inside: [2.65, 0, 1.2], into: -Math.PI / 2 },
-      { wall: 'west', offset: -0.5, door: [-3, 0, -0.5], inside: [-2.65, 0, -0.5], into: Math.PI / 2 },
+      {
+        wall: 'west',
+        offset: -0.5,
+        door: [-3, 0, -0.5],
+        inside: [-2.65, 0, -0.5],
+        into: Math.PI / 2,
+      },
     ];
     for (const expected of cases) {
       const entry = doorEntry(withOpenings([door(expected.wall, expected.offset)]));
@@ -575,7 +776,13 @@ describe('leaving by the door', () => {
   });
 
   it('skips windows and uses the first door', () => {
-    const entry = doorEntry(withOpenings([{ wall: 'north', kind: 'window', offset: 0, width: 1, height: 1, sill: 1 }, door('west', 0), door('east', 0)]));
+    const entry = doorEntry(
+      withOpenings([
+        { wall: 'north', kind: 'window', offset: 0, width: 1, height: 1, sill: 1 },
+        door('west', 0),
+        door('east', 0),
+      ]),
+    );
     expect(entry?.door).toEqual([-3, 0, 0]);
   });
 
@@ -586,7 +793,9 @@ describe('leaving by the door', () => {
 
   it('has no entry for a room without a door', () => {
     expect(doorEntry(withOpenings([]))).toBeNull();
-    expect(doorEntry(withOpenings([{ wall: 'north', kind: 'window', offset: 0, width: 1, height: 1 }]))).toBeNull();
+    expect(
+      doorEntry(withOpenings([{ wall: 'north', kind: 'window', offset: 0, width: 1, height: 1 }])),
+    ).toBeNull();
   });
 
   it('plans a walk to the door, facing it', () => {
@@ -597,24 +806,45 @@ describe('leaving by the door', () => {
     // The walk ends at the spot inside the door, turned to face the door.
     const end = stream.expectedEnd;
     const [ex, ez] = motionToWorld(stream.frame, end.root[0], end.root[1]);
-    expect(Math.hypot(ex - (entry?.inside[0] ?? 0), ez - (entry?.inside[2] ?? 0))).toBeLessThan(0.7);
+    expect(Math.hypot(ex - (entry?.inside[0] ?? 0), ez - (entry?.inside[2] ?? 0))).toBeLessThan(
+      0.7,
+    );
     expect(stream.outcome).toEqual({ posture: 'standing' });
     expect(stream.request.path).toBeDefined();
   });
 
   it('skips with "no door" when the room has none', () => {
     const noDoor = { ...worldAt(0, -0.3, 0), room: withOpenings([]) };
-    expect(planAction(noDoor, INITIAL_STATE, { kind: 'exit' })).toEqual({ type: 'skip', reason: 'no door' });
+    expect(planAction(noDoor, INITIAL_STATE, { kind: 'exit' })).toEqual({
+      type: 'skip',
+      reason: 'no door',
+    });
   });
 
   it('skips with "no door" when the room cannot be walked', () => {
     const blind = { ...worldAt(0, -0.3, 0), hasNavigation: false };
-    expect(planAction(blind, INITIAL_STATE, { kind: 'exit' })).toEqual({ type: 'skip', reason: 'no door' });
+    expect(planAction(blind, INITIAL_STATE, { kind: 'exit' })).toEqual({
+      type: 'skip',
+      reason: 'no door',
+    });
   });
 
   it('stands up first when seated', () => {
-    const seated: AvatarState = { posture: 'seated', held: null, seat: { objectId: 'sofa', session: 's', frame: worldAt(0, 0, 0).frame, approach: [0, 0, 0], facing: 0 } };
-    expect(planAction(worldAt(0, 0, 0), seated, { kind: 'exit' })).toEqual({ type: 'insert', actions: [{ kind: 'stand' }] });
+    const seated: AvatarState = {
+      posture: 'seated',
+      held: null,
+      seat: {
+        objectId: 'sofa',
+        session: 's',
+        frame: worldAt(0, 0, 0).frame,
+        approach: [0, 0, 0],
+        facing: 0,
+      },
+    };
+    expect(planAction(worldAt(0, 0, 0), seated, { kind: 'exit' })).toEqual({
+      type: 'insert',
+      actions: [{ kind: 'stand' }],
+    });
   });
 
   it('turns a {room:} tag into the walk to the door', () => {
@@ -634,23 +864,44 @@ describe('sit leg targets', () => {
     facing: 0,
   };
 
-  function sitAt(scale: number, geometry = GEOMETRY, legs: RestLegLengths | null = LEGS): AvatarMotionTarget[] {
+  function sitAt(
+    scale: number,
+    geometry = GEOMETRY,
+    legs: RestLegLengths | null = LEGS,
+  ): AvatarMotionTarget[] {
     const sit = stage.worldTag('sofa', 'sit')!;
     const f = ((sit.facing ?? 0) * Math.PI) / 180;
-    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180, scale);
-    const world: PlanWorld = { ...base, seatGeometry: () => geometry, ...(legs ? { restLegLengths: legs } : {}) };
-    return streamOf(planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets!;
+    const base = worldAt(
+      sit.position[0] + 0.45 * Math.sin(f),
+      sit.position[2] + 0.45 * Math.cos(f),
+      180,
+      scale,
+    );
+    const world: PlanWorld = {
+      ...base,
+      seatGeometry: () => geometry,
+      ...(legs ? { restLegLengths: legs } : {}),
+    };
+    return streamOf(planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request
+      .targets!;
   }
 
   it('sends nothing extra without a seat geometry or leg lengths', () => {
     const sit = stage.worldTag('sofa', 'sit')!;
     const f = ((sit.facing ?? 0) * Math.PI) / 180;
-    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
-    const plain = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets!;
+    const base = worldAt(
+      sit.position[0] + 0.45 * Math.sin(f),
+      sit.position[2] + 0.45 * Math.cos(f),
+      180,
+    );
+    const plain = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }))
+      .request.targets!;
     expect(plain.some((t) => t.joint)).toBe(false);
     expect(sitAt(1, GEOMETRY, null).some((t) => t.joint)).toBe(false);
     const nullGeometry = { ...base, seatGeometry: () => null, restLegLengths: LEGS };
-    const none = streamOf(planAction(nullGeometry, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets!;
+    const none = streamOf(
+      planAction(nullGeometry, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }),
+    ).request.targets!;
     expect(none).toEqual(plain);
   });
 
@@ -658,7 +909,12 @@ describe('sit leg targets', () => {
     const targets = sitAt(1);
     const root = targets.find((t) => t.root)!;
     const joints = targets.filter((t) => t.joint);
-    expect(joints.map((t) => t.joint).sort()).toEqual(['left_ankle', 'left_knee', 'right_ankle', 'right_knee']);
+    expect(joints.map((t) => t.joint).sort()).toEqual([
+      'left_ankle',
+      'left_knee',
+      'right_ankle',
+      'right_knee',
+    ]);
     for (const t of joints) {
       expect(t.until).toBeCloseTo(root.until!, 6);
       expect(t.until! - t.t).toBeCloseTo(0.5, 6);
@@ -669,11 +925,22 @@ describe('sit leg targets', () => {
     const facing = ((sit.facing ?? 0) * Math.PI) / 180;
     // Back to the world, relative to the seat anchor, along and across the facing direction.
     const local = (t: AvatarMotionTarget) => {
-      const sitFrame: MotionFrame = { origin: { x: sit.position[0] + 0.45 * Math.sin(facing), z: sit.position[2] + 0.45 * Math.cos(facing), yaw: Math.PI }, scale: 1 };
+      const sitFrame: MotionFrame = {
+        origin: {
+          x: sit.position[0] + 0.45 * Math.sin(facing),
+          z: sit.position[2] + 0.45 * Math.cos(facing),
+          yaw: Math.PI,
+        },
+        scale: 1,
+      };
       const [x, y, z] = motionPointToWorld(sitFrame, t.position!);
       const dx = x - sit.position[0];
       const dz = z - sit.position[2];
-      return { along: dx * Math.sin(facing) + dz * Math.cos(facing), across: dx * Math.cos(facing) - dz * Math.sin(facing), y };
+      return {
+        along: dx * Math.sin(facing) + dz * Math.cos(facing),
+        across: dx * Math.cos(facing) - dz * Math.sin(facing),
+        y,
+      };
     };
     const leftKnee = local(joints.find((t) => t.joint === 'left_knee')!);
     const rightKnee = local(joints.find((t) => t.joint === 'right_knee')!);
@@ -684,7 +951,10 @@ describe('sit leg targets', () => {
     const leftAnkle = local(joints.find((t) => t.joint === 'left_ankle')!);
     expect(leftAnkle.y).toBeCloseTo(0.08, 2); // floor + ankle height
     expect(leftAnkle.along).toBeGreaterThanOrEqual(leftKnee.along); // a straight shin: at or just in front of the knee
-    expect(Math.hypot(leftAnkle.along - leftKnee.along, leftAnkle.y - leftKnee.y)).toBeCloseTo(0.46, 2);
+    expect(Math.hypot(leftAnkle.along - leftKnee.along, leftAnkle.y - leftKnee.y)).toBeCloseTo(
+      0.46,
+      2,
+    );
   });
 
   it('lets the feet hang a shin below the knees when the floor is out of reach', () => {
@@ -699,7 +969,8 @@ describe('sit leg targets', () => {
   it('works in avatar metres: a larger avatar (scale 1.25) gets the same pose in its own units', () => {
     const small = sitAt(1);
     const big = sitAt(1.25);
-    const heightOf = (targets: AvatarMotionTarget[], joint: string) => targets.find((t) => t.joint === joint)!.position![1]!;
+    const heightOf = (targets: AvatarMotionTarget[], joint: string) =>
+      targets.find((t) => t.joint === joint)!.position![1]!;
     // Seat 0.45 m high is 0.36 avatar metres at scale 1.25, so knees sit lower in avatar units.
     expect(heightOf(big, 'left_knee')).toBeCloseTo((0.45 + 0.07 * 1.25) / 1.25, 2);
     expect(heightOf(big, 'left_knee')).toBeLessThan(heightOf(small, 'left_knee'));
@@ -716,22 +987,37 @@ describe('sit leg targets', () => {
       { t: 3, until: 3.5, revealS: 2 },
     );
     const knee = pure.find((t) => t.joint === 'left_knee')!;
-    expect(Math.hypot(knee.position![2]!, knee.position![1]! - 0.53)).toBeLessThanOrEqual(0.42 + 1e-3);
+    expect(Math.hypot(knee.position![2]!, knee.position![1]! - 0.53)).toBeLessThanOrEqual(
+      0.42 + 1e-3,
+    );
   });
 
   it('measures a real sofa: the planned sit carries leg targets', () => {
     const geometry = stage.seatGeometry('sofa')!;
     const targets = sitAt(1, geometry);
     expect(targets.filter((t) => t.joint)).toHaveLength(4);
-    expect(targets.find((t) => t.joint === 'left_knee')!.position![1]).toBeCloseTo(geometry.seatTopY + 0.07, 2);
+    expect(targets.find((t) => t.joint === 'left_knee')!.position![1]).toBeCloseTo(
+      geometry.seatTopY + 0.07,
+      2,
+    );
   });
 
   it('plans a settle stream that holds the pelvis target', () => {
     const sit = stage.worldTag('sofa', 'sit')!;
     const f = ((sit.facing ?? 0) * Math.PI) / 180;
-    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
+    const base = worldAt(
+      sit.position[0] + 0.45 * Math.sin(f),
+      sit.position[2] + 0.45 * Math.cos(f),
+      180,
+    );
     const stream = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
     expect(stream.settle?.prompt).toBe('a person sits still on a chair, looking ahead');
-    expect(stream.settle?.targets[0]).toMatchObject({ root: stream.request.targets![0]!.root, heading: stream.request.targets![0]!.heading, revealS: 0, t: 0, until: stream.settle!.duration });
+    expect(stream.settle?.targets[0]).toMatchObject({
+      root: stream.request.targets![0]!.root,
+      heading: stream.request.targets![0]!.heading,
+      revealS: 0,
+      t: 0,
+      until: stream.settle!.duration,
+    });
   });
 });

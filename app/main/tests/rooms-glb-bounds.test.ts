@@ -16,7 +16,13 @@ describe('glbBounds', () => {
   });
 
   it('carries node transforms through', () => {
-    const bounds = glbBounds(makeGlb({ min: [0, 0, 0], max: [1, 1, 1], node: { scale: [2, 3, 4], translation: [0, 1, 0] } }));
+    const bounds = glbBounds(
+      makeGlb({
+        min: [0, 0, 0],
+        max: [1, 1, 1],
+        node: { scale: [2, 3, 4], translation: [0, 1, 0] },
+      }),
+    );
     expect(bounds?.size).toEqual([2, 3, 4]);
     expect(bounds?.min).toEqual([0, 1, 0]);
   });

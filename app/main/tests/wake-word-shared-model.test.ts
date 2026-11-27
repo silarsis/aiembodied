@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isInside, readSharedWakeWord } from '../src/wake-word/shared-model.js';
-import type { WakeWordConfig } from '../src/config/config-manager.js';
+import type { WakeWordConfig } from '../src/shared/config/config-manager-types.js';
 
 const BASE = { keywordLabel: 'Hey Kev', threshold: 0.5, cooldownMs: 1500 };
 
@@ -37,14 +37,21 @@ describe('wake-word:model', () => {
     const outside = path.join(directory, 'secret.onnx');
     await writeFile(outside, Buffer.from([1]));
     expect(await readSharedWakeWord({ ...BASE, model: outside }, trained)).toBeNull();
-    expect(await readSharedWakeWord({ ...BASE, model: path.join(trained, '..', 'secret.onnx') }, trained)).toBeNull();
+    expect(
+      await readSharedWakeWord(
+        { ...BASE, model: path.join(trained, '..', 'secret.onnx') },
+        trained,
+      ),
+    ).toBeNull();
     const text = path.join(trained, 'notes.txt');
     await writeFile(text, 'x');
     expect(await readSharedWakeWord({ ...BASE, model: text }, trained)).toBeNull();
     const empty = path.join(trained, 'empty.onnx');
     await writeFile(empty, '');
     expect(await readSharedWakeWord({ ...BASE, model: empty }, trained)).toBeNull();
-    expect(await readSharedWakeWord({ ...BASE, model: path.join(trained, 'missing.onnx') }, trained)).toBeNull();
+    expect(
+      await readSharedWakeWord({ ...BASE, model: path.join(trained, 'missing.onnx') }, trained),
+    ).toBeNull();
     expect(await readSharedWakeWord({ ...BASE, model: '/etc/passwd' }, trained)).toBeNull();
   });
 

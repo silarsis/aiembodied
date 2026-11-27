@@ -38,9 +38,17 @@ export class GripPose {
 
   constructor(humanoid: BoneSource, side: Side) {
     for (const finger of FINGERS) {
-      this.collect(humanoid, FINGER_JOINTS.map((joint) => `${side}${finger}${joint}`), FINGER_CURL);
+      this.collect(
+        humanoid,
+        FINGER_JOINTS.map((joint) => `${side}${finger}${joint}`),
+        FINGER_CURL,
+      );
     }
-    this.collect(humanoid, THUMB_JOINTS.map((joint) => `${side}Thumb${joint}`), THUMB_CURL);
+    this.collect(
+      humanoid,
+      THUMB_JOINTS.map((joint) => `${side}Thumb${joint}`),
+      THUMB_CURL,
+    );
   }
 
   /** False when the avatar has no finger bones, so there is nothing to curl. */
@@ -68,7 +76,10 @@ export class GripPose {
   update(deltaSeconds: number): void {
     if (this.joints.length === 0) return;
     const step = Math.max(0, deltaSeconds) / BLEND_SECONDS;
-    this.weight = this.weight < this.target ? Math.min(this.target, this.weight + step) : Math.max(this.target, this.weight - step);
+    this.weight =
+      this.weight < this.target
+        ? Math.min(this.target, this.weight + step)
+        : Math.max(this.target, this.weight - step);
     if (this.weight <= 0) {
       if (this.applied) {
         for (const joint of this.joints) joint.bone.quaternion.copy(joint.rest);
@@ -92,7 +103,8 @@ export class GripPose {
       if (!bone) continue;
       // The bone points at its child; the last joint has no child bone, so it keeps the previous direction.
       const child = bones[i + 1];
-      if (child && child.position.lengthSq() > 1e-12) direction = child.position.clone().normalize();
+      if (child && child.position.lengthSq() > 1e-12)
+        direction = child.position.clone().normalize();
       if (!direction) continue;
       const axis = new THREE.Vector3().crossVectors(direction, DOWN);
       if (axis.lengthSq() < 1e-9) continue;

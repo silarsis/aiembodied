@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import type { AvatarGenerationWarning } from '../types.js';
+import type { AvatarGenerationWarning } from '../../shared/avatar/types.js';
 
 /** Shared with the external Python fitter; packaged assets include this policy. */
 export const templatePolicy = JSON.parse(

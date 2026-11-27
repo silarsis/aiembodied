@@ -46,8 +46,12 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('config:get-secret', 'realtimeApiKey');
 
     invoke.mockResolvedValueOnce({ value: 'token' });
-    await expect(api.realtime.mintEphemeralToken({ session: { type: 'realtime' } })).resolves.toEqual({ value: 'token' });
-    expect(invoke).toHaveBeenCalledWith('realtime:mint-ephemeral-token', { session: { type: 'realtime' } });
+    await expect(
+      api.realtime.mintEphemeralToken({ session: { type: 'realtime' } }),
+    ).resolves.toEqual({ value: 'token' });
+    expect(invoke).toHaveBeenCalledWith('realtime:mint-ephemeral-token', {
+      session: { type: 'realtime' },
+    });
   });
 
   it('routes config mutations and tests through ipc channels', async () => {
@@ -100,17 +104,30 @@ describe('preload bridge', () => {
     await api.models.probe({ serverId: 'local-comfy' });
     expect(invoke).toHaveBeenCalledWith('models:probe', { serverId: 'local-comfy' });
     await api.models.saveServer({ type: 'comfy', url: 'http://rack:8188' });
-    expect(invoke).toHaveBeenCalledWith('models:save-server', { type: 'comfy', url: 'http://rack:8188' });
+    expect(invoke).toHaveBeenCalledWith('models:save-server', {
+      type: 'comfy',
+      url: 'http://rack:8188',
+    });
     await api.models.removeServer('server-a');
     expect(invoke).toHaveBeenCalledWith('models:remove-server', 'server-a');
     await api.models.setRoute('image', { server: 'server-a', spread: true });
-    expect(invoke).toHaveBeenCalledWith('models:set-route', { use: 'image', route: { server: 'server-a', spread: true } });
+    expect(invoke).toHaveBeenCalledWith('models:set-route', {
+      use: 'image',
+      route: { server: 'server-a', spread: true },
+    });
     await api.models.setKey('openai', 'sk');
     expect(invoke).toHaveBeenCalledWith('models:set-key', { serverId: 'openai', key: 'sk' });
     await api.models.civitaiLookup('4201@900', 900);
-    expect(invoke).toHaveBeenCalledWith('models:civitai-lookup', { ref: '4201@900', versionId: 900 });
+    expect(invoke).toHaveBeenCalledWith('models:civitai-lookup', {
+      ref: '4201@900',
+      versionId: 900,
+    });
     await api.models.download('rack', '4201@900', 900);
-    expect(invoke).toHaveBeenCalledWith('models:download', { serverId: 'rack', ref: '4201@900', versionId: 900 });
+    expect(invoke).toHaveBeenCalledWith('models:download', {
+      serverId: 'rack',
+      ref: '4201@900',
+      versionId: 900,
+    });
     await api.models.downloads();
     expect(invoke).toHaveBeenCalledWith('models:downloads');
     await api.models.cancelDownload('d1');
@@ -125,7 +142,10 @@ describe('preload bridge', () => {
     await api.coding.get();
     expect(invoke).toHaveBeenCalledWith('coding:get');
     await api.coding.set({ runner: 'local-coder-runner', workspaces: [] });
-    expect(invoke).toHaveBeenCalledWith('coding:set', { runner: 'local-coder-runner', workspaces: [] });
+    expect(invoke).toHaveBeenCalledWith('coding:set', {
+      runner: 'local-coder-runner',
+      workspaces: [],
+    });
     await api.coding.status();
     expect(invoke).toHaveBeenCalledWith('coding:status');
     await api.coding.pickGguf();
@@ -180,7 +200,8 @@ describe('preload bridge', () => {
 
     const cameraCall = on.mock.calls.find(([channel]) => channel === 'camera:detection');
     expect(cameraCall).toBeDefined();
-    const cameraHandler = cameraCall?.[1] as ((event: unknown, payload: unknown) => void) | undefined;
+    const cameraHandler = cameraCall?.[1] as
+      ((event: unknown, payload: unknown) => void) | undefined;
     expect(typeof cameraHandler).toBe('function');
 
     const payload = { cue: 'greet_face', confidence: 0.8, timestamp: 42 };
@@ -211,10 +232,15 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('avatar-model:set-active', 'vrm-2');
 
     invoke.mockResolvedValueOnce({ model: { id: 'vrm-3' } });
-    await expect(api.avatar?.uploadModel({ fileName: 'model.vrm', data: 'AAAA' })).resolves.toEqual({
-      model: { id: 'vrm-3' },
+    await expect(api.avatar?.uploadModel({ fileName: 'model.vrm', data: 'AAAA' })).resolves.toEqual(
+      {
+        model: { id: 'vrm-3' },
+      },
+    );
+    expect(invoke).toHaveBeenCalledWith('avatar-model:upload', {
+      fileName: 'model.vrm',
+      data: 'AAAA',
     });
-    expect(invoke).toHaveBeenCalledWith('avatar-model:upload', { fileName: 'model.vrm', data: 'AAAA' });
 
     invoke.mockResolvedValueOnce(true);
     await api.avatar?.deleteModel('vrm-3');
@@ -236,22 +262,35 @@ describe('preload bridge', () => {
     await expect(api.avatar?.generateAvatar({ prompt: 'A friendly assistant' })).resolves.toEqual({
       jobId: 'job-1',
     });
-    expect(invoke).toHaveBeenCalledWith('avatar:generation-start', { prompt: 'A friendly assistant' });
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-start', {
+      prompt: 'A friendly assistant',
+    });
     invoke.mockResolvedValueOnce({ models: [], selectedModelId: null });
-    await expect(api.avatar?.listAvatarImageModels()).resolves.toEqual({ models: [], selectedModelId: null });
+    await expect(api.avatar?.listAvatarImageModels()).resolves.toEqual({
+      models: [],
+      selectedModelId: null,
+    });
     expect(invoke).toHaveBeenCalledWith('avatar:image-models');
     invoke.mockResolvedValueOnce(undefined);
     await api.avatar?.setAvatarImageModel('checkpoints:variant.safetensors');
-    expect(invoke).toHaveBeenCalledWith('avatar:image-model-select', 'checkpoints:variant.safetensors');
+    expect(invoke).toHaveBeenCalledWith(
+      'avatar:image-model-select',
+      'checkpoints:variant.safetensors',
+    );
 
     invoke.mockResolvedValueOnce({ jobId: 'job-1', status: 'queued' });
-    await expect(api.avatar?.getAvatarGenerationStatus('job-1')).resolves.toEqual({ jobId: 'job-1', status: 'queued' });
+    await expect(api.avatar?.getAvatarGenerationStatus('job-1')).resolves.toEqual({
+      jobId: 'job-1',
+      status: 'queued',
+    });
     expect(invoke).toHaveBeenCalledWith('avatar:generation-status', 'job-1');
     invoke.mockResolvedValueOnce(undefined);
     await api.avatar?.confirmAvatarConcept('job-1');
     expect(invoke).toHaveBeenCalledWith('avatar:generation-confirm-concept', 'job-1');
     await api.avatar?.confirmAvatarConcept('job-1', { acceptWarnings: true });
-    expect(invoke).toHaveBeenCalledWith('avatar:generation-confirm-concept', 'job-1', { acceptWarnings: true });
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-confirm-concept', 'job-1', {
+      acceptWarnings: true,
+    });
 
     invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
     const preview = await api.avatar?.loadGeneratedAvatarPreview('job-1');
@@ -278,7 +317,11 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('avatar:character-models');
     invoke.mockResolvedValueOnce(undefined);
     await api.avatar?.setAvatarCharacterModel('geometry', 'trellis_2_bf16.safetensors');
-    expect(invoke).toHaveBeenCalledWith('avatar:character-model-select', 'geometry', 'trellis_2_bf16.safetensors');
+    expect(invoke).toHaveBeenCalledWith(
+      'avatar:character-model-select',
+      'geometry',
+      'trellis_2_bf16.safetensors',
+    );
   });
 
   it('exposes avatar animation helpers through the bridge', async () => {
@@ -289,13 +332,20 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('avatar-animation:list');
 
     invoke.mockResolvedValueOnce({ animation: { id: 'vrma-1' } });
-    await expect(api.avatar?.uploadAnimation({ fileName: 'idle.vrma', data: 'AAAA' })).resolves.toEqual({
+    await expect(
+      api.avatar?.uploadAnimation({ fileName: 'idle.vrma', data: 'AAAA' }),
+    ).resolves.toEqual({
       animation: { id: 'vrma-1' },
     });
-    expect(invoke).toHaveBeenCalledWith('avatar-animation:upload', { fileName: 'idle.vrma', data: 'AAAA' });
+    expect(invoke).toHaveBeenCalledWith('avatar-animation:upload', {
+      fileName: 'idle.vrma',
+      data: 'AAAA',
+    });
 
     invoke.mockResolvedValueOnce({ animation: { id: 'vrma-2' } });
-    await expect(api.avatar?.generateAnimation({ prompt: 'Wave hello' })).resolves.toEqual({ animation: { id: 'vrma-2' } });
+    await expect(api.avatar?.generateAnimation({ prompt: 'Wave hello' })).resolves.toEqual({
+      animation: { id: 'vrma-2' },
+    });
     expect(invoke).toHaveBeenCalledWith('avatar-animation:generate', { prompt: 'Wave hello' });
 
     invoke.mockResolvedValueOnce(true);
@@ -311,7 +361,6 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('avatar-animation:load', 'vrma-3');
   });
 });
-
 
 it('exposes only named background operations through the preload bridge', async () => {
   vi.resetModules();
@@ -344,7 +393,11 @@ it('exposes only named background operations through the preload bridge', async 
   await api.backgrounds.getIdleSettings();
   expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:get');
   await api.backgrounds.setIdleSettings({ enabled: false, restlessness: 'calm', onTalk: 'turn' });
-  expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:set', { enabled: false, restlessness: 'calm', onTalk: 'turn' });
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:set', {
+    enabled: false,
+    restlessness: 'calm',
+    onTalk: 'turn',
+  });
   await api.backgrounds.pickIdle({ system: 's', user: 'u' });
   expect(invoke).toHaveBeenCalledWith('rooms:idle-pick', { system: 's', user: 'u' });
   await api.backgrounds.getObjectSettings();

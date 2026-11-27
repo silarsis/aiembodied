@@ -1,6 +1,6 @@
 /** "Do not disturb" in Status and diagnostics: Echo saves updates quietly instead of speaking them. */
 import { useEffect, useState } from 'react';
-import type { PresenceBridge } from '../../../main/src/presence/bridge-types.js';
+import type { PresenceBridge } from '../../../main/src/shared/presence/bridge-types.js';
 
 export function DoNotDisturbToggle({ api }: { api?: PresenceBridge }) {
   const [enabled, setEnabled] = useState(false);
@@ -29,7 +29,13 @@ export function DoNotDisturbToggle({ api }: { api?: PresenceBridge }) {
   };
   return (
     <label className="kiosk__helper" data-testid="dnd-toggle">
-      <input type="checkbox" checked={enabled} disabled={!ready} onChange={(event) => toggle(event.target.checked)} /> Do not disturb
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={!ready}
+        onChange={(event) => toggle(event.target.checked)}
+      />{' '}
+      Do not disturb
       <span> (Echo keeps non-urgent updates quiet)</span>
     </label>
   );

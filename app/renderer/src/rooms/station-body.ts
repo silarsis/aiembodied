@@ -8,8 +8,8 @@
  * actions. Gestures are not planned here: a `{move:}` gesture is skipped by the executor while the avatar is
  * seated, so `station-walks.ts` plays them only when standing.
  */
-import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
-import type { StationBody } from '../../../main/src/stations/types.js';
+import type { RoomFile, RoomObject } from '../../../main/src/shared/rooms/types.js';
+import type { StationBody } from '../../../main/src/shared/stations/types.js';
 import type { AvatarState, PlanWorld, SceneAction } from './scene-actions.js';
 
 /** A station's body plan checked against the room. */
@@ -46,7 +46,12 @@ function clean(text: string): string {
  * Checks the body of a station against the room. `fallbackActivity` is the station's own activity, used for
  * the gestures the body does not give. Null when the room has no such station object.
  */
-export function resolveBodyPlan(room: RoomFile, objectId: string, body: StationBody | undefined, fallbackActivity: string): BodyPlan | null {
+export function resolveBodyPlan(
+  room: RoomFile,
+  objectId: string,
+  body: StationBody | undefined,
+  fallbackActivity: string,
+): BodyPlan | null {
   const station = find(room, objectId);
   if (!station) return null;
   const prop = find(room, body?.prop);
@@ -95,7 +100,12 @@ export function chooseSurface(world: PlanWorld, plan: BodyPlan | null): string |
  * Stand up and put down whatever is in the hand (the book goes back on the shelf). `comeBack` adds `{come}`:
  * used when the session was cut short because the user started talking, so the conversation finds the avatar at home.
  */
-export function planRelease(plan: BodyPlan | null, world: PlanWorld, state: AvatarState, comeBack: boolean): SceneAction[] {
+export function planRelease(
+  plan: BodyPlan | null,
+  world: PlanWorld,
+  state: AvatarState,
+  comeBack: boolean,
+): SceneAction[] {
   const actions: SceneAction[] = [];
   if (state.posture === 'seated') actions.push({ kind: 'stand' });
   if (state.held) {

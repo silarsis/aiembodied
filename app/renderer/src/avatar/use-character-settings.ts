@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AvatarProfile, AvatarsBridge } from '../../../main/src/avatars/bridge-types.js';
+import type {
+  AvatarProfile,
+  AvatarsBridge,
+} from '../../../main/src/shared/avatars/bridge-types.js';
 import { MAX_IDLE_HABITS_LENGTH } from '../../../main/src/shared/rooms/idle-habits.js';
-import type { SpeakingVoiceOptions } from '../../../main/src/local-voice/types.js';
+import type { SpeakingVoiceOptions } from '../../../main/src/shared/local-voice/types.js';
 import type { CharacterSettingsControls } from './character-settings.js';
 import type { AvatarBridge } from './types.js';
 import type { LoadReadingNotes } from './reading-notes.js';
@@ -12,7 +15,15 @@ export type Run = (action: () => Promise<unknown>) => Promise<boolean>;
 /** What a scene card needs to read and save a character's settings. */
 export interface CharacterSettingsContext {
   /** The per-character preference calls (prompt, idle habits, voice). */
-  avatarApi?: Pick<AvatarBridge, 'getVoicePreference' | 'setVoicePreference' | 'getPromptPreference' | 'setPromptPreference' | 'getIdleHabits' | 'setIdleHabits'>;
+  avatarApi?: Pick<
+    AvatarBridge,
+    | 'getVoicePreference'
+    | 'setVoicePreference'
+    | 'getPromptPreference'
+    | 'setPromptPreference'
+    | 'getIdleHabits'
+    | 'setIdleHabits'
+  >;
   /** The speaking engine's voices, with the named character's pick. */
   getVoiceOptions?: (avatarId?: string) => Promise<SpeakingVoiceOptions>;
   /** Local conversation: voices come from the speaking engine. Otherwise a fixed list is used. */
@@ -39,14 +50,24 @@ interface Options {
  * A character with a body of its own keeps them under that body; one sharing Echo's body keeps its prompt
  * in its profile and its habits and voice under its avatar id (the main process decides the keys).
  */
-export function useCharacterSettings({ context, avatarsApi, profile, ownBody, run }: Options): CharacterSettingsControls {
+export function useCharacterSettings({
+  context,
+  avatarsApi,
+  profile,
+  ownBody,
+  run,
+}: Options): CharacterSettingsControls {
   const { avatarApi, getVoiceOptions, isLocalBackend, realtimeVoices } = context;
   const id = profile.id;
 
   // Prompt
   // A body of its own: the saved prompt is read first (the profile's is only the fallback). Otherwise the profile's prompt is the prompt.
   const readsSaved = ownBody && Boolean(avatarApi?.getPromptPreference);
-  const [prompt, setPrompt] = useState({ text: profile.prompt ?? '', saved: (profile.prompt ?? '').trim(), loaded: !readsSaved });
+  const [prompt, setPrompt] = useState({
+    text: profile.prompt ?? '',
+    saved: (profile.prompt ?? '').trim(),
+    loaded: !readsSaved,
+  });
   useEffect(() => {
     if (!readsSaved || !avatarApi?.getPromptPreference) return;
     let cancelled = false;
@@ -59,7 +80,12 @@ export function useCharacterSettings({ context, avatarsApi, profile, ownBody, ru
       })
       .catch((error: unknown) => {
         console.warn('Could not read the personality prompt', error);
-        if (!cancelled) setPrompt({ text: profile.prompt ?? '', saved: (profile.prompt ?? '').trim(), loaded: true });
+        if (!cancelled)
+          setPrompt({
+            text: profile.prompt ?? '',
+            saved: (profile.prompt ?? '').trim(),
+            loaded: true,
+          });
       });
     return () => {
       cancelled = true;
@@ -71,7 +97,10 @@ export function useCharacterSettings({ context, avatarsApi, profile, ownBody, ru
     const next = prompt.text.trim();
     if (!prompt.loaded || next === prompt.saved) return;
     const save = ownBody
-      ? () => (avatarApi?.setPromptPreference ? avatarApi.setPromptPreference(prompt.text, id) : Promise.reject(new Error('Saving the prompt is not available.')))
+      ? () =>
+          avatarApi?.setPromptPreference
+            ? avatarApi.setPromptPreference(prompt.text, id)
+            : Promise.reject(new Error('Saving the prompt is not available.'))
       : () => avatarsApi.update(id, { prompt: prompt.text });
     void run(save).then((ok) => {
       if (ok) setPrompt((current) => ({ ...current, saved: next }));
@@ -86,7 +115,8 @@ export function useCharacterSettings({ context, avatarsApi, profile, ownBody, ru
     avatarApi
       .getIdleHabits(id)
       .then((stored) => {
-        if (!cancelled) setHabitsState({ text: stored ?? '', saved: (stored ?? '').trim(), loaded: true });
+        if (!cancelled)
+          setHabitsState({ text: stored ?? '', saved: (stored ?? '').trim(), loaded: true });
       })
       .catch((error: unknown) => {
         console.warn('Could not read the idle habits', error);
@@ -157,10 +187,13 @@ export function useCharacterSettings({ context, avatarsApi, profile, ownBody, ru
       : {
           kind: 'list',
           voices: realtimeVoices,
-          value: listVoice && realtimeVoices.includes(listVoice) ? listVoice : (realtimeVoices[0] ?? ''),
+          value:
+            listVoice && realtimeVoices.includes(listVoice) ? listVoice : (realtimeVoices[0] ?? ''),
           onChange: (voice) => {
             setListVoice(voice);
-            void run(() => avatarApi?.setVoicePreference(voice, undefined, id) ?? Promise.resolve());
+            void run(
+              () => avatarApi?.setVoicePreference(voice, undefined, id) ?? Promise.resolve(),
+            );
           },
         },
   };

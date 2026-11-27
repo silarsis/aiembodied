@@ -39,20 +39,32 @@ describe('LocalVoiceService long-term memory', () => {
       brief: vi.fn(async () => `Now: brief ${++briefs}.`),
       recall: vi.fn(async (text: string, recalled: readonly string[]) => {
         seen.push([...recalled]);
-        return text.includes('tomatoes') ? { block: '<recalled>\n- tomatoes in the greenhouse\n</recalled>', ids: ['m1'] } : null;
+        return text.includes('tomatoes')
+          ? { block: '<recalled>\n- tomatoes in the greenhouse\n</recalled>', ids: ['m1'] }
+          : null;
       }),
     };
     const { service, chats } = makeService(memory);
 
-    await service.respond({ requestId: 'r1', text: 'how are the tomatoes', instructions: 'Be Echo.' }, () => {});
-    await service.respond({ requestId: 'r2', text: 'and the basil?', instructions: 'Be Echo.' }, () => {});
+    await service.respond(
+      { requestId: 'r1', text: 'how are the tomatoes', instructions: 'Be Echo.' },
+      () => {},
+    );
+    await service.respond(
+      { requestId: 'r2', text: 'and the basil?', instructions: 'Be Echo.' },
+      () => {},
+    );
 
     expect(memory.brief).toHaveBeenCalledTimes(1);
     expect(chats[0].messages[0].content).toMatch(/^Be Echo\.[\s\S]*Now: brief 1\.$/);
     expect(chats[1].messages[0].content).toBe(chats[0].messages[0].content);
-    expect(chats[0].messages[1].content).toBe('<recalled>\n- tomatoes in the greenhouse\n</recalled>\n\nhow are the tomatoes');
+    expect(chats[0].messages[1].content).toBe(
+      '<recalled>\n- tomatoes in the greenhouse\n</recalled>\n\nhow are the tomatoes',
+    );
     // The second turn keeps the first user message as sent, so the prefix is unchanged.
-    expect(chats[1].messages.slice(0, 3)).toEqual(chats[0].messages.concat({ role: 'assistant', content: 'Sure.' }));
+    expect(chats[1].messages.slice(0, 3)).toEqual(
+      chats[0].messages.concat({ role: 'assistant', content: 'Sure.' }),
+    );
     expect(chats[1].messages[3]).toEqual({ role: 'user', content: 'and the basil?' });
     expect(seen).toEqual([[], ['m1']]);
   });
@@ -68,7 +80,10 @@ describe('LocalVoiceService long-term memory', () => {
   it('starts a new brief after the conversation goes idle', async () => {
     let clock = 1_000_000;
     let briefs = 0;
-    const memory: VoiceMemory = { brief: async () => `Now: brief ${++briefs}.`, recall: async () => null };
+    const memory: VoiceMemory = {
+      brief: async () => `Now: brief ${++briefs}.`,
+      recall: async () => null,
+    };
     const { service, chats } = makeService(memory, () => clock);
     await service.respond({ requestId: 'r1', text: 'hello' }, () => {});
     clock += 11 * 60_000;
@@ -102,7 +117,10 @@ describe('LocalVoiceService voice preview', () => {
       { requestId: 'p1', text: 'say something', instructions: 'Be Echo.', preview: true },
       (event) => events.push(event),
     );
-    await service.respond({ requestId: 'r2', text: 'and again', instructions: 'Be Echo.' }, () => {});
+    await service.respond(
+      { requestId: 'r2', text: 'and again', instructions: 'Be Echo.' },
+      () => {},
+    );
 
     expect(result).toEqual({ requestId: 'p1', text: 'Sure.', cancelled: false });
     // The preview's audio is still sent, sentence by sentence.
@@ -114,7 +132,11 @@ describe('LocalVoiceService voice preview', () => {
     expect(memory.recall).toHaveBeenCalledTimes(2);
     expect(activity).toHaveBeenCalledTimes(4);
     // The next real turn sees only the real conversation.
-    expect(chats[2].messages.map((message) => message.content).slice(1)).toEqual(['hello', 'Sure.', 'and again']);
+    expect(chats[2].messages.map((message) => message.content).slice(1)).toEqual([
+      'hello',
+      'Sure.',
+      'and again',
+    ]);
   });
 });
 
@@ -123,13 +145,16 @@ describe('LocalVoiceService overhearing', () => {
 
   it('puts overheard lines in front of the next turn once, clipped and capped, and keeps them in history', async () => {
     const { service, chats } = makeService(plain);
-    for (let i = 1; i <= 14; i += 1) service.overhear({ from: 'Kevin (to Sage)', text: `line  ${i}` });
+    for (let i = 1; i <= 14; i += 1)
+      service.overhear({ from: 'Kevin (to Sage)', text: `line  ${i}` });
     service.overhear({ from: 'Sage', text: 'x'.repeat(500) });
     service.overhear({ from: 'Sage', text: '   ' });
     await service.respond({ requestId: 'r1', text: 'hello' }, () => {});
     const content = chats[0].messages[1].content;
     const lines = content.split('\n');
-    expect(lines[0]).toBe('[Heard in the room since you last spoke, for context only; do not answer these lines:');
+    expect(lines[0]).toBe(
+      '[Heard in the room since you last spoke, for context only; do not answer these lines:',
+    );
     expect(lines[1]).toBe('Kevin (to Sage): line 4');
     expect(lines).toHaveLength(15);
     expect(lines[12]).toBe(`Sage: ${'x'.repeat(400)}…]`);
@@ -160,7 +185,13 @@ describe('formatBrief agent time sections', () => {
         ...base,
         intentions: [
           { id: '1', kind: 'goal', text: 'Learn his tastes' },
-          { id: '2', kind: 'reminder', text: 'Tell Kevin about the bins', due_at: '2026-11-26T10:00:00Z', status: 'open' },
+          {
+            id: '2',
+            kind: 'reminder',
+            text: 'Tell Kevin about the bins',
+            due_at: '2026-11-26T10:00:00Z',
+            status: 'open',
+          },
         ],
         flows: [{ name: 'morning_bins', description: 'Weekday bins reminder' }],
         agent_state: { asleep: true },

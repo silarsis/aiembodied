@@ -12,33 +12,17 @@ import type { GpuMemoryReader } from '../diagnostics/gpu-memory.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CodingConfig } from './config.js';
 import { findCoderGguf } from './gguf-finder.js';
-import { CoderModelSwap, type SwapState } from './model-swap.js';
+import { CoderModelSwap } from './model-swap.js';
 import type { CoderLeases } from '../aicontroller/bridge.js';
-import { CodingRunnerClient, type RunnerCapabilities, type RunnerEvent } from './runner-client.js';
+import { CodingRunnerClient, type RunnerCapabilities } from './runner-client.js';
+import type { RunnerEvent } from '../shared/coding/runner-client-types.js';
 import { buildCodingSyncPayload, CodingSync } from './sync.js';
+import type { CodingStatus } from '../shared/coding/coding-service-types.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
-
-export interface CodingStatus {
-  runnerUp: boolean;
-  runnerUrl: string | null;
-  localModelNeeded: boolean;
-  swap: SwapState;
-  /** The GGUF found on this PC when none is picked. */
-  detectedGguf: string | null;
-  /** Why the runner refused the workspaces, if it did. */
-  workspaceError: string | null;
-  /** The model controller's state, in words (whether it is in use and the lease state); absent without one. */
-  controller?: string | null;
-}
-
-/** What the Coding page shows. */
-export interface CodingView {
-  coding: CodingConfig;
-  /** The runner server in use (the saved one, or the built-in one if that is gone). */
-  runnerId: string | null;
-  status: CodingStatus;
-}
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface CodingServiceOptions {
   settings: () => { models: ModelRouting; coding: CodingConfig };
@@ -48,7 +32,10 @@ export interface CodingServiceOptions {
   controller?: CoderLeases;
   /** One line about the model controller for the status panel, or null without one. */
   controllerLine?: () => string | null;
-  coderControl: (model: { path: string; alias: string; contextLength: number }, baseUrl: string) => Pick<LocalLlmControl, 'stop' | 'start'>;
+  coderControl: (
+    model: { path: string; alias: string; contextLength: number },
+    baseUrl: string,
+  ) => Pick<LocalLlmControl, 'stop' | 'start'>;
   /** Rebuild Echo's engines: the chat override changed. */
   onOverrideChange: () => void | Promise<void>;
   logger: Logger;
@@ -98,9 +85,15 @@ export class CodingService {
           'The coding task is waiting: not enough memory to run the coder model next to yours. It will start when things are quiet.',
           { urgent: false },
         ),
-      ...(Number.isFinite(quietSeconds) && quietSeconds >= 0 ? { quietMs: quietSeconds * 1000 } : {}),
-      ...(Number.isFinite(idleStopSeconds) && idleStopSeconds >= 0 ? { idleStopMs: idleStopSeconds * 1000 } : {}),
-      ...(Number.isFinite(backSeconds) && backSeconds >= 0 ? { swapBackMs: backSeconds * 1000 } : {}),
+      ...(Number.isFinite(quietSeconds) && quietSeconds >= 0
+        ? { quietMs: quietSeconds * 1000 }
+        : {}),
+      ...(Number.isFinite(idleStopSeconds) && idleStopSeconds >= 0
+        ? { idleStopMs: idleStopSeconds * 1000 }
+        : {}),
+      ...(Number.isFinite(backSeconds) && backSeconds >= 0
+        ? { swapBackMs: backSeconds * 1000 }
+        : {}),
     });
   }
 
@@ -181,7 +174,10 @@ export class CodingService {
   async suggestChecks(workspaceId: string): Promise<string | null> {
     if (!this.client) return null;
     const capabilities: RunnerCapabilities = await this.client.capabilities(true);
-    return capabilities.workspaces?.find((entry) => entry.id === workspaceId)?.detected?.checks_suggestion ?? null;
+    return (
+      capabilities.workspaces?.find((entry) => entry.id === workspaceId)?.detected
+        ?.checks_suggestion ?? null
+    );
   }
 
   private connect(url: string): void {
@@ -203,7 +199,10 @@ export class CodingService {
         this.options.logger.info('Connected to the coding runner.', { url });
         // A runner that just started has forgotten the keys.
         void this.sync?.reset();
-        void client.status().then((status) => this.setNeeded(status.local_model_needed), () => undefined);
+        void client.status().then(
+          (status) => this.setNeeded(status.local_model_needed),
+          () => undefined,
+        );
       },
       onEvent: (event) => {
         if (this.client !== client) return;
@@ -212,7 +211,9 @@ export class CodingService {
           try {
             listener(event);
           } catch (error) {
-            this.options.logger.warn('A coding event listener failed.', { message: error instanceof Error ? error.message : String(error) });
+            this.options.logger.warn('A coding event listener failed.', {
+              message: error instanceof Error ? error.message : String(error),
+            });
           }
         }
       },
@@ -231,8 +232,15 @@ export class CodingService {
     const platform = (this.options.platform ?? process.platform) as NodeJS.Platform;
     const snapshot = await this.options.gpuMemory?.read([]).catch(() => null);
     let gpu: number | null = null;
-    if (snapshot?.supported && (snapshot.dedicatedTotal !== null || snapshot.sharedTotal !== null)) {
-      gpu = (snapshot.dedicatedTotal ?? 0) + (snapshot.sharedTotal ?? 0) - snapshot.used.dedicated - snapshot.used.shared;
+    if (
+      snapshot?.supported &&
+      (snapshot.dedicatedTotal !== null || snapshot.sharedTotal !== null)
+    ) {
+      gpu =
+        (snapshot.dedicatedTotal ?? 0) +
+        (snapshot.sharedTotal ?? 0) -
+        snapshot.used.dedicated -
+        snapshot.used.shared;
     }
     const commit = await readCommitHeadroom({ platform });
     const known = [gpu, commit].filter((value): value is number => value !== null);
@@ -241,7 +249,9 @@ export class CodingService {
 
   private async answers(url: string): Promise<boolean> {
     try {
-      const response = await (this.options.fetchFn ?? fetch)(url, { signal: AbortSignal.timeout(3000) });
+      const response = await (this.options.fetchFn ?? fetch)(url, {
+        signal: AbortSignal.timeout(3000),
+      });
       return response.ok;
     } catch {
       return false;

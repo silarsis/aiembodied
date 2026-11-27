@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { validateRoomFile } from '../../../main/src/shared/rooms/validate.js';
 
 export function builtInRoom(stem: 'reading-room' | 'studio-flat'): RoomFile {

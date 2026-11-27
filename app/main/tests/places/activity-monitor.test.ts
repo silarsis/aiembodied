@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ACTIVE_BELOW_IDLE_SECONDS, ACTIVITY_POLL_MS, ActivityMonitor } from '../../src/shared/presence/activity-monitor.js';
+import {
+  ACTIVE_BELOW_IDLE_SECONDS,
+  ACTIVITY_POLL_MS,
+  ActivityMonitor,
+} from '../../src/shared/presence/activity-monitor.js';
 import { PlacePresence } from '../../src/presence/place-presence.js';
 
 function setup(idle: () => number) {
@@ -50,7 +54,13 @@ describe('ActivityMonitor', () => {
   });
 
   it('treats a failing or nonsense idle time as not active', () => {
-    for (const idle of [() => Number.NaN, () => { throw new Error('no power monitor'); }, () => -1 / 0]) {
+    for (const idle of [
+      () => Number.NaN,
+      () => {
+        throw new Error('no power monitor');
+      },
+      () => -1 / 0,
+    ]) {
       const { monitor, onActive } = setup(idle);
       expect(() => monitor.poll()).not.toThrow();
       expect(onActive).not.toHaveBeenCalled();
@@ -58,8 +68,8 @@ describe('ActivityMonitor', () => {
   });
 });
 
-describe('a satellite\'s activity', () => {
-  it('is stamped with bija\'s clock when it arrives, whatever the satellite\'s clock says', () => {
+describe("a satellite's activity", () => {
+  it("is stamped with bija's clock when it arrives, whatever the satellite's clock says", () => {
     const presence = new PlacePresence(() => 777);
     presence.onSatelliteOp('study', { op: 'presence', activeAt: 12 });
     expect(presence.get('study')?.activeAt).toBe(777);

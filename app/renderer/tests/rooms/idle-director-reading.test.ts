@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
 import { fallbackIdleTags, idleTagsToText, parseIdleReply } from '../../src/rooms/idle-actions.js';
-import { FIRST_ACTION_DELAY_MS, IdleDirector, type IdleAvatar, type IdleExecutor } from '../../src/rooms/idle-director.js';
+import {
+  FIRST_ACTION_DELAY_MS,
+  IdleDirector,
+  type IdleAvatar,
+  type IdleExecutor,
+} from '../../src/rooms/idle-director.js';
 import { buildIdlePrompt } from '../../src/rooms/idle-prompt.js';
 import type { IdleInput, IdlePursuit } from '../../src/rooms/idle-types.js';
 import { visibleObjects } from '../../src/rooms/room-visibility.js';
@@ -10,7 +15,11 @@ import { builtInRoom } from './fixtures.js';
 
 const room = builtInRoom('reading-room');
 const NOW = 5_000_000;
-const bookshelf: IdlePursuit = { stationId: 'station-1', objectId: 'bookshelf', objectName: 'bookshelf' };
+const bookshelf: IdlePursuit = {
+  stationId: 'station-1',
+  objectId: 'bookshelf',
+  objectName: 'bookshelf',
+};
 
 function input(overrides: Partial<IdleInput> = {}): IdleInput {
   return {
@@ -40,8 +49,12 @@ describe('offering reading in the idle prompt', () => {
 
 describe('reading the answer', () => {
   it('turns {read:bookshelf} into a read tag for the offered station, and nothing else', () => {
-    expect(parseIdleReply('{read:the bookshelf}', input({ pursuits: [bookshelf] }))).toEqual([{ type: 'read', station: 'station-1', object: 'bookshelf' }]);
-    expect(parseIdleReply('{go:sofa}{read:Bookshelf}', input({ pursuits: [bookshelf] }))).toEqual([{ type: 'read', station: 'station-1', object: 'bookshelf' }]);
+    expect(parseIdleReply('{read:the bookshelf}', input({ pursuits: [bookshelf] }))).toEqual([
+      { type: 'read', station: 'station-1', object: 'bookshelf' },
+    ]);
+    expect(parseIdleReply('{go:sofa}{read:Bookshelf}', input({ pursuits: [bookshelf] }))).toEqual([
+      { type: 'read', station: 'station-1', object: 'bookshelf' },
+    ]);
   });
 
   it('drops a read it was not offered', () => {
@@ -77,7 +90,9 @@ class Clock {
   async advance(ms: number): Promise<void> {
     const end = this.time + ms;
     for (;;) {
-      const due = this.timers.filter((timer) => timer.at <= end).sort((a, b) => a.at - b.at || a.id - b.id)[0];
+      const due = this.timers
+        .filter((timer) => timer.at <= end)
+        .sort((a, b) => a.at - b.at || a.id - b.id)[0];
       if (!due) break;
       this.timers = this.timers.filter((timer) => timer !== due);
       this.time = Math.max(this.time, due.at);
@@ -115,7 +130,15 @@ class FakeExecutor implements IdleExecutor {
   }
 }
 
-function setup(options: { reply?: string; offers?: Record<string, IdlePursuit[]>; reading?: Set<string>; avatars?: IdleAvatar[]; startOk?: boolean } = {}) {
+function setup(
+  options: {
+    reply?: string;
+    offers?: Record<string, IdlePursuit[]>;
+    reading?: Set<string>;
+    avatars?: IdleAvatar[];
+    startOk?: boolean;
+  } = {},
+) {
   const clock = new Clock();
   const runs: Array<[string, string | undefined]> = [];
   const picks: Array<{ system: string; user: string }> = [];
@@ -161,7 +184,10 @@ describe('IdleDirector and reading', () => {
   });
 
   it('does not offer reading while a session of that avatar is running, and the avatar does not act on its own', async () => {
-    const { clock, director, picks, started } = setup({ offers: { echo: [bookshelf] }, reading: new Set(['echo']) });
+    const { clock, director, picks, started } = setup({
+      offers: { echo: [bookshelf] },
+      reading: new Set(['echo']),
+    });
     director.start();
     await clock.advance(FIRST_ACTION_DELAY_MS + 60_000);
     expect(picks).toEqual([]);
@@ -169,10 +195,20 @@ describe('IdleDirector and reading', () => {
   });
 
   it('offers it per avatar: only the characters the station is for', async () => {
-    const sage: IdleAvatar = { id: 'sage', name: 'Sage', executor: new FakeExecutor(), personality: 'Curious.', habits: '' };
+    const sage: IdleAvatar = {
+      id: 'sage',
+      name: 'Sage',
+      executor: new FakeExecutor(),
+      personality: 'Curious.',
+      habits: '',
+    };
     const echo: IdleAvatar = { id: 'echo', name: 'Echo', executor: new FakeExecutor() };
     // Only Sage may use the shelf; whoever the picker chooses, a prompt for Echo never mentions it.
-    const { clock, director, picks, started } = setup({ offers: { sage: [bookshelf] }, avatars: [echo, sage], reply: '{read:bookshelf}' });
+    const { clock, director, picks, started } = setup({
+      offers: { sage: [bookshelf] },
+      avatars: [echo, sage],
+      reply: '{read:bookshelf}',
+    });
     director.start();
     await clock.advance(FIRST_ACTION_DELAY_MS + 2_000_000);
     const forSage = picks.filter((p) => p.user.includes('Character: Sage'));

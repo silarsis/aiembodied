@@ -14,7 +14,13 @@ import type { ModelRouting } from '../shared/config/model-routing.js';
 import type { ChatClient, ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { FailoverChatClient } from '../local-voice/voice-engines.js';
 import { idleClients } from '../rooms/idle-thoughts.js';
-import type { BidCandidate, FloorLine, IntentFunction, IntentInput, IntentResult } from './floor-manager.js';
+import type {
+  BidCandidate,
+  FloorLine,
+  IntentFunction,
+  IntentInput,
+  IntentResult,
+} from './floor-manager.js';
 import { optionKeys } from './system-one-floor.js';
 
 export const INTENT_MAX_TOKENS = 60;
@@ -73,40 +79,57 @@ export function intentSchema(keys: string[]): Record<string, unknown> {
 }
 
 /** The system and user text for one line, the option keys and the answer schema. `nameOfSpeaker` shows a line's speaker as a name. */
-export function buildIntentPrompt(input: IntentInput, nameOfSpeaker: (from: string) => string): IntentPrompt {
+export function buildIntentPrompt(
+  input: IntentInput,
+  nameOfSpeaker: (from: string) => string,
+): IntentPrompt {
   const away = input.away ?? [];
   const keys = optionKeys([...input.candidates, ...away], [EVERYONE, UNCLEAR, NONE]);
   const keyOf = new Map([...keys].map(([key, candidate]) => [candidate.avatarId, key] as const));
   const labelOf = (candidate: BidCandidate): string => {
     const key = keyOf.get(candidate.avatarId) ?? candidate.name;
-    return key === (candidate.name.trim() || candidate.avatarId).toLowerCase() ? candidate.name.trim() || candidate.avatarId : key;
+    return key === (candidate.name.trim() || candidate.avatarId).toLowerCase()
+      ? candidate.name.trim() || candidate.avatarId
+      : key;
   };
-  const room = input.candidates.map((candidate) => (candidate.avatarId === input.hostId ? `${labelOf(candidate)} (host)` : labelOf(candidate)));
+  const room = input.candidates.map((candidate) =>
+    candidate.avatarId === input.hostId ? `${labelOf(candidate)} (host)` : labelOf(candidate),
+  );
   const partnerKey = input.partnerId ? keyOf.get(input.partnerId) : undefined;
-  const partner = partnerKey ? (keys.get(partnerKey)?.name.trim() || partnerKey) : 'nobody yet';
+  const partner = partnerKey ? keys.get(partnerKey)?.name.trim() || partnerKey : 'nobody yet';
   const names = [...keys.keys()];
   const system = [
     RULES[0],
     ...RULES.slice(1),
     'Examples from another room (avatars: Mira (host), Tobin):',
-    ...EXAMPLES.map(([text, addressed, wants, other]) => `Kevin: "${text}" -> {"addressed": "${addressed}", "wants": "${wants}", "other": "${other}"}`),
+    ...EXAMPLES.map(
+      ([text, addressed, wants, other]) =>
+        `Kevin: "${text}" -> {"addressed": "${addressed}", "wants": "${wants}", "other": "${other}"}`,
+    ),
     `Now the actual room: ${room.join(', ')}.${away.length > 0 ? ` In another place right now, and Kevin can call them over: ${away.map(labelOf).join(', ')}. When a line is aimed at one of them, they are the one addressed.` : ''} Kevin last spoke with ${partner}.`,
     `Allowed values, lower case: addressed = ${[...names, EVERYONE, UNCLEAR].join(' | ')}; wants = ${WANTS.join(' | ')}; other = ${[...names, NONE].join(' | ')}.`,
     'Reply with only a JSON object: {"addressed": "...", "wants": "...", "other": "..."}',
   ].join('\n');
   const recent: FloorLine[] = input.recent.slice(-RECENT_LINES);
-  const user = [...recent.map((line) => `${nameOfSpeaker(line.from)}: ${clipLine(line.text)}`), `Kevin: ${clipLine(input.text)}`].join('\n');
+  const user = [
+    ...recent.map((line) => `${nameOfSpeaker(line.from)}: ${clipLine(line.text)}`),
+    `Kevin: ${clipLine(input.text)}`,
+  ].join('\n');
   return { system, user, keys, schema: intentSchema(names) };
 }
 
-const clean = (value: unknown): string | undefined => (typeof value === 'string' ? value.trim().toLowerCase() : undefined);
+const clean = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value.trim().toLowerCase() : undefined;
 
 /**
  * Reads the answer (think blocks and code fences tolerated). Null when there is no JSON object or a
  * value is outside the lists: the three fields must be present, `addressed` an option key,
  * 'everyone' or 'unclear', `wants` one of the three, `other` an option key, 'none', null or empty.
  */
-export function parseIntentAnswer(raw: string, keys: Map<string, BidCandidate>): IntentResult | null {
+export function parseIntentAnswer(
+  raw: string,
+  keys: Map<string, BidCandidate>,
+): IntentResult | null {
   const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '');
   const start = text.indexOf('{');
   if (start < 0) return null;
@@ -121,7 +144,8 @@ export function parseIntentAnswer(raw: string, keys: Map<string, BidCandidate>):
     const record = value as Record<string, unknown>;
     const addressedKey = clean(record.addressed);
     const wants = clean(record.wants);
-    const otherKey = record.other === null || record.other === undefined ? NONE : clean(record.other);
+    const otherKey =
+      record.other === null || record.other === undefined ? NONE : clean(record.other);
     if (addressedKey === undefined || wants === undefined || otherKey === undefined) return null;
     if (!(WANTS as readonly string[]).includes(wants)) return null;
     let addressed: string;
@@ -154,16 +178,22 @@ export interface IntentRouterOptions {
 }
 
 /** An HTTP 400 from the server: it does not understand the `response_format` it was sent. */
-const rejectedFormat = (error: unknown): boolean => error instanceof Error && /HTTP 400/.test(error.message);
+const rejectedFormat = (error: unknown): boolean =>
+  error instanceof Error && /HTTP 400/.test(error.message);
 
 export function createIntentRouter(options: IntentRouterOptions): IntentFunction {
-  const nameOfSpeaker = (from: string): string => (from.startsWith('avatar:') ? options.nameOf(from.slice('avatar:'.length)) : 'Kevin');
+  const nameOfSpeaker = (from: string): string =>
+    from.startsWith('avatar:') ? options.nameOf(from.slice('avatar:'.length)) : 'Kevin';
   const clientsFor = (responseFormat: Record<string, unknown> | null): ChatClient[] =>
     options.clients?.(responseFormat) ??
     (options.routing && options.keyFor
       ? idleClients(
           { routing: options.routing(), keyFor: options.keyFor, fetchFn: options.fetchFn },
-          { temperature: INTENT_TEMPERATURE, maxTokens: INTENT_MAX_TOKENS, ...(responseFormat ? { responseFormat } : {}) },
+          {
+            temperature: INTENT_TEMPERATURE,
+            maxTokens: INTENT_MAX_TOKENS,
+            ...(responseFormat ? { responseFormat } : {}),
+          },
         )
       : []);
   return async (input, signal) => {
@@ -174,7 +204,10 @@ export function createIntentRouter(options: IntentRouterOptions): IntentFunction
     ];
     // The schema first; a server that answers 400 gets json_object, then no format at all (the answer is parsed leniently either way).
     const formats: Array<Record<string, unknown> | null> = [
-      { type: 'json_schema', json_schema: { name: 'floor_intent', strict: true, schema: prompt.schema } },
+      {
+        type: 'json_schema',
+        json_schema: { name: 'floor_intent', strict: true, schema: prompt.schema },
+      },
       { type: 'json_object' },
       null,
     ];
@@ -182,10 +215,12 @@ export function createIntentRouter(options: IntentRouterOptions): IntentFunction
     for (const format of formats) {
       const clients = clientsFor(format);
       if (clients.length === 0) throw new Error('No idle model is configured.');
-      const chat = clients.length > 1 ? new FailoverChatClient(clients, options.logger) : clients[0];
+      const chat =
+        clients.length > 1 ? new FailoverChatClient(clients, options.logger) : clients[0];
       try {
         let text = '';
-        for await (const part of chat.streamChat(messages, { signal })) if (part.type === 'text') text += part.text;
+        for await (const part of chat.streamChat(messages, { signal }))
+          if (part.type === 'text') text += part.text;
         const parsed = parseIntentAnswer(text, prompt.keys);
         if (!parsed) throw new Error('The intent answer made no sense.');
         return parsed;

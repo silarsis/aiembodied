@@ -1,6 +1,6 @@
 /** One line in Status and diagnostics: is the coding runner up, and what the model swap is doing. */
 import { useEffect, useState } from 'react';
-import type { CodingBridge, CodingStatus } from '../../../main/src/coding/bridge-types.js';
+import type { CodingBridge, CodingStatus } from '../../../main/src/shared/coding/bridge-types.js';
 
 export const CODING_POLL_MS = 5000;
 

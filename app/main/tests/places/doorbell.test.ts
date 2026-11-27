@@ -10,7 +10,10 @@ const PROFILES = [
 function setup(locations: Record<string, string> = {}) {
   const data = new Map<string, string>([[LOCATIONS_KEY, JSON.stringify(locations)]]);
   const places = new PlaceManager({
-    store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) },
+    store: {
+      getValue: (key) => data.get(key) ?? null,
+      setValue: (key, value) => void data.set(key, value),
+    },
     registry: { list: () => PROFILES },
   });
   return places;
@@ -46,7 +49,12 @@ describe('createDoorbell', () => {
   afterEach(() => vi.useRealTimers());
 
   function bell(places: PlaceManager, placeId = 'home', partner: string | null = null) {
-    return createDoorbell({ places: scopedPlaces(places, placeId), placeId, partner: () => partner, avatarIds: () => PROFILES.map((profile) => profile.id) });
+    return createDoorbell({
+      places: scopedPlaces(places, placeId),
+      placeId,
+      partner: () => partner,
+      avatarIds: () => PROFILES.map((profile) => profile.id),
+    });
   }
 
   it('with somebody here the wake word is simply heard', async () => {
@@ -62,7 +70,9 @@ describe('createDoorbell', () => {
     const heard = vi.fn();
     const result = bell(places, 'home', 'sage').onWake(heard);
     await vi.advanceTimersByTimeAsync(2000);
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'sage', from: 'next-door', to: 'home' },
+    ]);
     expect(heard).not.toHaveBeenCalled();
     places.arrived('sage');
     await expect(result).resolves.toBe('arrived');
@@ -74,7 +84,9 @@ describe('createDoorbell', () => {
     const places = setup({ echo: 'next-door', sage: 'next-door' });
     void bell(places).onWake();
     await vi.advanceTimersByTimeAsync(0);
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'echo', from: 'next-door', to: 'home' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'echo', from: 'next-door', to: 'home' },
+    ]);
   });
 
   it('does nothing with the doorbell off and nobody here', async () => {
@@ -109,7 +121,9 @@ describe('createDoorbell', () => {
     places.setDoorbell('study', true);
     const result = study.onWake();
     await vi.advanceTimersByTimeAsync(0);
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'echo', from: 'next-door', to: 'study' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'echo', from: 'next-door', to: 'study' },
+    ]);
     places.arrived('echo');
     await expect(result).resolves.toBe('arrived');
     expect(places.avatarsAt('study')).toEqual(['echo']);

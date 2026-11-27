@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HALLWAY_MS, PlaceManager } from '../../src/places/place-manager.js';
-import { READING_ROOM_ID, StationRegistry, type StationServer } from '../../src/stations/station-registry.js';
+import {
+  READING_ROOM_ID,
+  StationRegistry,
+  type StationServer,
+} from '../../src/stations/station-registry.js';
 import { STATION_ARRIVAL_HOLD_MS, StationTrips } from '../../src/stations/station-trips.js';
-import type { StationTool, StationUseEvent } from '../../src/stations/types.js';
+import type { StationTool } from '../../src/stations/types.js';
+import type { StationUseEvent } from '../../src/shared/stations/types.js';
 
 const STUDIO = 'room:builtin:studio-flat';
-const papers: StationTool = { id: 'srv-1:search_papers', serverId: 'srv-1', toolName: 'search_papers', readOnly: true };
+const papers: StationTool = {
+  id: 'srv-1:search_papers',
+  serverId: 'srv-1',
+  toolName: 'search_papers',
+  readOnly: true,
+};
 const saveNote: StationTool = { id: 'srv-1:save_note', serverId: 'srv-1', toolName: 'save_note' };
 
 interface Sent {
@@ -15,12 +25,28 @@ interface Sent {
   event: StationUseEvent;
 }
 
-function setup(options: { active?: string | null; attic?: string | null; sendOk?: boolean; servers?: StationServer[]; logger?: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void } } = {}) {
+function setup(
+  options: {
+    active?: string | null;
+    attic?: string | null;
+    sendOk?: boolean;
+    servers?: StationServer[];
+    logger?: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+  } = {},
+) {
   const kv = new Map<string, string>();
-  const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
+  const store = {
+    getValue: (key: string) => kv.get(key) ?? null,
+    setValue: (key: string, value: string) => void kv.set(key, value),
+  };
   const places = new PlaceManager({
     store,
-    registry: { list: () => [{ id: 'echo', name: 'Echo', vrmModelId: null }, { id: 'sage', name: 'Sage', vrmModelId: null }] },
+    registry: {
+      list: () => [
+        { id: 'echo', name: 'Echo', vrmModelId: null },
+        { id: 'sage', name: 'Sage', vrmModelId: null },
+      ],
+    },
   });
   if (options.attic !== undefined && options.attic !== null) {
     places.addPlace({ id: 'attic', name: 'the attic', node: 'pc-2', room: options.attic });
@@ -30,13 +56,17 @@ function setup(options: { active?: string | null; attic?: string | null; sendOk?
   const screen = { answers: true };
   places.onChanged((snapshot) => {
     for (const move of snapshot.transit) {
-      if (move.to !== 'next-door' && screen.answers) queueMicrotask(() => places.arrived(move.avatarId));
+      if (move.to !== 'next-door' && screen.answers)
+        queueMicrotask(() => places.arrived(move.avatarId));
     }
   });
   const stations = new StationRegistry({
     store,
     servers: () => options.servers ?? [{ id: 'srv-1', httpUrl: 'https://academy.dair.ai/api/mcp' }],
-    describeRoom: async () => ({ name: 'Reading room', objects: [{ id: 'bookshelf', name: 'bookshelf' }] }),
+    describeRoom: async () => ({
+      name: 'Reading room',
+      objects: [{ id: 'bookshelf', name: 'bookshelf' }],
+    }),
   });
   const sent: Sent[] = [];
   const active = { room: options.active === undefined ? READING_ROOM_ID : options.active };
@@ -175,7 +205,10 @@ describe('StationTrips', () => {
       expect(places.locationOf('echo')).toBe('attic');
       // The attic's renderer got the walk, not this PC's.
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toMatchObject({ placeId: 'attic', event: { phase: 'start', objectId: 'bookshelf' } });
+      expect(sent[0]).toMatchObject({
+        placeId: 'attic',
+        event: { phase: 'start', objectId: 'bookshelf' },
+      });
 
       await use.settle(true);
       expect(sent[1]).toMatchObject({ placeId: 'attic', event: { phase: 'end', ok: true } });
@@ -270,7 +303,12 @@ describe('StationTrips', () => {
       expect(visit).not.toBeNull();
       expect(sent[0].event).toMatchObject({ phase: 'start', objectId: 'bookshelf' });
       visit.activity('jots down notes', 'note');
-      expect(sent[1].event).toMatchObject({ phase: 'activity', activity: 'jots down notes', step: 'note', useId: sent[0].event.useId });
+      expect(sent[1].event).toMatchObject({
+        phase: 'activity',
+        activity: 'jots down notes',
+        step: 'note',
+        useId: sent[0].event.useId,
+      });
       trips.arrived(sent[0].event.useId);
       await visit.settle(true);
       expect(sent[2].event).toMatchObject({ phase: 'end', ok: true });
@@ -315,12 +353,27 @@ describe('StationTrips', () => {
     it('is longer than two place moves, and ends the wait even when moves are slow', async () => {
       const kv = new Map<string, string>();
       const places = new PlaceManager({
-        store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) },
+        store: {
+          getValue: (key) => kv.get(key) ?? null,
+          setValue: (key, value) => void kv.set(key, value),
+        },
         registry: { list: () => [{ id: 'echo', name: 'Echo', vrmModelId: null }] },
         deadlineMs: 60_000,
       });
-      const stations = new StationRegistry({ store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) }, servers: () => [{ id: 'srv-1', httpUrl: 'https://academy.dair.ai/api/mcp' }] });
-      const trips = new StationTrips({ stations, places, activeRoom: () => STUDIO, send: () => true, errandCapMs: 8000 });
+      const stations = new StationRegistry({
+        store: {
+          getValue: (key) => kv.get(key) ?? null,
+          setValue: (key, value) => void kv.set(key, value),
+        },
+        servers: () => [{ id: 'srv-1', httpUrl: 'https://academy.dair.ai/api/mcp' }],
+      });
+      const trips = new StationTrips({
+        stations,
+        places,
+        activeRoom: () => STUDIO,
+        send: () => true,
+        errandCapMs: 8000,
+      });
       const use = trips.begin('echo', papers)!;
       await vi.advanceTimersByTimeAsync(HALLWAY_MS);
       expect(places.locationOf('echo')).toBe('next-door');
@@ -358,18 +411,36 @@ describe('Home Assistant panel trips', () => {
     vi.useRealTimers();
   });
 
-  const getState: StationTool = { id: 'ha:GetLiveContext', serverId: 'ha', toolName: 'GetLiveContext', readOnly: true };
-  const turnOn: StationTool = { id: 'ha:HassTurnOn', serverId: 'ha', toolName: 'HassTurnOn', readOnly: false };
+  const getState: StationTool = {
+    id: 'ha:GetLiveContext',
+    serverId: 'ha',
+    toolName: 'GetLiveContext',
+    readOnly: true,
+  };
+  const turnOn: StationTool = {
+    id: 'ha:HassTurnOn',
+    serverId: 'ha',
+    toolName: 'HassTurnOn',
+    readOnly: false,
+  };
 
   it('walks the avatar to the home panel for a change and holds up to 6 s for the arrival, but not for a read', async () => {
-    const { trips, sent } = setup({ active: STUDIO, servers: [{ id: 'ha', httpUrl: 'http://homeassistant-1:8123/api/mcp', homeAssistant: true }] });
+    const { trips, sent } = setup({
+      active: STUDIO,
+      servers: [{ id: 'ha', httpUrl: 'http://homeassistant-1:8123/api/mcp', homeAssistant: true }],
+    });
     // "What is the temperature?" is answered from where the avatar stands.
     expect(trips.begin('echo', getState)).toBeNull();
     expect(sent).toHaveLength(0);
     // "Turn on the lamp" is a trip to the panel.
     const use = trips.begin('echo', turnOn);
     expect(use).not.toBeNull();
-    expect(sent[0].event).toMatchObject({ roomId: STUDIO, objectId: 'home-panel', activity: 'taps at the home panel', phase: 'start' });
+    expect(sent[0].event).toMatchObject({
+      roomId: STUDIO,
+      objectId: 'home-panel',
+      activity: 'taps at the home panel',
+      phase: 'start',
+    });
     let done = false;
     const settled = use!.settle(true).then(() => (done = true));
     await vi.advanceTimersByTimeAsync(STATION_ARRIVAL_HOLD_MS - 100);
@@ -380,31 +451,58 @@ describe('Home Assistant panel trips', () => {
   });
 
   describe('logging', () => {
-    const lines = (logger: { info: ReturnType<typeof vi.fn> }) => logger.info.mock.calls.map(([message]) => message);
+    const lines = (logger: { info: ReturnType<typeof vi.fn> }) =>
+      logger.info.mock.calls.map(([message]) => message);
 
     it('logs start, arrived, held and end for a trip in the same room', async () => {
       const logger = { info: vi.fn(), warn: vi.fn() };
       const { trips, sent } = setup({ logger });
       const use = trips.begin('echo', papers)!;
-      expect(logger.info).toHaveBeenCalledWith('Stations: trip start', expect.objectContaining({ avatarId: 'echo', stationId: 'default:dair-academy-papers', case: 'same-room', source: 'tool' }));
+      expect(logger.info).toHaveBeenCalledWith(
+        'Stations: trip start',
+        expect.objectContaining({
+          avatarId: 'echo',
+          stationId: 'default:dair-academy-papers',
+          case: 'same-room',
+          source: 'tool',
+        }),
+      );
       trips.arrived(sent[0].event.useId);
       await use.settle(true);
-      expect(lines(logger)).toEqual(['Stations: trip start', 'Stations: trip arrived', 'Stations: trip held', 'Stations: trip end']);
-      expect(logger.info).toHaveBeenLastCalledWith('Stations: trip end', expect.objectContaining({ ok: true }));
+      expect(lines(logger)).toEqual([
+        'Stations: trip start',
+        'Stations: trip arrived',
+        'Stations: trip held',
+        'Stations: trip end',
+      ]);
+      expect(logger.info).toHaveBeenLastCalledWith(
+        'Stations: trip end',
+        expect.objectContaining({ ok: true }),
+      );
     });
 
     it('says why there is no trip', () => {
       const logger = { info: vi.fn(), warn: vi.fn() };
       const { trips } = setup({ logger, active: 'builtin:garden' });
       expect(trips.begin('echo', papers)).toBeNull();
-      expect(logger.info).toHaveBeenCalledWith('Stations: trip none', expect.objectContaining({ avatarId: 'echo', case: 'none', why: 'the avatar is not in a 3D room' }));
+      expect(logger.info).toHaveBeenCalledWith(
+        'Stations: trip none',
+        expect.objectContaining({
+          avatarId: 'echo',
+          case: 'none',
+          why: 'the avatar is not in a 3D room',
+        }),
+      );
     });
 
     it('logs an errand to next door', async () => {
       const logger = { info: vi.fn(), warn: vi.fn() };
       const { trips } = setup({ logger, active: STUDIO });
       trips.begin('echo', papers);
-      expect(logger.info).toHaveBeenCalledWith('Stations: trip start', expect.objectContaining({ case: 'errand', placeId: 'next-door' }));
+      expect(logger.info).toHaveBeenCalledWith(
+        'Stations: trip start',
+        expect.objectContaining({ case: 'errand', placeId: 'next-door' }),
+      );
     });
   });
 });

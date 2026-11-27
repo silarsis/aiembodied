@@ -17,7 +17,15 @@ export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 
 export type ChatMessage =
   | { role: 'system' | 'user'; content: string }
-  | { role: 'assistant'; content: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }
+  | {
+      role: 'assistant';
+      content: string;
+      tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function: { name: string; arguments: string };
+      }>;
+    }
   | { role: 'tool'; tool_call_id: string; content: string };
 
 /** A function the model may call, in chat-completions form. */
@@ -27,7 +35,8 @@ export interface LlmToolDefinition {
 }
 
 /** Streamed reply text, then (when the model asks for tools) the calls it made. */
-export type LlmStreamPart = { type: 'text'; text: string } | { type: 'tool_calls'; calls: LlmToolCall[] };
+export type LlmStreamPart =
+  { type: 'text'; text: string } | { type: 'tool_calls'; calls: LlmToolCall[] };
 
 export interface LocalLlmClientOptions {
   baseUrl: string;
@@ -97,14 +106,24 @@ export class LocalLlmClient {
   ): AsyncGenerator<LlmStreamPart> {
     const tools = {
       ...(options.tools?.length ? { tools: options.tools } : {}),
-      ...(this.responseFormat ? { response_format: this.responseFormat } : this.jsonObject ? { response_format: { type: 'json_object' } } : {}),
+      ...(this.responseFormat
+        ? { response_format: this.responseFormat }
+        : this.jsonObject
+          ? { response_format: { type: 'json_object' } }
+          : {}),
     };
     const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
       body: JSON.stringify(
         this.flavor === 'openai'
-          ? { model: this.model, messages, stream: true, max_completion_tokens: this.maxTokens, ...tools }
+          ? {
+              model: this.model,
+              messages,
+              stream: true,
+              max_completion_tokens: this.maxTokens,
+              ...tools,
+            }
           : {
               model: this.model,
               messages,
@@ -132,7 +151,9 @@ export class LocalLlmClient {
       if (data === '[DONE]') {
         break;
       }
-      let chunk: { choices?: Array<{ delta?: { content?: unknown; tool_calls?: StreamedToolCall[] } }> };
+      let chunk: {
+        choices?: Array<{ delta?: { content?: unknown; tool_calls?: StreamedToolCall[] } }>;
+      };
       try {
         chunk = JSON.parse(data) as typeof chunk;
       } catch {
@@ -155,7 +176,9 @@ export class LocalLlmClient {
     if (calls.size > 0) {
       yield {
         type: 'tool_calls',
-        calls: [...calls.values()].filter((call) => call.name).map((call, i) => ({ ...call, id: call.id || `call_${i}` })),
+        calls: [...calls.values()]
+          .filter((call) => call.name)
+          .map((call, i) => ({ ...call, id: call.id || `call_${i}` })),
       };
     }
   }

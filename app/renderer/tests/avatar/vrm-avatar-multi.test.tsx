@@ -2,7 +2,10 @@ import { render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
-  vrms: [] as Array<{ scene: { position: { x: number }; visible: boolean }; setValue: ReturnType<typeof vi.fn> }>,
+  vrms: [] as Array<{
+    scene: { position: { x: number }; visible: boolean };
+    setValue: ReturnType<typeof vi.fn>;
+  }>,
   frameCallbacks: [] as Array<() => void>,
 }));
 
@@ -39,7 +42,12 @@ vi.mock('three', async () => {
     removeEventListener = vi.fn();
     constructor(public readonly root: unknown) {}
   }
-  return { ...actual, WebGLRenderer: MockWebGLRenderer, Timer: MockTimer, AnimationMixer: MockAnimationMixer };
+  return {
+    ...actual,
+    WebGLRenderer: MockWebGLRenderer,
+    Timer: MockTimer,
+    AnimationMixer: MockAnimationMixer,
+  };
 });
 
 vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
@@ -58,11 +66,20 @@ vi.mock('@pixiv/three-vrm', async () => {
   return {
     ...actual,
     VRMLoaderPlugin: class {},
-    VRMUtils: { removeUnnecessaryVertices: vi.fn(), combineSkeletons: vi.fn(), rotateVRM0: vi.fn() },
+    VRMUtils: {
+      removeUnnecessaryVertices: vi.fn(),
+      combineSkeletons: vi.fn(),
+      rotateVRM0: vi.fn(),
+    },
   };
 });
 
-const roomState = vi.hoisted(() => ({ active: false, hidden: [] as Array<[string, boolean]>, doors: [] as string[], envs: false }));
+const roomState = vi.hoisted(() => ({
+  active: false,
+  hidden: [] as Array<[string, boolean]>,
+  doors: [] as string[],
+  envs: false,
+}));
 vi.mock('../../src/rooms/room-scene-controller.js', () => ({
   RoomSceneController: class {
     get active() {
@@ -91,13 +108,16 @@ import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import { VrmAvatarRenderer, layoutOffsets } from '../../src/avatar/vrm-avatar-renderer.js';
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 
 function createVrm(): VRM {
   const scene = new THREE.Object3D();
   scene.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.6, 0.3)));
   const setValue = vi.fn();
-  state.vrms.push({ scene: scene as unknown as { position: { x: number }; visible: boolean }, setValue });
+  state.vrms.push({
+    scene: scene as unknown as { position: { x: number }; visible: boolean },
+    setValue,
+  });
   return {
     scene,
     humanoid: {
@@ -105,7 +125,12 @@ function createVrm(): VRM {
       getNormalizedBoneNode: () => null,
       normalizedRestPose: { hips: { position: [0, 1, 0] as [number, number, number] } },
     },
-    expressionManager: { resetValues: vi.fn(), setValue, update: vi.fn(), getExpressionTrackName: vi.fn((name: string) => name) },
+    expressionManager: {
+      resetValues: vi.fn(),
+      setValue,
+      update: vi.fn(),
+      getExpressionTrackName: vi.fn((name: string) => name),
+    },
     meta: { metaVersion: '1' },
     update: vi.fn(),
   } as unknown as VRM;
@@ -115,7 +140,15 @@ const models = new Map<string, AvatarModelSummary>();
 /** Stable per id, like the model objects App keeps in state. */
 const model = (id: string): AvatarModelSummary => {
   if (!models.has(id)) {
-    models.set(id, { id, name: id, createdAt: 1, version: '1.0', fileSha: id, thumbnailDataUrl: null, description: null });
+    models.set(id, {
+      id,
+      name: id,
+      createdAt: 1,
+      version: '1.0',
+      fileSha: id,
+      thumbnailDataUrl: null,
+      description: null,
+    });
   }
   return models.get(id) as AvatarModelSummary;
 };
@@ -144,7 +177,9 @@ describe('VrmAvatarRenderer with several avatars', () => {
     roomState.doors.length = 0;
     roomState.envs = false;
     saved.getContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = vi.fn(
+      () => ({}),
+    ) as unknown as typeof HTMLCanvasElement.prototype.getContext;
     saved.raf = window.requestAnimationFrame;
     window.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
       state.frameCallbacks.push(() => callback(0));
@@ -160,7 +195,8 @@ describe('VrmAvatarRenderer with several avatars', () => {
   });
 
   afterEach(() => {
-    HTMLCanvasElement.prototype.getContext = saved.getContext as typeof HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext =
+      saved.getContext as typeof HTMLCanvasElement.prototype.getContext;
     window.requestAnimationFrame = saved.raf as typeof window.requestAnimationFrame;
     window.cancelAnimationFrame = saved.caf as typeof window.cancelAnimationFrame;
     delete (window as unknown as { aiembodied?: unknown }).aiembodied;
@@ -183,7 +219,9 @@ describe('VrmAvatarRenderer with several avatars', () => {
       { id: 'echo', name: 'Echo', model: model('m1'), frame: frame(echoIntensity) },
       { id: 'sage', name: 'Sage', model: model('m1'), frame: frame(sageIntensity) },
     ];
-    const { container, rerender } = render(<VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries(0.9, 0)} />);
+    const { container, rerender } = render(
+      <VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries(0.9, 0)} />,
+    );
     await waitFor(() => expect(state.vrms).toHaveLength(2));
     await waitFor(() => {
       const [a, b] = state.vrms;
@@ -198,7 +236,12 @@ describe('VrmAvatarRenderer with several avatars', () => {
     // Run frames: each actor's mouth follows its own frame.
     for (let i = 0; i < 10; i += 1) state.frameCallbacks.splice(0).forEach((run) => run());
     const mouth = (vrm?: { setValue: ReturnType<typeof vi.fn> }) =>
-      Math.max(0, ...(vrm?.setValue.mock.calls ?? []).filter(([name]) => name === 'aa').map(([, value]) => Number(value)));
+      Math.max(
+        0,
+        ...(vrm?.setValue.mock.calls ?? [])
+          .filter(([name]) => name === 'aa')
+          .map(([, value]) => Number(value)),
+      );
     expect(mouth(echoVrm)).toBeGreaterThan(0.1);
     expect(mouth(sageVrm)).toBe(0);
 
@@ -207,7 +250,11 @@ describe('VrmAvatarRenderer with several avatars', () => {
     expect(labels.map((label) => label.getAttribute('data-speaking'))).toEqual(['true', 'false']);
 
     rerender(<VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries(0, 0.9)} />);
-    expect([...container.querySelectorAll('.stageAvatarLabel')].map((label) => label.getAttribute('data-speaking'))).toEqual(['false', 'true']);
+    expect(
+      [...container.querySelectorAll('.stageAvatarLabel')].map((label) =>
+        label.getAttribute('data-speaking'),
+      ),
+    ).toEqual(['false', 'true']);
     // Frames changing does not reload anybody.
     expect(loadModelBinary).toHaveBeenCalledTimes(2);
   });
@@ -251,20 +298,38 @@ describe('VrmAvatarRenderer with several avatars', () => {
     ];
 
     it('keeps a hidden body loaded but does not draw it, and leaves it out of the layout and the labels', async () => {
-      const { container } = render(<VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries()} hiddenIds={['echo']} />);
+      const { container } = render(
+        <VrmAvatarRenderer
+          frame={null}
+          model={model('m1')}
+          avatars={entries()}
+          hiddenIds={['echo']}
+        />,
+      );
       await waitFor(() => expect(state.vrms).toHaveLength(2));
       await waitFor(() => expect(state.vrms[0]?.scene.visible).toBe(false));
       // Sage is the only one on screen.
       expect(state.vrms[1]?.scene.visible).toBe(true);
-      expect([...container.querySelectorAll('.stageAvatarLabel')].map((label) => label.textContent)).toEqual(['Sage']);
+      expect(
+        [...container.querySelectorAll('.stageAvatarLabel')].map((label) => label.textContent),
+      ).toEqual(['Sage']);
       // Echo's body is still there (one load each), so she can come back at once.
       expect(loadModelBinary).toHaveBeenCalledTimes(2);
     });
 
     it('lays out the avatars that are here as if the others did not exist', async () => {
-      const { rerender } = render(<VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries()} />);
+      const { rerender } = render(
+        <VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries()} />,
+      );
       await waitFor(() => expect(state.vrms[0]?.scene.position.x).toBeLessThan(0));
-      rerender(<VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries()} hiddenIds={['sage']} />);
+      rerender(
+        <VrmAvatarRenderer
+          frame={null}
+          model={model('m1')}
+          avatars={entries()}
+          hiddenIds={['sage']}
+        />,
+      );
       // Echo is alone again: back where a single avatar stands, with no labels.
       await waitFor(() => expect(state.vrms[0]?.scene.position.x).toBe(0));
       expect(document.querySelector('.stageAvatarLabel')).toBeNull();
@@ -278,18 +343,36 @@ describe('VrmAvatarRenderer with several avatars', () => {
 
     it('tells the room, and puts a returning avatar at the door', async () => {
       const room = { id: 'room-1' } as unknown as RoomFile;
-      const { rerender } = render(<VrmAvatarRenderer frame={null} model={model('m1')} room={room} avatars={entries()} hiddenIds={['sage']} />);
+      const { rerender } = render(
+        <VrmAvatarRenderer
+          frame={null}
+          model={model('m1')}
+          room={room}
+          avatars={entries()}
+          hiddenIds={['sage']}
+        />,
+      );
       await waitFor(() => expect(state.vrms).toHaveLength(2));
       await waitFor(() => expect(roomState.hidden).toContainEqual(['sage', true]));
       expect(roomState.doors).toEqual([]);
-      rerender(<VrmAvatarRenderer frame={null} model={model('m1')} room={room} avatars={entries()} />);
+      rerender(
+        <VrmAvatarRenderer frame={null} model={model('m1')} room={room} avatars={entries()} />,
+      );
       await waitFor(() => expect(roomState.doors).toEqual(['sage']));
       expect(state.vrms[1]?.scene.visible).toBe(true);
     });
 
     it('says when a body is loaded', async () => {
       const ready = vi.fn();
-      render(<VrmAvatarRenderer frame={null} model={model('m1')} avatars={entries()} hiddenIds={['sage']} onBodyReady={ready} />);
+      render(
+        <VrmAvatarRenderer
+          frame={null}
+          model={model('m1')}
+          avatars={entries()}
+          hiddenIds={['sage']}
+          onBodyReady={ready}
+        />,
+      );
       await waitFor(() => expect(ready).toHaveBeenCalledWith('sage'));
       expect(ready).toHaveBeenCalledWith('echo');
     });
@@ -298,8 +381,17 @@ describe('VrmAvatarRenderer with several avatars', () => {
       roomState.envs = true;
       const room = { id: 'room-1' } as unknown as RoomFile;
       const setEnv = vi.fn();
-      const executor = { setEnv, reset: vi.fn() } as unknown as import('../../src/rooms/scene-executor.js').SceneActionExecutor;
-      const props = { frame: null, model: model('m1'), room, avatars: entries(), sceneExecutors: () => executor };
+      const executor = {
+        setEnv,
+        reset: vi.fn(),
+      } as unknown as import('../../src/rooms/scene-executor.js').SceneActionExecutor;
+      const props = {
+        frame: null,
+        model: model('m1'),
+        room,
+        avatars: entries(),
+        sceneExecutors: () => executor,
+      };
       const { rerender } = render(<VrmAvatarRenderer {...props} hiddenIds={['sage']} />);
       await waitFor(() => expect(state.vrms).toHaveLength(2));
       await new Promise((resolve) => setTimeout(resolve, 20));

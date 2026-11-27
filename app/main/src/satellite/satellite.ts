@@ -5,47 +5,38 @@
  * what), keeps the RoomLink to bija, serves room files through the asset protocol with an on-disk cache, and
  * pairs with bija once. Everything that needs Electron is passed in, so the tests run it against a real RoomHub.
  */
-import type { LinkState, LinkStatus, RoomLink, RoomLinkOptions, Welcome } from './room-link.js';
+import type { LinkStatus, RoomLink, RoomLinkOptions, Welcome } from './room-link.js';
 import { LOST_TOUCH, RoomLink as RoomLinkClass } from './room-link.js';
 import { requestPairing } from '../shared/satellite/pairing.js';
 import { AssetCache } from './asset-cache.js';
-import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from '../shared/satellite/channels.js';
+import {
+  NOT_ON_SATELLITE,
+  channelKind,
+  channelsOfKind,
+  isDeliverableEvent,
+} from '../shared/satellite/channels.js';
 import type { SatelliteSettings, SatelliteSettingsStore } from './settings.js';
 import type { TokenStore } from './token-store.js';
 import { ASSET_SCHEME, mimeFor, type ProtocolLike } from '../rooms/asset-protocol.js';
-import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from '../shared/satellite/local-config.js';
-import type { RendererConfig } from '../config/config-manager.js';
-import type { AudioDevicePreferences } from '../config/preferences-store.js';
+import {
+  EMPTY_LOCAL_ANSWERS,
+  keywordOf,
+  satelliteConfig,
+} from '../shared/satellite/local-config.js';
+import type { RendererConfig } from '../shared/config/config-manager-types.js';
+import type { AudioDevicePreferences } from '../shared/config/preferences-store-types.js';
 import type { Op } from '../shared/room-hub/frames.js';
-import { INITIAL_FACTS, evaluateGate, type DeviceGateState } from '../shared/satellite/device-gate.js';
-import type { PushToTalkStatus } from '../talk/types.js';
-
-export interface SatelliteStatus {
-  role: 'satellite';
-  /** This PC has a token for a hub (the "Connect to bija" screen shows when false). */
-  paired: boolean;
-  hubUrl: string | null;
-  deviceName: string | null;
-  placeId: string | null;
-  placeName: string | null;
-  link: LinkState;
-  /** Why bija refused this PC (auth, peer, protocol, revoked, replaced). */
-  linkCode: string | null;
-  /** The last thing that went wrong, in words for Kevin (a failed pairing, a refusal, a keychain problem). */
-  lastError: string | null;
-  /** This PC's name, offered as the device name on the connect screen. */
-  hostname: string;
-  /** Only the web satellite sets these. The address to offer on the connect screen (the page's own origin when the hub served it), and what kind of device this is. */
-  suggestedHubUrl?: string | null;
-  deviceKind?: 'browser';
-}
-
-export interface PairInput {
-  hubUrl: string;
-  code: string;
-  placeName?: string;
-  deviceName?: string;
-}
+import {
+  INITIAL_FACTS,
+  evaluateGate,
+  type DeviceGateState,
+} from '../shared/satellite/device-gate.js';
+import type { PushToTalkStatus } from '../shared/talk/types.js';
+import type {
+  SatelliteStatus,
+  PairInput,
+  TurnTiming,
+} from '../shared/satellite/satellite-types.js';
 
 export interface IpcMainLike {
   handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): void;
@@ -64,16 +55,6 @@ export interface DevicesLike {
   hubOff(reason: string): void;
   setOpen(open: boolean): DeviceGateState;
   captureStopped(): void;
-}
-
-/** How long one spoken turn took on this PC, measured from the end of speech (milliseconds). */
-export interface TurnTiming {
-  /** Until the transcript came back from bija. Null for a typed line. */
-  transcriptMs: number | null;
-  /** Until the first sentence of audio arrived. */
-  firstAudioMs: number | null;
-  /** Until the first sentence started playing. */
-  playbackMs: number | null;
 }
 
 export interface SatelliteDeps {
@@ -101,7 +82,8 @@ export interface SatelliteDeps {
 
 /** A Uint8Array that is a view into a bigger buffer is copied tight, so the renderer is sent only its own bytes. */
 function tighten(value: unknown): unknown {
-  if (value instanceof Uint8Array) return value.byteLength === value.buffer.byteLength ? value : value.slice();
+  if (value instanceof Uint8Array)
+    return value.byteLength === value.buffer.byteLength ? value : value.slice();
   if (Array.isArray(value)) return value.map(tighten);
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
@@ -154,12 +136,18 @@ export class Satellite {
       }
       return this.config();
     });
-    this.local.set('talk:get-shortcut-status', () => this.deps.pushToTalk?.getStatus() ?? { shortcut: '', registered: false });
+    this.local.set(
+      'talk:get-shortcut-status',
+      () => this.deps.pushToTalk?.getStatus() ?? { shortcut: '', registered: false },
+    );
     this.local.set('device-gate:get', () => this.deviceState());
     this.local.set('device-gate:capture-stopped', () => this.devices?.captureStopped());
-    this.local.set('device-gate:set-open', (args) => (this.devices ? this.devices.setOpen(args[0] === true) : this.deviceState()));
+    this.local.set('device-gate:set-open', (args) =>
+      this.devices ? this.devices.setOpen(args[0] === true) : this.deviceState(),
+    );
     this.local.set('satellite:turn-timing', (args) => this.noteTurn(args[0]));
-    for (const [channel, answer] of Object.entries(EMPTY_LOCAL_ANSWERS)) this.local.set(channel, answer);
+    for (const [channel, answer] of Object.entries(EMPTY_LOCAL_ANSWERS))
+      this.local.set(channel, answer);
     this.local.set('satellite:status', () => this.status());
     this.local.set('satellite:pair', (args) => this.pair((args[0] ?? {}) as PairInput));
     this.local.set('satellite:forget', () => this.forget());
@@ -175,7 +163,11 @@ export class Satellite {
 
   /** Registers the IPC channels and the asset protocol, and connects when this PC is already paired. */
   async start(ipcMain: IpcMainLike, protocol: ProtocolLike): Promise<void> {
-    for (const channel of [...channelsOfKind('forward'), ...channelsOfKind('local'), ...channelsOfKind('unavailable')]) {
+    for (const channel of [
+      ...channelsOfKind('forward'),
+      ...channelsOfKind('local'),
+      ...channelsOfKind('unavailable'),
+    ]) {
       // `diagnostics:preload-log` is a one-way message main.ts already listens for.
       if (channel === 'diagnostics:preload-log' || channel === 'motion-trace:append') continue;
       ipcMain.handle(channel, (_event, ...args) => this.invoke(channel, args));
@@ -259,14 +251,21 @@ export class Satellite {
   /** The last spoken turn's timings, as the renderer measured them. Logged here, so they are in the main log. */
   private noteTurn(value: unknown): void {
     const timing = (value ?? {}) as Partial<TurnTiming>;
-    const number = (input: unknown): number | null => (typeof input === 'number' && Number.isFinite(input) ? Math.round(input) : null);
-    this.lastTurn = { transcriptMs: number(timing.transcriptMs), firstAudioMs: number(timing.firstAudioMs), playbackMs: number(timing.playbackMs) };
+    const number = (input: unknown): number | null =>
+      typeof input === 'number' && Number.isFinite(input) ? Math.round(input) : null;
+    this.lastTurn = {
+      transcriptMs: number(timing.transcriptMs),
+      firstAudioMs: number(timing.firstAudioMs),
+      playbackMs: number(timing.playbackMs),
+    };
     this.deps.logger?.info('Satellite turn timing (ms from end of speech)', { ...this.lastTurn });
   }
 
   /** An avatar's name as bija's welcome gave it, else its id. */
   avatarName(avatarId: string): string {
-    const found = (this.welcome?.avatars ?? []).find((avatar) => (avatar as { id?: unknown } | null)?.id === avatarId) as { name?: unknown } | undefined;
+    const found = (this.welcome?.avatars ?? []).find(
+      (avatar) => (avatar as { id?: unknown } | null)?.id === avatarId,
+    ) as { name?: unknown } | undefined;
     return typeof found?.name === 'string' && found.name ? found.name : avatarId;
   }
 
@@ -327,13 +326,23 @@ export class Satellite {
     this.welcome = welcome;
     const settings = this.deps.settings.get();
     if (settings.placeId !== welcome.placeId || settings.placeName !== welcome.place?.name) {
-      this.deps.settings.update({ placeId: welcome.placeId, placeName: welcome.place?.name ?? settings.placeName });
+      this.deps.settings.update({
+        placeId: welcome.placeId,
+        placeName: welcome.place?.name ?? settings.placeName,
+      });
     }
     // The renderer follows the snapshot: after a reconnect it must see the world as it is now.
     this.devices?.setSnapshot(welcome.snapshot);
     // Without a key of its own, this PC uses the push-to-talk key bija has.
-    const bijaKey = (welcome.settings?.pushToTalk as { shortcut?: unknown } | null | undefined)?.shortcut;
-    if (!settings.pushToTalk && typeof bijaKey === 'string' && bijaKey && this.deps.pushToTalk?.getStatus().shortcut !== bijaKey) this.deps.pushToTalk?.apply(bijaKey);
+    const bijaKey = (welcome.settings?.pushToTalk as { shortcut?: unknown } | null | undefined)
+      ?.shortcut;
+    if (
+      !settings.pushToTalk &&
+      typeof bijaKey === 'string' &&
+      bijaKey &&
+      this.deps.pushToTalk?.getStatus().shortcut !== bijaKey
+    )
+      this.deps.pushToTalk?.apply(bijaKey);
     this.sendToWindow('places:changed', welcome.snapshot);
     this.pushStatus();
   }
@@ -357,7 +366,10 @@ export class Satellite {
 
   /** The config the renderer asks for: no keys, no services, just enough for it to know what it is. */
   private config(): RendererConfig {
-    return satelliteConfig({ keyword: keywordOf(this.welcome?.settings?.wakeWord), audioPreferences: this.audioPreferences });
+    return satelliteConfig({
+      keyword: keywordOf(this.welcome?.settings?.wakeWord),
+      audioPreferences: this.audioPreferences,
+    });
   }
 
   // -- IPC --------------------------------------------------------------------------------------
@@ -394,7 +406,8 @@ export class Satellite {
     for (const item of list) {
       const { id, fileSha } = (item ?? {}) as { id?: unknown; fileSha?: unknown };
       if (typeof id === 'string' && typeof fileSha === 'string' && fileSha) {
-        if (this.modelSha.get(id) !== fileSha) void this.cache.put(`model-sha:${id}`, 'text/plain', new TextEncoder().encode(fileSha));
+        if (this.modelSha.get(id) !== fileSha)
+          void this.cache.put(`model-sha:${id}`, 'text/plain', new TextEncoder().encode(fileSha));
         this.modelSha.set(id, fileSha);
       }
     }
@@ -438,7 +451,11 @@ export class Satellite {
     if (!found) return new Response('Not found', { status: 404 });
     return new Response(found.data as BodyInit, {
       status: 200,
-      headers: { 'Content-Type': found.mime || mimeFor(url), 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' },
+      headers: {
+        'Content-Type': found.mime || mimeFor(url),
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      },
     });
   }
 
@@ -454,7 +471,10 @@ export class Satellite {
         void this.cache.put(url, fetched.mime, fetched.data);
         return fetched;
       } catch (error) {
-        this.deps.logger?.warn('Satellite: could not fetch a room file', { url, message: describeError(error) });
+        this.deps.logger?.warn('Satellite: could not fetch a room file', {
+          url,
+          message: describeError(error),
+        });
         return null;
       }
     })().finally(() => this.inflight.delete(url));
@@ -471,14 +491,24 @@ export class Satellite {
 
   /** Pairs with bija using the 6-digit code, keeps the token in the keychain and the rest in satellite.json, then connects. */
   async pair(input: PairInput): Promise<SatelliteStatus> {
-    const paired = await requestPairing({ ...input, defaultDeviceName: this.deps.hostname, fetchFn: this.deps.fetchFn });
+    const paired = await requestPairing({
+      ...input,
+      defaultDeviceName: this.deps.hostname,
+      fetchFn: this.deps.fetchFn,
+    });
     const { hub, deviceName, placeName } = paired;
     const body = paired.body;
     const previous = this.deps.settings.get().hubUrl;
     if (previous && previous !== hub.ws) await this.deps.tokens.delete(previous);
     await this.deps.tokens.set(hub.ws, body.token);
     this.welcome = null;
-    this.deps.settings.update({ hubUrl: hub.ws, deviceId: body.deviceId, deviceName, placeId: body.placeId, placeName });
+    this.deps.settings.update({
+      hubUrl: hub.ws,
+      deviceId: body.deviceId,
+      deviceName,
+      placeId: body.placeId,
+      placeName,
+    });
     await this.connect();
     return this.status();
   }

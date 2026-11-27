@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HALLWAY_MS, LOCATIONS_KEY, MOVE_DEADLINE_MS, PlaceManager } from '../../src/places/place-manager.js';
+import {
+  HALLWAY_MS,
+  LOCATIONS_KEY,
+  MOVE_DEADLINE_MS,
+  PlaceManager,
+} from '../../src/places/place-manager.js';
 import { chooseSummon, summon } from '../../src/places/summon.js';
 
 const PROFILES = [
@@ -9,7 +14,13 @@ const PROFILES = [
 
 function setup(locations: Record<string, string> = {}) {
   const kv = new Map<string, string>([[LOCATIONS_KEY, JSON.stringify(locations)]]);
-  return new PlaceManager({ store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) }, registry: { list: () => PROFILES } });
+  return new PlaceManager({
+    store: {
+      getValue: (key) => kv.get(key) ?? null,
+      setValue: (key, value) => void kv.set(key, value),
+    },
+    registry: { list: () => PROFILES },
+  });
 }
 
 describe('summon', () => {
@@ -32,7 +43,9 @@ describe('summon', () => {
     void summon(places, 'sage').then((value) => (done = value));
     await vi.advanceTimersByTimeAsync(2000);
     expect(done).toBeNull();
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'sage', from: 'next-door', to: 'home' },
+    ]);
     places.arrived('sage');
     await vi.advanceTimersByTimeAsync(0);
     expect(done).toBe(true);
@@ -59,7 +72,9 @@ describe('summon', () => {
     places.startMove('sage', 'next-door', 'chose to');
     const result = summon(places, 'sage');
     await vi.advanceTimersByTimeAsync(HALLWAY_MS);
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'sage', from: 'next-door', to: 'home' },
+    ]);
     places.arrived('sage');
     await expect(result).resolves.toBe(true);
   });

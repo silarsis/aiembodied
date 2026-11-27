@@ -3,7 +3,7 @@
  * the Electron satellite (satellite.ts, which keeps the token in the keychain) and the web satellite (which keeps it
  * in the page's localStorage). Only `fetch` and the hub address parser; no Electron, no Node.
  */
-import type { DeviceKind } from '../../room-hub/room-devices.js';
+import type { DeviceKind } from '../room-hub/room-devices-types.js';
 import { parseHubUrl } from './link-shared.js';
 
 export interface PairRequest {
@@ -44,11 +44,18 @@ export async function requestPairing(input: PairRequest): Promise<PairResult> {
     response = await (input.fetchFn ?? fetch)(`${hub.http}/v1/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, deviceName, placeName, ...(input.kind ? { kind: input.kind } : {}) }),
+      body: JSON.stringify({
+        code,
+        deviceName,
+        placeName,
+        ...(input.kind ? { kind: input.kind } : {}),
+      }),
       signal: AbortSignal.timeout(10_000),
     });
   } catch (error) {
-    throw new Error(`Could not reach bija at ${hub.http.replace(/^https?:\/\//, '')}: ${describeError(error)}`);
+    throw new Error(
+      `Could not reach bija at ${hub.http.replace(/^https?:\/\//, '')}: ${describeError(error)}`,
+    );
   }
   if (!response.ok) {
     const messages: Record<number, string> = {
@@ -59,9 +66,23 @@ export async function requestPairing(input: PairRequest): Promise<PairResult> {
     };
     throw new Error(messages[response.status] ?? `bija answered ${response.status}.`);
   }
-  const body = (await response.json().catch(() => null)) as { deviceId?: unknown; token?: unknown; placeId?: unknown } | null;
-  if (!body || typeof body.deviceId !== 'string' || typeof body.token !== 'string' || typeof body.placeId !== 'string') {
+  const body = (await response.json().catch(() => null)) as {
+    deviceId?: unknown;
+    token?: unknown;
+    placeId?: unknown;
+  } | null;
+  if (
+    !body ||
+    typeof body.deviceId !== 'string' ||
+    typeof body.token !== 'string' ||
+    typeof body.placeId !== 'string'
+  ) {
     throw new Error('bija sent an answer this app does not understand.');
   }
-  return { hub, deviceName, placeName, body: { deviceId: body.deviceId, token: body.token, placeId: body.placeId } };
+  return {
+    hub,
+    deviceName,
+    placeName,
+    body: { deviceId: body.deviceId, token: body.token, placeId: body.placeId },
+  };
 }

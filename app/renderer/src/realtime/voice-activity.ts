@@ -1,5 +1,6 @@
 /** Where the assistant is in a conversation turn, for the status indicators. */
-export type VoicePhase = 'off' | 'waiting' | 'listening' | 'transcribing' | 'thinking' | 'responding' | 'error';
+export type VoicePhase =
+  'off' | 'waiting' | 'listening' | 'transcribing' | 'thinking' | 'responding' | 'error';
 
 export interface VoiceActivity {
   phase: VoicePhase;

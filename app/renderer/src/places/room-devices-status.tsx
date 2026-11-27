@@ -1,17 +1,32 @@
 import { useEffect, useState } from 'react';
-import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
-import type { PlaceDeviceState } from '../../../main/src/presence/place-presence.js';
+import type {
+  RoomHubBridge,
+  RoomHubStatus,
+} from '../../../main/src/shared/room-hub/bridge-types.js';
+import type { PlaceDeviceState } from '../../../main/src/shared/presence/place-presence-types.js';
 
 /** What a desktop room's PC says about its mic and camera, in words ("Mic live, camera off"). */
 export function deviceSummary(state: PlaceDeviceState | null | undefined): string {
   if (!state) return 'Devices: not reported yet';
   const word = (level: string) => (level === 'doorbell' ? 'doorbell only' : level);
-  const why = state.closed ? ' · room closed' : state.locked ? ' · screen locked' : state.fullscreen ? ' · full-screen app' : '';
+  const why = state.closed
+    ? ' · room closed'
+    : state.locked
+      ? ' · screen locked'
+      : state.fullscreen
+        ? ' · full-screen app'
+        : '';
   return `Mic ${word(state.mic)}, camera ${word(state.camera)}${why}`;
 }
 
 /** bija's Status panel: one line per desktop room with its mic and camera. Nothing when no room is paired. */
-export function RoomDevicesStatus({ roomHub, active }: { roomHub: RoomHubBridge | undefined; active: boolean }) {
+export function RoomDevicesStatus({
+  roomHub,
+  active,
+}: {
+  roomHub: RoomHubBridge | undefined;
+  active: boolean;
+}) {
   const [status, setStatus] = useState<RoomHubStatus | null>(null);
   useEffect(() => {
     if (!roomHub || !active) return undefined;
@@ -37,7 +52,8 @@ export function RoomDevicesStatus({ roomHub, active }: { roomHub: RoomHubBridge 
       <ul>
         {status.devices.map((device) => (
           <li key={device.id} data-testid={`room-devices-${device.placeId}`}>
-            <strong>{device.name}</strong>: {device.online ? deviceSummary(device.deviceState) : 'offline'}
+            <strong>{device.name}</strong>:{' '}
+            {device.online ? deviceSummary(device.deviceState) : 'offline'}
           </li>
         ))}
       </ul>

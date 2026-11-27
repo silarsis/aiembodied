@@ -87,7 +87,9 @@ export class AvatarDescriptionService {
         throw new Error('Avatar description generation returned an empty response.');
       }
 
-      this.logger?.info?.('Avatar description generated.', { descriptionLength: description.length });
+      this.logger?.info?.('Avatar description generated.', {
+        descriptionLength: description.length,
+      });
       return description;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { StationUseEvent } from '../../../main/src/stations/types.js';
-import { handleStationUse, type StationWalkDeps, type StationWalkExecutor } from '../../src/rooms/station-walks.js';
+import type { StationUseEvent } from '../../../main/src/shared/stations/types.js';
+import {
+  handleStationUse,
+  type StationWalkDeps,
+  type StationWalkExecutor,
+} from '../../src/rooms/station-walks.js';
 import { builtInRoom } from './fixtures.js';
 
 const reading = builtInRoom('reading-room');
@@ -114,7 +118,9 @@ describe('handleStationUse', () => {
     });
 
     it('does nothing in another room, for an avatar that is elsewhere, or without a body', () => {
-      for (const overrides of [{ room: () => studio }, { isHere: () => false }] as Array<Partial<StationWalkDeps>>) {
+      for (const overrides of [{ room: () => studio }, { isHere: () => false }] as Array<
+        Partial<StationWalkDeps>
+      >) {
         const { deps, calls } = setup(overrides);
         handleStationUse(activity, deps);
         expect(calls).toEqual([]);

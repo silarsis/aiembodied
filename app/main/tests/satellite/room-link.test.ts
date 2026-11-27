@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { LOST_TOUCH, RoomLink, parseHubUrl, type LinkStatus, type RoomLinkOptions } from '../../src/satellite/room-link.js';
+import {
+  LOST_TOUCH,
+  RoomLink,
+  parseHubUrl,
+  type LinkStatus,
+  type RoomLinkOptions,
+} from '../../src/satellite/room-link.js';
 import { startHarness, waitFor, type Harness } from './hub-harness.js';
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -7,7 +13,9 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function pairOnce(harness: Harness): Promise<{ deviceId: string; token: string; placeId: string }> {
+async function pairOnce(
+  harness: Harness,
+): Promise<{ deviceId: string; token: string; placeId: string }> {
   const code = await harness.code();
   const response = await fetch(`http://127.0.0.1:${harness.hub.port()}/v1/pair`, {
     method: 'POST',
@@ -18,7 +26,10 @@ async function pairOnce(harness: Harness): Promise<{ deviceId: string; token: st
   return (await response.json()) as { deviceId: string; token: string; placeId: string };
 }
 
-async function setup(handlers: Parameters<typeof startHarness>[0] = {}, options: Partial<RoomLinkOptions> = {}) {
+async function setup(
+  handlers: Parameters<typeof startHarness>[0] = {},
+  options: Partial<RoomLinkOptions> = {},
+) {
   const harness = await startHarness(handlers);
   cleanups.push(() => harness.cleanup());
   const paired = await pairOnce(harness);
@@ -43,10 +54,19 @@ async function setup(handlers: Parameters<typeof startHarness>[0] = {}, options:
 
 describe('parseHubUrl', () => {
   it('takes a ws address, an http address or a bare host, and defaults the port', () => {
-    expect(parseHubUrl('ws://bija:8791')).toEqual({ ws: 'ws://bija:8791', http: 'http://bija:8791' });
+    expect(parseHubUrl('ws://bija:8791')).toEqual({
+      ws: 'ws://bija:8791',
+      http: 'http://bija:8791',
+    });
     expect(parseHubUrl('bija')).toEqual({ ws: 'ws://bija:8791', http: 'http://bija:8791' });
-    expect(parseHubUrl(' http://100.64.0.1:9000/ ')).toEqual({ ws: 'ws://100.64.0.1:9000', http: 'http://100.64.0.1:9000' });
-    expect(parseHubUrl('wss://hub.example')).toEqual({ ws: 'wss://hub.example:8791', http: 'https://hub.example:8791' });
+    expect(parseHubUrl(' http://100.64.0.1:9000/ ')).toEqual({
+      ws: 'ws://100.64.0.1:9000',
+      http: 'http://100.64.0.1:9000',
+    });
+    expect(parseHubUrl('wss://hub.example')).toEqual({
+      ws: 'wss://hub.example:8791',
+      http: 'https://hub.example:8791',
+    });
   });
   it('refuses what is not an address', () => {
     expect(parseHubUrl('')).toBeNull();
@@ -61,7 +81,11 @@ describe('RoomLink against a real RoomHub', () => {
     link.start();
     await waitFor(() => link.status().state === 'online', 4000, 'online');
     expect(statuses.map((status) => status.state)).toEqual(['connecting', 'online']);
-    expect(link.welcome()).toMatchObject({ placeId: 'study', place: { name: 'the study' }, settings: { wakeWord: { keywordLabel: 'Hey Echo' } } });
+    expect(link.welcome()).toMatchObject({
+      placeId: 'study',
+      place: { name: 'the study' },
+      settings: { wakeWord: { keywordLabel: 'Hey Echo' } },
+    });
     expect(link.welcome()?.avatars).toHaveLength(2);
   });
 
@@ -69,7 +93,10 @@ describe('RoomLink against a real RoomHub', () => {
     const seen: unknown[] = [];
     const { link } = await setup({
       'avatars:list': () => [{ id: 'echo' }],
-      'local-voice:transcribe': ((_event: unknown, wav: Uint8Array) => (seen.push(wav), { text: `got ${wav.byteLength} bytes` })) as never,
+      'local-voice:transcribe': ((_event: unknown, wav: Uint8Array) => (
+        seen.push(wav),
+        { text: `got ${wav.byteLength} bytes` }
+      )) as never,
       'avatar-model:load': () => new Uint8Array([9, 8, 7, 6]).buffer,
     });
     link.start();
@@ -99,7 +126,11 @@ describe('RoomLink against a real RoomHub', () => {
     const { link, harness, events } = await setup();
     link.start();
     await waitFor(() => link.status().state === 'online');
-    harness.hub.sendToPlace('study', { op: 'ipc', channel: 'local-voice:event', args: [{ requestId: 'c1', type: 'sentence', wav: new Uint8Array([1, 2, 3]) }] });
+    harness.hub.sendToPlace('study', {
+      op: 'ipc',
+      channel: 'local-voice:event',
+      args: [{ requestId: 'c1', type: 'sentence', wav: new Uint8Array([1, 2, 3]) }],
+    });
     await waitFor(() => events.some((event) => event.channel === 'local-voice:event'));
     const event = events.find((item) => item.channel === 'local-voice:event');
     expect((event?.args[0] as { wav: Uint8Array }).wav).toEqual(new Uint8Array([1, 2, 3]));
@@ -107,7 +138,9 @@ describe('RoomLink against a real RoomHub', () => {
 
   it('streams events back while a long call runs (the fake sender reaches the satellite)', async () => {
     const { link, events } = await setup({
-      'avatar-motion:stream': (async (event: { sender: { send: (channel: string, ...args: unknown[]) => void } }) => {
+      'avatar-motion:stream': (async (event: {
+        sender: { send: (channel: string, ...args: unknown[]) => void };
+      }) => {
         event.sender.send('avatar-motion:chunk', { streamId: 's1', index: 0 });
         await new Promise((resolve) => setTimeout(resolve, 150));
         event.sender.send('avatar-motion:chunk', { streamId: 's1', index: 1 });
@@ -116,18 +149,34 @@ describe('RoomLink against a real RoomHub', () => {
     });
     link.start();
     await waitFor(() => link.status().state === 'online');
-    expect(await link.call('avatar-motion:stream', [{ streamId: 's1' }])).toEqual({ streamId: 's1', chunks: 2 });
-    expect(events.filter((event) => event.channel === 'avatar-motion:chunk').map((event) => (event.args[0] as { index: number }).index)).toEqual([0, 1]);
+    expect(await link.call('avatar-motion:stream', [{ streamId: 's1' }])).toEqual({
+      streamId: 's1',
+      chunks: 2,
+    });
+    expect(
+      events
+        .filter((event) => event.channel === 'avatar-motion:chunk')
+        .map((event) => (event.args[0] as { index: number }).index),
+    ).toEqual([0, 1]);
   });
 
   it('times a call out after the default wait, but not the channels that run long', async () => {
     const never = () => new Promise(() => undefined);
-    const { link } = await setup({ 'avatars:list': never as never, 'local-voice:respond': never as never }, { callTimeoutMs: 120 });
+    const { link } = await setup(
+      { 'avatars:list': never as never, 'local-voice:respond': never as never },
+      { callTimeoutMs: 120 },
+    );
     link.start();
     await waitFor(() => link.status().state === 'online');
     await expect(link.call('avatars:list')).rejects.toMatchObject({ code: 'timeout' });
     const long = link.call('local-voice:respond', [{ requestId: 'r', text: 'hi' }]);
-    const outcome = await Promise.race([long.then(() => 'answered', () => 'failed'), new Promise((resolve) => setTimeout(() => resolve('still waiting'), 400))]);
+    const outcome = await Promise.race([
+      long.then(
+        () => 'answered',
+        () => 'failed',
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('still waiting'), 400)),
+    ]);
     expect(outcome).toBe('still waiting');
   });
 
@@ -138,7 +187,9 @@ describe('RoomLink against a real RoomHub', () => {
     const asset = await link.getAsset('aiembodied-asset://polyhaven/chair/chair.glb');
     expect(asset.mime).toBe('model/gltf-binary');
     expect(Array.from(asset.data)).toEqual([1, 2, 3, 4, 5]);
-    await expect(link.getAsset('aiembodied-asset://polyhaven/chair/missing.glb')).rejects.toMatchObject({ code: 'not-found' });
+    await expect(
+      link.getAsset('aiembodied-asset://polyhaven/chair/missing.glb'),
+    ).rejects.toMatchObject({ code: 'not-found' });
   });
 
   it('fails calls at once while offline, drops the ones waiting, and comes back when bija does', async () => {
@@ -161,7 +212,12 @@ describe('RoomLink against a real RoomHub', () => {
     await harness.restart();
     await waitFor(() => link.status().state === 'online', 6000, 'online again');
     expect(await link.call('avatars:list')).toEqual(['echo']);
-    expect(statuses.map((status) => status.state)).toEqual(['connecting', 'online', 'offline', 'online']);
+    expect(statuses.map((status) => status.state)).toEqual([
+      'connecting',
+      'online',
+      'offline',
+      'online',
+    ]);
   });
 
   it('keeps trying with a longer wait each time while bija is away', async () => {
@@ -214,15 +270,28 @@ describe('RoomLink against a real RoomHub', () => {
 
   it('reports presence and device state to bija', async () => {
     const got: unknown[] = [];
-    const harness = await startHarness({}, { onSatelliteMessage: (from, op) => void got.push({ from, op }) });
+    const harness = await startHarness(
+      {},
+      { onSatelliteMessage: (from, op) => void got.push({ from, op }) },
+    );
     cleanups.push(() => harness.cleanup());
     const paired = await pairOnce(harness);
-    const link = new RoomLink({ url: harness.url(), deviceId: paired.deviceId, token: paired.token, appVersion: 't', onIpc: () => undefined, onStatus: () => undefined });
+    const link = new RoomLink({
+      url: harness.url(),
+      deviceId: paired.deviceId,
+      token: paired.token,
+      appVersion: 't',
+      onIpc: () => undefined,
+      onStatus: () => undefined,
+    });
     cleanups.push(() => link.stop());
     link.start();
     await waitFor(() => link.status().state === 'online');
     expect(link.send({ op: 'presence', listening: true, userSpokeAt: 5 })).toBe(true);
     await waitFor(() => got.length === 1);
-    expect(got[0]).toMatchObject({ from: { placeId: 'study' }, op: { op: 'presence', listening: true } });
+    expect(got[0]).toMatchObject({
+      from: { placeId: 'study' },
+      op: { op: 'presence', listening: true },
+    });
   });
 });

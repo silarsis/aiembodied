@@ -8,10 +8,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
-import type {
-  AvatarBridge,
-  AvatarModelSummary,
-} from './types.js';
+import type { AvatarBridge, AvatarModelSummary } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
 import { AvatarStudio, AvatarStudioLauncher } from './avatar-studio.js';
 
@@ -75,8 +72,6 @@ function formatTimestamp(value: number): string {
   }
 }
 
-
-
 export function AvatarConfigurator({
   avatarApi,
   onActiveModelChange,
@@ -139,12 +134,13 @@ export function AvatarConfigurator({
         const thumbnailResult = await generateVrmThumbnail(modelData);
         const updated = await avatarApi.updateModelThumbnail(model.id, thumbnailResult.dataUrl);
         if (updated) {
-          setModels((prev) =>
-            prev.map((m) => (m.id === model.id ? updated : m)),
-          );
+          setModels((prev) => prev.map((m) => (m.id === model.id ? updated : m)));
         }
       } catch (err) {
-        console.warn(`[avatar-configurator] Failed to generate thumbnail for model ${model.id}:`, err);
+        console.warn(
+          `[avatar-configurator] Failed to generate thumbnail for model ${model.id}:`,
+          err,
+        );
       } finally {
         setModelBusyId(null);
       }
@@ -165,7 +161,10 @@ export function AvatarConfigurator({
     setModelError(null);
 
     try {
-      const [list, active] = await Promise.all([avatarApi.listModels(), avatarApi.getActiveModel()]);
+      const [list, active] = await Promise.all([
+        avatarApi.listModels(),
+        avatarApi.getActiveModel(),
+      ]);
       setModels(list);
       setActiveModelId(active?.id ?? null);
       onActiveModelChange?.(active ?? null);
@@ -207,7 +206,9 @@ export function AvatarConfigurator({
     setModelUploadStatus('idle');
     setLastUploadedModel(null);
     if (nextFile) {
-      setModelNameInput((previous) => (previous.trim().length > 0 ? previous : deriveName(nextFile)));
+      setModelNameInput((previous) =>
+        previous.trim().length > 0 ? previous : deriveName(nextFile),
+      );
     }
   }, []);
 
@@ -256,26 +257,40 @@ export function AvatarConfigurator({
             try {
               const modelData = await avatarApi.loadModelBinary(uploadedModel.id);
               const thumbnailResult = await generateVrmThumbnail(modelData);
-              const updated = await avatarApi.updateModelThumbnail(uploadedModel.id, thumbnailResult.dataUrl);
+              const updated = await avatarApi.updateModelThumbnail(
+                uploadedModel.id,
+                thumbnailResult.dataUrl,
+              );
               if (updated) {
                 uploadedModel = updated;
 
                 if (!uploadedModel.description && avatarApi.generateModelDescription) {
                   try {
-                    const description = await avatarApi.generateModelDescription(thumbnailResult.dataUrl);
+                    const description = await avatarApi.generateModelDescription(
+                      thumbnailResult.dataUrl,
+                    );
                     if (description && avatarApi.updateModelDescription) {
-                      const withDescription = await avatarApi.updateModelDescription(uploadedModel.id, description);
+                      const withDescription = await avatarApi.updateModelDescription(
+                        uploadedModel.id,
+                        description,
+                      );
                       if (withDescription) {
                         uploadedModel = withDescription;
                       }
                     }
                   } catch (descErr) {
-                    console.warn('[avatar-configurator] Failed to generate model description:', descErr);
+                    console.warn(
+                      '[avatar-configurator] Failed to generate model description:',
+                      descErr,
+                    );
                   }
                 }
               }
             } catch (thumbErr) {
-              console.warn('[avatar-configurator] Failed to generate fallback thumbnail:', thumbErr);
+              console.warn(
+                '[avatar-configurator] Failed to generate fallback thumbnail:',
+                thumbErr,
+              );
             }
           }
 
@@ -345,7 +360,8 @@ export function AvatarConfigurator({
     [avatarApi, activeModelId, onActiveModelChange, refreshModels],
   );
 
-  const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
+  const modelUploadDisabled =
+    !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
 
   return (
     <section className="kiosk__faces" aria-label="Avatar library">
@@ -371,7 +387,12 @@ export function AvatarConfigurator({
             const isActive = model.id === activeModelId;
             const busy = modelBusyId === model.id || modelUploadStatus === 'uploading';
             return (
-              <article key={model.id} className="faceCard faceCard--compact" data-active={isActive ? 'true' : 'false'} role="listitem">
+              <article
+                key={model.id}
+                className="faceCard faceCard--compact"
+                data-active={isActive ? 'true' : 'false'}
+                role="listitem"
+              >
                 <div className="faceCard__preview" aria-hidden="true">
                   {model.thumbnailDataUrl ? (
                     <img src={model.thumbnailDataUrl} alt="" loading="lazy" />
@@ -383,10 +404,18 @@ export function AvatarConfigurator({
                   <h4>{model.name}</h4>
                 </div>
                 <div className="faceCard__actions">
-                  <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
+                  <button
+                    type="button"
+                    onClick={() => handleModelSelect(model.id)}
+                    disabled={busy || !isModelBridgeAvailable}
+                  >
                     {isActive ? 'Active' : 'Use model'}
                   </button>
-                  <button type="button" onClick={() => handleModelDelete(model.id)} disabled={busy || !isModelBridgeAvailable}>
+                  <button
+                    type="button"
+                    onClick={() => handleModelDelete(model.id)}
+                    disabled={busy || !isModelBridgeAvailable}
+                  >
                     Delete
                   </button>
                 </div>
@@ -396,12 +425,18 @@ export function AvatarConfigurator({
         </div>
 
         {!modelsLoading && formattedModels.length === 0 ? (
-          <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
+          <p className="kiosk__info">
+            No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.
+          </p>
         ) : null}
 
         <details className="avatarUpload" open={compact ? undefined : true}>
           <summary>+ Upload .vrm</summary>
-          <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
+          <form
+            className="faces__form"
+            onSubmit={handleModelUpload}
+            aria-label="Upload new VRM model"
+          >
             <label className="faces__field">
               <span>VRM file</span>
               <input
@@ -423,8 +458,16 @@ export function AvatarConfigurator({
                 disabled={!isModelBridgeAvailable || modelUploadDisabled}
               />
             </label>
-            <button type="submit" disabled={modelUploadDisabled || !modelFile} className="faces__submit">
-              {modelUploadStatus === 'reading' ? 'Processing…' : modelUploadStatus === 'uploading' ? 'Uploading…' : 'Upload VRM'}
+            <button
+              type="submit"
+              disabled={modelUploadDisabled || !modelFile}
+              className="faces__submit"
+            >
+              {modelUploadStatus === 'reading'
+                ? 'Processing…'
+                : modelUploadStatus === 'uploading'
+                  ? 'Uploading…'
+                  : 'Upload VRM'}
             </button>
           </form>
 
@@ -433,8 +476,12 @@ export function AvatarConfigurator({
               {modelUploadError}
             </p>
           ) : null}
-          {modelUploadStatus === 'uploading' ? <p className="kiosk__info">Uploading VRM model…</p> : null}
-          {modelUploadStatus === 'reading' ? <p className="kiosk__info">Preparing VRM payload…</p> : null}
+          {modelUploadStatus === 'uploading' ? (
+            <p className="kiosk__info">Uploading VRM model…</p>
+          ) : null}
+          {modelUploadStatus === 'reading' ? (
+            <p className="kiosk__info">Preparing VRM payload…</p>
+          ) : null}
 
           {lastUploadedModel ? (
             <div className="faces__uploadResult" role="status">

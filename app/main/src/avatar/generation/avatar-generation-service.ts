@@ -47,7 +47,7 @@ import type {
   AvatarGenerationConfirmation,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
-} from '../types.js';
+} from '../../shared/avatar/types.js';
 
 export interface AvatarGenerationModelStore {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
@@ -207,11 +207,21 @@ export class AvatarGenerationService {
     const concept = path.join(job.directory, 'concept.png');
     const original = path.join(job.directory, 'concept-original.png');
     const cutout = path.join(job.directory, 'concept-cutout.png');
-    if (!(await access(original).then(() => true, () => false))) await copyFile(concept, original);
+    if (
+      !(await access(original).then(
+        () => true,
+        () => false,
+      ))
+    )
+      await copyFile(concept, original);
     const message = job.status.message;
     this.update(job, { message: 'Removing the background', errorMessage: null });
     try {
-      await runner.removeBackground({ imagePath: original, outputPath: cutout, signal: AbortSignal.timeout(5 * 60_000) });
+      await runner.removeBackground({
+        imagePath: original,
+        outputPath: cutout,
+        signal: AbortSignal.timeout(5 * 60_000),
+      });
     } catch (error) {
       this.update(job, { message });
       throw error;
@@ -236,19 +246,27 @@ export class AvatarGenerationService {
   /** Draw this take's side and back views again from its current front image. */
   async redrawViews(jobId: string): Promise<void> {
     const job = this.getJob(jobId);
-    if (job.mode !== 'new-character') throw new Error('Only new 3D characters use side and back views.');
+    if (job.mode !== 'new-character')
+      throw new Error('Only new 3D characters use side and back views.');
     if (!job.status.previewDataUrl) throw new Error('This take has no image yet.');
     if (isRunning(job.status.status)) throw new Error('Wait for this take to finish first.');
     this.assertIdle();
     job.abort = new AbortController();
     const previous = job.status.status;
     const message = job.status.message;
-    this.update(job, { status: 'concept', message: 'Drawing the side and back views', errorMessage: null });
+    this.update(job, {
+      status: 'concept',
+      message: 'Drawing the side and back views',
+      errorMessage: null,
+    });
     void this.drawViews(job, () => this.comfyFor('image'), job.abort.signal, randomInt(0, 2 ** 47))
       .catch(() => undefined)
       .finally(() => {
         if (job.status.status === 'concept')
-          this.update(job, { status: previous, message: job.abort.signal.aborted ? 'Cancelled' : message });
+          this.update(job, {
+            status: previous,
+            message: job.abort.signal.aborted ? 'Cancelled' : message,
+          });
       });
   }
 
@@ -268,7 +286,9 @@ export class AvatarGenerationService {
       ?.call(this.options.imageModels, job.imageModel)
       .catch(() => undefined);
     const models: QwenImageModels | undefined =
-      model?.clip && model.vae ? { unet: model.model, clip: model.clip, vae: model.vae } : undefined;
+      model?.clip && model.vae
+        ? { unet: model.model, clip: model.clip, vae: model.vae }
+        : undefined;
     const loras: ImageWorkflowLora[] = model?.loras ?? [];
     if (!models) {
       this.update(job, {
@@ -284,31 +304,47 @@ export class AvatarGenerationService {
       const comfy = await getComfy();
       const front = await readFile(path.join(job.directory, 'concept.png'));
       const viewGraph = (frontName: string, prompt: string, negative: string, viewSeed: number) => {
-        const graph = characterViewGraph({ front: frontName, prompt, negative, seed: viewSeed, models });
+        const graph = characterViewGraph({
+          front: frontName,
+          prompt,
+          negative,
+          seed: viewSeed,
+          models,
+        });
         return loras.length ? applyLoras(graph, loras) : graph;
       };
       // The front is uploaded to the machine that draws the views: one lease for both.
       await inJob(comfy, graphsModelFiles(viewGraph('front.png', '', '', seed)), async () => {
-      const frontName = await comfy.uploadImage(`${job.status.jobId}-front.png`, front);
-      for (const [index, view] of (['left', 'back'] as const).entries()) {
-        throwIfAborted(signal);
-        this.update(job, {
-          message: view === 'left' ? 'Drawing the side view' : 'Drawing the back view',
-        });
-        const { prompt, negative } = CHARACTER_VIEW_PROMPTS[view];
-        const triggers = [...new Set(loras.flatMap((lora) => lora.triggerWords ?? []))].join(', ');
-        const graph = viewGraph(frontName, triggers ? `${triggers}, ${prompt}` : prompt, negative, seed + index);
-        const png = await comfy.run(graph, { signal });
-        throwIfAborted(signal);
-        await writeFile(path.join(job.directory, `view-${view}.png`), png);
-        views[view] = `data:image/png;base64,${png.toString('base64')}`;
-        this.update(job, { views: { ...views } });
-      }
+        const frontName = await comfy.uploadImage(`${job.status.jobId}-front.png`, front);
+        for (const [index, view] of (['left', 'back'] as const).entries()) {
+          throwIfAborted(signal);
+          this.update(job, {
+            message: view === 'left' ? 'Drawing the side view' : 'Drawing the back view',
+          });
+          const { prompt, negative } = CHARACTER_VIEW_PROMPTS[view];
+          const triggers = [...new Set(loras.flatMap((lora) => lora.triggerWords ?? []))].join(
+            ', ',
+          );
+          const graph = viewGraph(
+            frontName,
+            triggers ? `${triggers}, ${prompt}` : prompt,
+            negative,
+            seed + index,
+          );
+          const png = await comfy.run(graph, { signal });
+          throwIfAborted(signal);
+          await writeFile(path.join(job.directory, `view-${view}.png`), png);
+          views[view] = `data:image/png;base64,${png.toString('base64')}`;
+          this.update(job, { views: { ...views } });
+        }
       });
     } catch (error) {
       if (signal.aborted) throw error;
       const reason = error instanceof Error ? error.message : String(error);
-      this.options.logger?.warn?.('Could not draw the character views.', { jobId: job.status.jobId, reason });
+      this.options.logger?.warn?.('Could not draw the character views.', {
+        jobId: job.status.jobId,
+        reason,
+      });
       this.update(job, {
         viewsMessage: `The side and back views could not be drawn: ${reason}`,
       });
@@ -372,7 +408,10 @@ export class AvatarGenerationService {
       const findFace = rig?.face !== 'stylised';
       for (let attempt = 1; ; attempt++) {
         if (attempt > 1 && redraw) {
-          await copyFile(conceptPath, path.join(job.directory, `concept-rejected-${attempt - 1}.png`));
+          await copyFile(
+            conceptPath,
+            path.join(job.directory, `concept-rejected-${attempt - 1}.png`),
+          );
           this.update(job, { message: `Drawing the front again: ${problem}` });
           image = await redraw(attempt);
           throwIfAborted(signal);
@@ -386,7 +425,11 @@ export class AvatarGenerationService {
         if (!check.backgroundOk && runner.removeBackground) {
           this.update(job, { message: 'Removing the background' });
           await writeFile(originalPath, image);
-          await runner.removeBackground({ imagePath: originalPath, outputPath: cutoutPath, signal });
+          await runner.removeBackground({
+            imagePath: originalPath,
+            outputPath: cutoutPath,
+            signal,
+          });
           image = await readFile(cutoutPath);
           await writeFile(conceptPath, image);
           backgroundRemoved = true;
@@ -430,7 +473,12 @@ export class AvatarGenerationService {
     }
   }
 
-  private useConceptImage(job: JobState, image: Buffer, backgroundRemoved: boolean, message: string): void {
+  private useConceptImage(
+    job: JobState,
+    image: Buffer,
+    backgroundRemoved: boolean,
+    message: string,
+  ): void {
     // A changed image needs its face found again before the next build.
     job.landmarksPath = undefined;
     this.update(job, {
@@ -627,7 +675,10 @@ export class AvatarGenerationService {
   ): Promise<void> {
     if (!runner.paintHead) return;
     const skipped = (reason: string) => {
-      this.options.logger?.warn?.('Avatar head close-up skipped.', { jobId: job.status.jobId, reason });
+      this.options.logger?.warn?.('Avatar head close-up skipped.', {
+        jobId: job.status.jobId,
+        reason,
+      });
       this.update(job, { headPaint: { painted: false, reason } });
     };
     try {
@@ -638,12 +689,13 @@ export class AvatarGenerationService {
       }
       await runner.assertHeadPaintReady?.();
       this.update(job, { progress: 0.68, message: 'Repainting the face for a cleaner close-up' });
-      job.llmStopped = (await this.options.localLlm?.stop().catch((error: unknown) => {
-        this.options.logger?.warn?.('Could not stop the local LLM server.', {
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return false;
-      })) === true;
+      job.llmStopped =
+        (await this.options.localLlm?.stop().catch((error: unknown) => {
+          this.options.logger?.warn?.('Could not stop the local LLM server.', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return false;
+        })) === true;
       const output = path.join(job.directory, 'source-head.glb');
       await runner.paintHead({
         meshPath,
@@ -719,12 +771,19 @@ export class AvatarGenerationService {
             : conceptGraph(prompt, drawSeed);
         // Each draw uploads the pose skeleton and runs on one lease, so both reach the same machine.
         const draw = (drawSeed: number) =>
-          inJob(comfy, graphsModelFiles(conceptGraphFor(drawSeed, usePose ? 'a-pose.png' : undefined)), async () => {
-            const poseImage = usePose
-              ? await comfy.uploadImage(`a-pose-${pose.width}x${pose.height}.png`, drawPoseSkeleton(pose.width, pose.height))
-              : undefined;
-            return comfy.run(conceptGraphFor(drawSeed, poseImage), { signal });
-          });
+          inJob(
+            comfy,
+            graphsModelFiles(conceptGraphFor(drawSeed, usePose ? 'a-pose.png' : undefined)),
+            async () => {
+              const poseImage = usePose
+                ? await comfy.uploadImage(
+                    `a-pose-${pose.width}x${pose.height}.png`,
+                    drawPoseSkeleton(pose.width, pose.height),
+                  )
+                : undefined;
+              return comfy.run(conceptGraphFor(drawSeed, poseImage), { signal });
+            },
+          );
         let concept = job.referenceImage ?? (await draw(seed));
         throwIfAborted(signal);
         await writeFile(path.join(job.directory, 'concept.png'), concept);
@@ -774,7 +833,9 @@ export class AvatarGenerationService {
         job.vrmPath = path.join(job.directory, 'avatar.vrm');
         const painted = usesViews(job.geometry);
         if (painted && !runner.paintViews)
-          throw new Error('Painting views onto the model is unavailable. Choose TRELLIS.2 instead.');
+          throw new Error(
+            'Painting views onto the model is unavailable. Choose TRELLIS.2 instead.',
+          );
         this.update(job, {
           status: 'meshing',
           headPaint: undefined,
@@ -793,7 +854,13 @@ export class AvatarGenerationService {
             message: 'Generating the 3D shape from the front, side and back views',
           });
         }
-        const meshNeeds = graphsModelFiles(characterMeshGraph({ front: 'front.png', left: 'left.png', back: 'back.png' }, seed, job.geometry));
+        const meshNeeds = graphsModelFiles(
+          characterMeshGraph(
+            { front: 'front.png', left: 'left.png', back: 'back.png' },
+            seed,
+            job.geometry,
+          ),
+        );
         const { glb: mesh, images } = await inJob(comfy, meshNeeds, async () => {
           const images = await this.uploadViews(job, comfy, concept);
           const glb = await comfy.run(characterMeshGraph(images, seed, job.geometry), {
@@ -877,60 +944,62 @@ export class AvatarGenerationService {
       const regions = await this.runner.prepare(baseVrm);
 
       const edited: { box: (typeof regions)[number]['box']; png: Buffer }[] = [];
-      const retextureNeeds = graphsModelFiles(retextureGraph({ crop: 'crop.png', cropWidth: 1, cropHeight: 1, prompt: '', seed }));
+      const retextureNeeds = graphsModelFiles(
+        retextureGraph({ crop: 'crop.png', cropWidth: 1, cropHeight: 1, prompt: '', seed }),
+      );
       // The crops are uploaded to the machine that repaints them: one lease for the whole repaint.
       await inJob(comfy, retextureNeeds, async () => {
-      for (const [index, region] of regions.entries()) {
-        const label = `${region.name.replace('_', ' ')} (${index + 1} of ${regions.length})`;
-        const cropName = await comfy.uploadImage(
-          `${job.status.jobId}-${region.name}.png`,
-          region.png,
-        );
-        let best: { png: Buffer; score: number } | null = null;
-        for (let attempt = 0; attempt < MAX_REGION_ATTEMPTS; attempt += 1) {
-          throwIfAborted(signal);
-          this.update(job, {
-            status: 'texturing',
-            progress: 0.15 + (0.75 * (index + attempt / MAX_REGION_ATTEMPTS)) / regions.length,
-            message:
-              attempt === 0 ? `Repainting ${label}` : `Repainting ${label}, retry ${attempt}`,
-          });
-          const png = await comfy.run(
-            retextureGraph({
-              crop: cropName,
-              cropWidth: region.box.width,
-              cropHeight: region.box.height,
-              prompt: regionPrompt(region.prompt, job.prompt),
-              seed: seed + attempt,
-            }),
-            { signal },
+        for (const [index, region] of regions.entries()) {
+          const label = `${region.name.replace('_', ' ')} (${index + 1} of ${regions.length})`;
+          const cropName = await comfy.uploadImage(
+            `${job.status.jobId}-${region.name}.png`,
+            region.png,
           );
-          const score = await this.runner.score(region.png, png);
-          if (!best || score > best.score) {
-            best = { png, score };
-          }
-          if (score >= MIN_LAYOUT_SIMILARITY) {
-            break;
-          }
-          this.options.logger?.warn?.('Repainted region lost the atlas layout.', {
-            jobId: job.status.jobId,
-            region: region.name,
-            attempt,
-            score: Number(score.toFixed(3)),
-          });
-        }
-        if (best && best.score >= MIN_LAYOUT_SIMILARITY) {
-          edited.push({ box: region.box, png: best.png });
-        } else {
-          this.options.logger?.warn?.(
-            'Keeping the original texture for a region that never repainted cleanly.',
-            {
+          let best: { png: Buffer; score: number } | null = null;
+          for (let attempt = 0; attempt < MAX_REGION_ATTEMPTS; attempt += 1) {
+            throwIfAborted(signal);
+            this.update(job, {
+              status: 'texturing',
+              progress: 0.15 + (0.75 * (index + attempt / MAX_REGION_ATTEMPTS)) / regions.length,
+              message:
+                attempt === 0 ? `Repainting ${label}` : `Repainting ${label}, retry ${attempt}`,
+            });
+            const png = await comfy.run(
+              retextureGraph({
+                crop: cropName,
+                cropWidth: region.box.width,
+                cropHeight: region.box.height,
+                prompt: regionPrompt(region.prompt, job.prompt),
+                seed: seed + attempt,
+              }),
+              { signal },
+            );
+            const score = await this.runner.score(region.png, png);
+            if (!best || score > best.score) {
+              best = { png, score };
+            }
+            if (score >= MIN_LAYOUT_SIMILARITY) {
+              break;
+            }
+            this.options.logger?.warn?.('Repainted region lost the atlas layout.', {
               jobId: job.status.jobId,
               region: region.name,
-            },
-          );
+              attempt,
+              score: Number(score.toFixed(3)),
+            });
+          }
+          if (best && best.score >= MIN_LAYOUT_SIMILARITY) {
+            edited.push({ box: region.box, png: best.png });
+          } else {
+            this.options.logger?.warn?.(
+              'Keeping the original texture for a region that never repainted cleanly.',
+              {
+                jobId: job.status.jobId,
+                region: region.name,
+              },
+            );
+          }
         }
-      }
       });
 
       if (edited.length === 0) {

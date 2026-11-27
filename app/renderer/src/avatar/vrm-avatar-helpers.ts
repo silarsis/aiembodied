@@ -1,19 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import {
-  VRM,
-  VRMUtils,
-  VRMExpressionPresetName,
-  type VRMPose,
-} from '@pixiv/three-vrm';
+import { VRM, VRMUtils, VRMExpressionPresetName, type VRMPose } from '@pixiv/three-vrm';
 import { VRMAnimationLoaderPlugin, type VRMAnimation } from '@pixiv/three-vrm-animation';
 import baseNeutralPose from '../../../main/src/shared/avatar/base-poses/relaxed-neutral.pose.json';
 import { getPreloadApi } from '../preload-api.js';
-import type {
-  VRMPoseData,
-  VRMPoseExpressions,
-  PoseTransitionConfig,
-} from './animation-bus.js';
+import type { VRMPoseData, VRMPoseExpressions, PoseTransitionConfig } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import {
   createClipFromVrma,
@@ -84,7 +75,6 @@ export interface VrmaClipWithMetadata {
   clip: THREE.AnimationClip;
   vrmaData?: VrmaGltf;
 }
-
 
 export function buildIdleSchedulerConfig(
   vrm: VRM,
@@ -163,7 +153,9 @@ export function buildIdleSchedulerConfig(
   return config;
 }
 
-export async function loadVrmaAnimation(binary: ArrayBuffer): Promise<{ animation: VRMAnimation; gltf: VrmaGltf } | null> {
+export async function loadVrmaAnimation(
+  binary: ArrayBuffer,
+): Promise<{ animation: VRMAnimation; gltf: VrmaGltf } | null> {
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
   const gltf = (await loader.parseAsync(binary, '/')) as {
@@ -227,7 +219,10 @@ function multiplyQuaternion(base: THREE.Quaternion, delta: THREE.Euler): THREE.Q
 }
 
 // Helper: Linear interpolation between expression keyframes
-function evaluateKeyframes(keyframes: Array<{ t: number; v: number }>, time: number): number | null {
+function evaluateKeyframes(
+  keyframes: Array<{ t: number; v: number }>,
+  time: number,
+): number | null {
   if (!keyframes || keyframes.length === 0) return null;
 
   // Clamp to bounds
@@ -290,8 +285,11 @@ export function applyPoseExpressions(vrm: VRM, expressions: VRMPoseExpressions |
   const expressionManager = vrm.expressionManager;
 
   // Log available expressions for debugging
-  const availableExpressions = expressionManager.expressions?.map(e => e.expressionName) ?? [];
-  console.info('[vrm-avatar-renderer] Available model expressions:', JSON.stringify(availableExpressions));
+  const availableExpressions = expressionManager.expressions?.map((e) => e.expressionName) ?? [];
+  console.info(
+    '[vrm-avatar-renderer] Available model expressions:',
+    JSON.stringify(availableExpressions),
+  );
 
   // Apply preset expressions (always apply, including 0, to clear previous poses)
   if (expressions.presets) {
@@ -300,15 +298,22 @@ export function applyPoseExpressions(vrm: VRM, expressions: VRMPoseExpressions |
         const clampedWeight = Math.max(0, Math.min(1, weight));
 
         // Check if expression exists in the model
-        const resolvedName = availableExpressions.find((available) => available.toLowerCase() === name.toLowerCase()) ?? name;
+        const resolvedName =
+          availableExpressions.find(
+            (available) => available.toLowerCase() === name.toLowerCase(),
+          ) ?? name;
         const expressionExists = availableExpressions.includes(resolvedName);
         if (!expressionExists && clampedWeight > 0) {
-          console.warn(`[vrm-avatar-renderer] Expression '${name}' not found in VRM model. Available: ${availableExpressions.join(', ')}`);
+          console.warn(
+            `[vrm-avatar-renderer] Expression '${name}' not found in VRM model. Available: ${availableExpressions.join(', ')}`,
+          );
         }
 
         expressionManager.setValue(resolvedName, clampedWeight);
         if (clampedWeight > 0) {
-          console.info(`[vrm-avatar-renderer] Set expression '${name}' to ${clampedWeight.toFixed(2)}`);
+          console.info(
+            `[vrm-avatar-renderer] Set expression '${name}' to ${clampedWeight.toFixed(2)}`,
+          );
         }
       }
     }
@@ -349,7 +354,12 @@ export function normalizePoseData(pose: VRMPoseData): {
     if (key === 'expressions' || key === 'bones') continue;
 
     // Check if value looks like bone data
-    if (value && typeof value === 'object' && 'rotation' in value && Array.isArray(value.rotation)) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      'rotation' in value &&
+      Array.isArray(value.rotation)
+    ) {
       bones[key] = value as { rotation: number[]; position?: number[] | null };
     }
   }
@@ -363,11 +373,18 @@ export function poseBonesForVrm(vrm: VRM, pose: VRMPoseData): ReturnType<typeof 
   if (pose.sourceVrmVersion !== '0' || vrm.meta?.metaVersion !== '1') return normalized;
   return {
     ...normalized,
-    bones: Object.fromEntries(Object.entries(normalized.bones).map(([name, bone]) => [name, {
-      ...bone,
-      rotation: [-bone.rotation[0], bone.rotation[1], -bone.rotation[2], bone.rotation[3]],
-      ...(bone.position ? { position: [-bone.position[0], bone.position[1], -bone.position[2]] } : {}),
-    }])),
+    bones: Object.fromEntries(
+      Object.entries(normalized.bones).map(([name, bone]) => [
+        name,
+        {
+          ...bone,
+          rotation: [-bone.rotation[0], bone.rotation[1], -bone.rotation[2], bone.rotation[3]],
+          ...(bone.position
+            ? { position: [-bone.position[0], bone.position[1], -bone.position[2]] }
+            : {}),
+        },
+      ]),
+    ),
   };
 }
 
@@ -412,17 +429,37 @@ const BONE_CHAIN_DEPTH: Record<string, number> = {
   rightFoot: 3,
   rightToes: 4,
   // Left fingers (depth 7-9)
-  leftThumbProximal: 7, leftThumbIntermediate: 8, leftThumbDistal: 9,
-  leftIndexProximal: 7, leftIndexIntermediate: 8, leftIndexDistal: 9,
-  leftMiddleProximal: 7, leftMiddleIntermediate: 8, leftMiddleDistal: 9,
-  leftRingProximal: 7, leftRingIntermediate: 8, leftRingDistal: 9,
-  leftLittleProximal: 7, leftLittleIntermediate: 8, leftLittleDistal: 9,
+  leftThumbProximal: 7,
+  leftThumbIntermediate: 8,
+  leftThumbDistal: 9,
+  leftIndexProximal: 7,
+  leftIndexIntermediate: 8,
+  leftIndexDistal: 9,
+  leftMiddleProximal: 7,
+  leftMiddleIntermediate: 8,
+  leftMiddleDistal: 9,
+  leftRingProximal: 7,
+  leftRingIntermediate: 8,
+  leftRingDistal: 9,
+  leftLittleProximal: 7,
+  leftLittleIntermediate: 8,
+  leftLittleDistal: 9,
   // Right fingers (depth 7-9)
-  rightThumbProximal: 7, rightThumbIntermediate: 8, rightThumbDistal: 9,
-  rightIndexProximal: 7, rightIndexIntermediate: 8, rightIndexDistal: 9,
-  rightMiddleProximal: 7, rightMiddleIntermediate: 8, rightMiddleDistal: 9,
-  rightRingProximal: 7, rightRingIntermediate: 8, rightRingDistal: 9,
-  rightLittleProximal: 7, rightLittleIntermediate: 8, rightLittleDistal: 9,
+  rightThumbProximal: 7,
+  rightThumbIntermediate: 8,
+  rightThumbDistal: 9,
+  rightIndexProximal: 7,
+  rightIndexIntermediate: 8,
+  rightIndexDistal: 9,
+  rightMiddleProximal: 7,
+  rightMiddleIntermediate: 8,
+  rightMiddleDistal: 9,
+  rightRingProximal: 7,
+  rightRingIntermediate: 8,
+  rightRingDistal: 9,
+  rightLittleProximal: 7,
+  rightLittleIntermediate: 8,
+  rightLittleDistal: 9,
   // Eyes
   leftEye: 5,
   rightEye: 5,
@@ -444,14 +481,15 @@ function easeInOutQuad(t: number): number {
 
 function applyEasing(t: number, easing: PoseTransitionConfig['easing']): number {
   switch (easing) {
-    case 'easeOut': return easeOutCubic(t);
-    case 'easeInOut': return easeInOutQuad(t);
+    case 'easeOut':
+      return easeOutCubic(t);
+    case 'easeInOut':
+      return easeInOutQuad(t);
     case 'linear':
     default:
       return t;
   }
 }
-
 
 /** Captured state for a single bone */
 export interface CapturedBoneState {
@@ -463,10 +501,7 @@ export interface CapturedBoneState {
  * Captures the current bone rotations and positions from a VRM humanoid.
  * This should be called BEFORE stopping any active animation to preserve the current pose.
  */
-export function captureCurrentPose(
-  vrm: VRM,
-  boneNames?: string[],
-): Map<string, CapturedBoneState> {
+export function captureCurrentPose(vrm: VRM, boneNames?: string[]): Map<string, CapturedBoneState> {
   const result = new Map<string, CapturedBoneState>();
   const humanoid = vrm.humanoid;
   if (!humanoid) {
@@ -477,7 +512,9 @@ export function captureCurrentPose(
   const bonesToCapture = boneNames ?? Object.keys(humanoid.humanBones);
 
   for (const boneName of bonesToCapture) {
-    const node = humanoid.getNormalizedBoneNode(boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0]);
+    const node = humanoid.getNormalizedBoneNode(
+      boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0],
+    );
     if (!node) {
       continue;
     }
@@ -494,7 +531,7 @@ export function captureCurrentPose(
 /**
  * Creates an AnimationClip that transitions from the current bone rotations to the target pose.
  * Supports eased staggered transitions for natural wave-like motion through the skeleton.
- * 
+ *
  * @param vrm - The VRM model
  * @param targetPose - The target pose to transition to
  * @param duration - Duration of the transition in seconds
@@ -540,7 +577,9 @@ export function createPoseTransitionClip(
     }
 
     // Get the normalized bone node (used by VRM animations - same as wave animation)
-    const node = humanoid.getNormalizedBoneNode(boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0]);
+    const node = humanoid.getNormalizedBoneNode(
+      boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0],
+    );
     if (!node) {
       unresolvedBones.push(boneName);
       continue;
@@ -575,11 +614,7 @@ export function createPoseTransitionClip(
     }
 
     // Use the node's name for the track (AnimationMixer finds nodes by name)
-    const track = new THREE.QuaternionKeyframeTrack(
-      `${node.name}.quaternion`,
-      times,
-      values,
-    );
+    const track = new THREE.QuaternionKeyframeTrack(`${node.name}.quaternion`, times, values);
     tracks.push(track);
 
     // Handle position if present (e.g., for hips in crouching poses)
@@ -604,17 +639,16 @@ export function createPoseTransitionClip(
         posValues.push(interpX, interpY, interpZ);
       }
 
-      const posTrack = new THREE.VectorKeyframeTrack(
-        `${node.name}.position`,
-        posTimes,
-        posValues,
-      );
+      const posTrack = new THREE.VectorKeyframeTrack(`${node.name}.position`, posTimes, posValues);
       tracks.push(posTrack);
     }
   }
 
   if (unresolvedBones.length > 0) {
-    console.warn('[vrm-avatar-renderer] Could not resolve bones for pose transition:', JSON.stringify(unresolvedBones));
+    console.warn(
+      '[vrm-avatar-renderer] Could not resolve bones for pose transition:',
+      JSON.stringify(unresolvedBones),
+    );
   }
 
   if (tracks.length === 0) {
@@ -622,15 +656,18 @@ export function createPoseTransitionClip(
     return null;
   }
 
-  console.info('[vrm-avatar-renderer] Created pose transition clip:', JSON.stringify({
-    trackCount: tracks.length,
-    resolvedBones,
-    unresolvedBones,
-    duration: totalClipDuration,
-    hasExpressions: !!expressions,
-    easing,
-    staggerFactor,
-  }));
+  console.info(
+    '[vrm-avatar-renderer] Created pose transition clip:',
+    JSON.stringify({
+      trackCount: tracks.length,
+      resolvedBones,
+      unresolvedBones,
+      duration: totalClipDuration,
+      hasExpressions: !!expressions,
+      easing,
+      staggerFactor,
+    }),
+  );
 
   return {
     clip: new THREE.AnimationClip('pose-transition', totalClipDuration, tracks),
@@ -641,7 +678,9 @@ export function createPoseTransitionClip(
 export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
   const humanoid = vrm.humanoid;
   if (!humanoid) {
-    console.warn('[vrm-avatar-renderer] VRM humanoid is unavailable; cannot create wave animation clip.');
+    console.warn(
+      '[vrm-avatar-renderer] VRM humanoid is unavailable; cannot create wave animation clip.',
+    );
     return null;
   }
 
@@ -660,12 +699,14 @@ export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
   const lowerRest = lowerArm.quaternion.clone();
   const handRest = hand?.quaternion.clone() ?? null;
 
-  const upperRaised = vrm.meta?.metaVersion === '1'
-    ? new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -1.1))
-    : multiplyQuaternion(upperRest, new THREE.Euler(-0.9, 0.25, 0));
-  const lowerRaised = vrm.meta?.metaVersion === '1'
-    ? new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -1.2))
-    : multiplyQuaternion(lowerRest, new THREE.Euler(-0.7, 0.15, 0));
+  const upperRaised =
+    vrm.meta?.metaVersion === '1'
+      ? new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -1.1))
+      : multiplyQuaternion(upperRest, new THREE.Euler(-0.9, 0.25, 0));
+  const lowerRaised =
+    vrm.meta?.metaVersion === '1'
+      ? new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -1.2))
+      : multiplyQuaternion(lowerRest, new THREE.Euler(-0.7, 0.15, 0));
   const handRaised = handRest ? multiplyQuaternion(handRest, new THREE.Euler(0, 0.4, 0)) : null;
 
   const upperWaveOut = multiplyQuaternion(upperRaised, new THREE.Euler(0.2, 0, 0.3));
@@ -674,8 +715,12 @@ export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
   const lowerWaveOut = multiplyQuaternion(lowerRaised, new THREE.Euler(0.35, 0, 0.2));
   const lowerWaveIn = multiplyQuaternion(lowerRaised, new THREE.Euler(-0.35, 0, -0.2));
 
-  const handWaveOut = handRaised ? multiplyQuaternion(handRaised, new THREE.Euler(0, 0.25, 0.15)) : null;
-  const handWaveIn = handRaised ? multiplyQuaternion(handRaised, new THREE.Euler(0, -0.25, -0.15)) : null;
+  const handWaveOut = handRaised
+    ? multiplyQuaternion(handRaised, new THREE.Euler(0, 0.25, 0.15))
+    : null;
+  const handWaveIn = handRaised
+    ? multiplyQuaternion(handRaised, new THREE.Euler(0, -0.25, -0.15))
+    : null;
 
   const upperValues = [
     ...quaternionToArray(upperRest),
@@ -810,7 +855,9 @@ export function createDefaultIdleClip(vrm: VRM): THREE.AnimationClip | null {
 /** Use the approved neutral stance directly; its forward compensation is already baked in. */
 export function applyBaseNeutralPose(vrm: VRM): void {
   if (!vrm.humanoid) return;
-  vrm.humanoid.setNormalizedPose(poseBonesForVrm(vrm, baseNeutralPose as VRMPoseData).bones as VRMPose);
+  vrm.humanoid.setNormalizedPose(
+    poseBonesForVrm(vrm, baseNeutralPose as VRMPoseData).bones as VRMPose,
+  );
   applyPoseExpressions(vrm, baseNeutralPose.expressions);
 }
 
@@ -916,12 +963,16 @@ function computeHumanoidMetrics(vrm: VRM) {
 
   const center = hips
     ? new THREE.Vector3().setFromMatrixPosition(hips.matrixWorld)
-    : candidates.reduce((acc, pos) => acc.add(pos), new THREE.Vector3()).multiplyScalar(1 / candidates.length);
+    : candidates
+        .reduce((acc, pos) => acc.add(pos), new THREE.Vector3())
+        .multiplyScalar(1 / candidates.length);
 
   return { height, groundY, center };
 }
 
-export function computeRenderableBounds(root: THREE.Object3D): { box: THREE.Box3; size: THREE.Vector3; center: THREE.Vector3 } | null {
+export function computeRenderableBounds(
+  root: THREE.Object3D,
+): { box: THREE.Box3; size: THREE.Vector3; center: THREE.Vector3 } | null {
   const box = new THREE.Box3();
   let hasBounds = false;
 
@@ -1049,7 +1100,9 @@ export function renderedFootFraction(renderer: THREE.WebGLRenderer): number | nu
         }
       }
     }
-  } catch { /* A lost context is handled by the normal renderer status path. */ }
+  } catch {
+    /* A lost context is handled by the normal renderer status path. */
+  }
   return null;
 }
 

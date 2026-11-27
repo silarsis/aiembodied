@@ -1,8 +1,15 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { objectShapes, type LocalShape } from './room-shapes.js';
-import { WALL_THICKNESS, colliderObjects, degToRad, wallPieces, windowBlockers, type WallName } from './room-geometry.js';
+import {
+  WALL_THICKNESS,
+  colliderObjects,
+  degToRad,
+  wallPieces,
+  windowBlockers,
+  type WallName,
+} from './room-geometry.js';
 
 export const AVATAR_RADIUS = 0.25;
 export const AVATAR_HEIGHT = 1.6;
@@ -50,7 +57,10 @@ export class RoomPhysics {
   /** Fixed colliders (shell and furniture) by handle: the owning object's id, or null for the shell. */
   private readonly fixedOwners = new Map<number, string | null>();
   /** The body and colliders of each fixed object, so a loaded model can swap its shapes. */
-  private readonly fixedObjects = new Map<string, { body: RAPIER.RigidBody; colliders: RAPIER.Collider[] }>();
+  private readonly fixedObjects = new Map<
+    string,
+    { body: RAPIER.RigidBody; colliders: RAPIER.Collider[] }
+  >();
   /** Colliders were added since the last step; Rapier's query structures only see them after a step. */
   private queriesStale = true;
   private accumulator = 0;
@@ -65,20 +75,31 @@ export class RoomPhysics {
           .setTranslation(center[0], center[1], center[2])
           .setRotation(yawQuaternion(yaw)),
       );
-      const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2).setFriction(0.8), body);
+      const collider = this.world.createCollider(
+        RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2).setFriction(0.8),
+        body,
+      );
       this.fixedOwners.set(collider.handle, null);
     };
 
     fixed([0, -0.25, 0], [shell.width + 2 * WALL_THICKNESS, 0.5, shell.depth + 2 * WALL_THICKNESS]);
-    fixed([0, shell.height + 0.25, 0], [shell.width + 2 * WALL_THICKNESS, 0.5, shell.depth + 2 * WALL_THICKNESS]);
+    fixed(
+      [0, shell.height + 0.25, 0],
+      [shell.width + 2 * WALL_THICKNESS, 0.5, shell.depth + 2 * WALL_THICKNESS],
+    );
     // Wall pieces leave door openings empty, so doors are passable. Windows are closed off.
-    for (const wall of WALLS) for (const piece of wallPieces(shell, wall)) fixed(piece.center, piece.size);
+    for (const wall of WALLS)
+      for (const piece of wallPieces(shell, wall)) fixed(piece.center, piece.size);
     for (const blocker of windowBlockers(shell)) fixed(blocker.center, blocker.size);
 
     for (const object of colliderObjects(room, () => true)) {
       const yaw = degToRad(object.rotationY ?? 0);
       const [width, height, depth] = object.size;
-      const center: [number, number, number] = [object.position[0], object.position[1] + height / 2, object.position[2]];
+      const center: [number, number, number] = [
+        object.position[0],
+        object.position[1] + height / 2,
+        object.position[2],
+      ];
       if (object.dynamic) {
         const body = this.world.createRigidBody(
           RAPIER.RigidBodyDesc.dynamic()
@@ -88,7 +109,10 @@ export class RoomPhysics {
             .setAngularDamping(0.5),
         );
         this.world.createCollider(
-          RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2).setDensity(400).setFriction(0.8).setRestitution(0.05),
+          RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2)
+            .setDensity(400)
+            .setFriction(0.8)
+            .setRestitution(0.05),
           body,
         );
         this.bodies.set(object.id, body);
@@ -97,7 +121,9 @@ export class RoomPhysics {
       } else {
         // The body sits at the object's origin so its shapes keep their object-local placement.
         const body = this.world.createRigidBody(
-          RAPIER.RigidBodyDesc.fixed().setTranslation(...object.position).setRotation(yawQuaternion(yaw)),
+          RAPIER.RigidBodyDesc.fixed()
+            .setTranslation(...object.position)
+            .setRotation(yawQuaternion(yaw)),
         );
         const entry = { body, colliders: [] as RAPIER.Collider[] };
         this.fixedObjects.set(object.id, entry);
@@ -109,7 +135,11 @@ export class RoomPhysics {
     this.avatar = this.createAvatarBody();
   }
 
-  private addShapes(id: string, entry: { body: RAPIER.RigidBody; colliders: RAPIER.Collider[] }, shapes: readonly LocalShape[]): void {
+  private addShapes(
+    id: string,
+    entry: { body: RAPIER.RigidBody; colliders: RAPIER.Collider[] },
+    shapes: readonly LocalShape[],
+  ): void {
     for (const shape of shapes) {
       let desc: RAPIER.ColliderDesc | null;
       switch (shape.kind) {
@@ -127,7 +157,10 @@ export class RoomPhysics {
           break;
       }
       if (!desc) continue;
-      desc.setTranslation(...shape.translation).setRotation(shape.rotation).setFriction(0.8);
+      desc
+        .setTranslation(...shape.translation)
+        .setRotation(shape.rotation)
+        .setFriction(0.8);
       const collider = this.world.createCollider(desc, entry.body);
       entry.colliders.push(collider);
       this.fixedOwners.set(collider.handle, id);
@@ -164,8 +197,15 @@ export class RoomPhysics {
     if (this.disposed) return null;
     this.refreshQueries();
     const ray = new RAPIER.Ray({ x, y: fromY, z }, { x: 0, y: -1, z: 0 });
-    const hit = this.world.castRay(ray, fromY + 10, true, undefined, undefined, undefined, undefined, (collider) =>
-      this.isFixedOf(collider.handle, objectId),
+    const hit = this.world.castRay(
+      ray,
+      fromY + 10,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (collider) => this.isFixedOf(collider.handle, objectId),
     );
     return hit ? fromY - hit.timeOfImpact : null;
   }
@@ -235,7 +275,9 @@ export class RoomPhysics {
 
   private createAvatarBody(): RAPIER.RigidBody {
     const halfSegment = Math.max(0.01, (AVATAR_HEIGHT - 2 * AVATAR_RADIUS) / 2);
-    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, AVATAR_HEIGHT / 2, 0));
+    const body = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, AVATAR_HEIGHT / 2, 0),
+    );
     this.world.createCollider(RAPIER.ColliderDesc.capsule(halfSegment, AVATAR_RADIUS), body);
     return body;
   }
@@ -319,9 +361,16 @@ export class RoomPhysics {
     const body = this.bodies.get(id);
     const entry = this.dynamics.find((candidate) => candidate.id === id);
     if (!body || !entry || this.disposed) return;
-    const centre = new THREE.Vector3(0, entry.halfHeight, 0).applyQuaternion(orientation).add(origin);
+    const centre = new THREE.Vector3(0, entry.halfHeight, 0)
+      .applyQuaternion(orientation)
+      .add(origin);
     body.setNextKinematicTranslation({ x: centre.x, y: centre.y, z: centre.z });
-    body.setNextKinematicRotation({ x: orientation.x, y: orientation.y, z: orientation.z, w: orientation.w });
+    body.setNextKinematicRotation({
+      x: orientation.x,
+      y: orientation.y,
+      z: orientation.z,
+      w: orientation.w,
+    });
   }
 
   /** Puts a dynamic object down: upright at `origin` (floor contact) with the given yaw, at rest, and live again. */
@@ -366,4 +415,3 @@ export class RoomPhysics {
 function yawQuaternion(yaw: number): { x: number; y: number; z: number; w: number } {
   return { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
 }
-

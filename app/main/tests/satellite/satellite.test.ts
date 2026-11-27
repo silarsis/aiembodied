@@ -2,9 +2,19 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Satellite, type SatelliteStatus, type WindowLike } from '../../src/satellite/satellite.js';
-import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from '../../src/satellite/settings.js';
-import { KeychainTokenStore, MemoryTokenStore, TOKEN_SERVICE } from '../../src/satellite/token-store.js';
+import { Satellite, type WindowLike } from '../../src/satellite/satellite.js';
+import type { SatelliteStatus } from '../../src/shared/satellite/satellite-types.js';
+import {
+  SATELLITE_FILE,
+  SatelliteSettingsStore,
+  detectSatelliteRole,
+  userDataOverride,
+} from '../../src/satellite/settings.js';
+import {
+  KeychainTokenStore,
+  MemoryTokenStore,
+  TOKEN_SERVICE,
+} from '../../src/satellite/token-store.js';
 import { LOST_TOUCH } from '../../src/satellite/room-link.js';
 import { startHarness, waitFor, type Harness } from './hub-harness.js';
 
@@ -13,13 +23,19 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function setup(handlers: Parameters<typeof startHarness>[0] = {}, extra: Partial<ConstructorParameters<typeof Satellite>[0]> = {}) {
+async function setup(
+  handlers: Parameters<typeof startHarness>[0] = {},
+  extra: Partial<ConstructorParameters<typeof Satellite>[0]> = {},
+) {
   const harness = await startHarness(handlers);
   cleanups.push(() => harness.cleanup());
   const folder = mkdtempSync(path.join(tmpdir(), 'satellite-pc-'));
   cleanups.push(() => rmSync(folder, { recursive: true, force: true }));
   const sent: Array<{ channel: string; args: unknown[] }> = [];
-  const window: WindowLike = { isDestroyed: () => false, webContents: { send: (channel, ...args) => void sent.push({ channel, args }) } };
+  const window: WindowLike = {
+    isDestroyed: () => false,
+    webContents: { send: (channel, ...args) => void sent.push({ channel, args }) },
+  };
   const settings = new SatelliteSettingsStore(path.join(folder, SATELLITE_FILE));
   const tokens = new MemoryTokenStore();
   const quit = vi.fn();
@@ -48,10 +64,31 @@ async function setup(handlers: Parameters<typeof startHarness>[0] = {}, extra: P
   };
   const pairNow = async (extra: Record<string, unknown> = {}) => {
     const code = await harness.code();
-    return (await ipc('satellite:pair', { hubUrl: harness.url(), code, placeName: 'the study', deviceName: 'Desk', ...extra })) as SatelliteStatus;
+    return (await ipc('satellite:pair', {
+      hubUrl: harness.url(),
+      code,
+      placeName: 'the study',
+      deviceName: 'Desk',
+      ...extra,
+    })) as SatelliteStatus;
   };
-  const statusesSent = () => sent.filter((item) => item.channel === 'satellite:status').map((item) => item.args[0] as SatelliteStatus);
-  return { harness, satellite, folder, sent, ipc, pairNow, tokens, settings, quit, asset: (url: string) => assetHandler!({ url }), statusesSent };
+  const statusesSent = () =>
+    sent
+      .filter((item) => item.channel === 'satellite:status')
+      .map((item) => item.args[0] as SatelliteStatus);
+  return {
+    harness,
+    satellite,
+    folder,
+    sent,
+    ipc,
+    pairNow,
+    tokens,
+    settings,
+    quit,
+    asset: (url: string) => assetHandler!({ url }),
+    statusesSent,
+  };
 }
 
 async function online(harness: Harness, status: () => SatelliteStatus) {
@@ -60,37 +97,70 @@ async function online(harness: Harness, status: () => SatelliteStatus) {
 }
 
 describe('Satellite', () => {
-  it('starts unpaired: the connect screen\'s status, no link', async () => {
+  it("starts unpaired: the connect screen's status, no link", async () => {
     const { ipc } = await setup();
-    expect(await ipc('satellite:status')).toMatchObject({ role: 'satellite', paired: false, hubUrl: null, link: 'idle' });
+    expect(await ipc('satellite:status')).toMatchObject({
+      role: 'satellite',
+      paired: false,
+      hubUrl: null,
+      link: 'idle',
+    });
   });
 
   it('pairs with the code, keeps the token in the store and the rest in satellite.json, and connects', async () => {
     const { ipc, pairNow, harness, tokens, folder, statusesSent } = await setup();
     const paired = await pairNow();
-    expect(paired).toMatchObject({ paired: true, deviceName: 'Desk', placeId: 'study', hubUrl: harness.url() });
+    expect(paired).toMatchObject({
+      paired: true,
+      deviceName: 'Desk',
+      placeId: 'study',
+      hubUrl: harness.url(),
+    });
     expect(await tokens.get(harness.url())).toMatch(/^[A-Za-z0-9_-]{40,}$/);
-    const file = JSON.parse(readFileSync(path.join(folder, SATELLITE_FILE), 'utf8')) as Record<string, unknown>;
+    const file = JSON.parse(readFileSync(path.join(folder, SATELLITE_FILE), 'utf8')) as Record<
+      string,
+      unknown
+    >;
     expect(file).toMatchObject({ hubUrl: harness.url(), placeId: 'study', deviceName: 'Desk' });
     expect(JSON.stringify(file)).not.toContain(String(await tokens.get(harness.url())));
-    await waitFor(() => statusesSent().some((status) => status.link === 'online'), 5000, 'an online status push');
-    expect(await ipc('satellite:status')).toMatchObject({ paired: true, link: 'online', placeName: 'the study', lastError: null });
+    await waitFor(
+      () => statusesSent().some((status) => status.link === 'online'),
+      5000,
+      'an online status push',
+    );
+    expect(await ipc('satellite:status')).toMatchObject({
+      paired: true,
+      link: 'online',
+      placeName: 'the study',
+      lastError: null,
+    });
   });
 
   it('says why a pairing failed, in words', async () => {
     const { ipc, harness } = await setup();
     await harness.code();
-    await expect(ipc('satellite:pair', { hubUrl: harness.url(), code: '000000' })).rejects.toThrow(/wrong or has expired/);
-    await expect(ipc('satellite:pair', { hubUrl: harness.url(), code: '12' })).rejects.toThrow('The code is 6 digits.');
-    await expect(ipc('satellite:pair', { hubUrl: '', code: '123456' })).rejects.toThrow(/hub address/);
-    await expect(ipc('satellite:pair', { hubUrl: 'ws://127.0.0.1:1', code: '123456' })).rejects.toThrow(/Could not reach bija/);
+    await expect(ipc('satellite:pair', { hubUrl: harness.url(), code: '000000' })).rejects.toThrow(
+      /wrong or has expired/,
+    );
+    await expect(ipc('satellite:pair', { hubUrl: harness.url(), code: '12' })).rejects.toThrow(
+      'The code is 6 digits.',
+    );
+    await expect(ipc('satellite:pair', { hubUrl: '', code: '123456' })).rejects.toThrow(
+      /hub address/,
+    );
+    await expect(
+      ipc('satellite:pair', { hubUrl: 'ws://127.0.0.1:1', code: '123456' }),
+    ).rejects.toThrow(/Could not reach bija/);
     expect(await ipc('satellite:status')).toMatchObject({ paired: false });
   });
 
   it('picks its own names when none are typed', async () => {
     const { ipc, harness } = await setup();
     const code = await harness.code('');
-    const status = (await ipc('satellite:pair', { hubUrl: harness.url(), code })) as SatelliteStatus;
+    const status = (await ipc('satellite:pair', {
+      hubUrl: harness.url(),
+      code,
+    })) as SatelliteStatus;
     expect(status.deviceName).toBe('desk-pc');
     expect(status.placeName).toBe('the study');
   });
@@ -98,7 +168,10 @@ describe('Satellite', () => {
   it('forwards an allowed channel to bija, and the place goes with it', async () => {
     const seen: unknown[] = [];
     const { ipc, pairNow, satellite } = await setup({
-      'avatars:list': ((event: { placeId?: string }) => (seen.push(event.placeId), [{ id: 'echo' }])) as never,
+      'avatars:list': ((event: { placeId?: string }) => (
+        seen.push(event.placeId),
+        [{ id: 'echo' }]
+      )) as never,
     });
     await pairNow();
     await online({} as Harness, () => satellite.status());
@@ -109,20 +182,35 @@ describe('Satellite', () => {
   it('answers the config itself, as a satellite, with no keys', async () => {
     const { ipc } = await setup();
     const config = (await ipc('config:get')) as Record<string, unknown>;
-    expect(config).toMatchObject({ role: 'satellite', conversationBackend: 'local', hasRealtimeApiKey: false });
+    expect(config).toMatchObject({
+      role: 'satellite',
+      conversationBackend: 'local',
+      hasRealtimeApiKey: false,
+    });
     expect(JSON.stringify(config)).not.toMatch(/apiKey":"/);
     expect(await ipc('wake-word:list')).toEqual([]);
     expect(await ipc('approvals:list')).toEqual([]);
-    const after = (await ipc('config:set-audio-devices', { audioInputDeviceId: 'mic-1' })) as Record<string, unknown>;
+    const after = (await ipc('config:set-audio-devices', {
+      audioInputDeviceId: 'mic-1',
+    })) as Record<string, unknown>;
     expect(after.audioInputDeviceId).toBe('mic-1');
   });
 
   it('refuses what a satellite must not do, without asking bija', async () => {
     const secret = vi.fn();
-    const { ipc, pairNow, satellite } = await setup({ 'models:set-key': secret as never, 'avatars:add': secret as never });
+    const { ipc, pairNow, satellite } = await setup({
+      'models:set-key': secret as never,
+      'avatars:add': secret as never,
+    });
     await pairNow();
     await online({} as Harness, () => satellite.status());
-    for (const channel of ['models:set-key', 'avatars:add', 'coding:start-task', 'config:set-secret', 'room-hub:revoke']) {
+    for (const channel of [
+      'models:set-key',
+      'avatars:add',
+      'coding:start-task',
+      'config:set-secret',
+      'room-hub:revoke',
+    ]) {
       await expect(ipc(channel, {})).rejects.toThrow('Not available on a satellite PC.');
     }
     expect(secret).not.toHaveBeenCalled();
@@ -147,17 +235,23 @@ describe('Satellite', () => {
     expect(await ipc('satellite:status')).toMatchObject({ link: 'offline', paired: true });
   });
 
-  it('hands bija\'s events to the window, and drops channels the renderer does not listen for', async () => {
+  it("hands bija's events to the window, and drops channels the renderer does not listen for", async () => {
     const { pairNow, satellite, harness, sent } = await setup();
     await pairNow();
     await online(harness, () => satellite.status());
-    harness.hub.sendToPlace('study', { op: 'ipc', channel: 'local-voice:event', args: [{ requestId: 'x' }] });
+    harness.hub.sendToPlace('study', {
+      op: 'ipc',
+      channel: 'local-voice:event',
+      args: [{ requestId: 'x' }],
+    });
     harness.hub.sendToPlace('study', { op: 'ipc', channel: 'config:set-secret', args: ['nope'] });
     await waitFor(() => sent.some((item) => item.channel === 'local-voice:event'));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sent.some((item) => item.channel === 'config:set-secret')).toBe(false);
     // The welcome's snapshot reaches the renderer as places:changed.
-    const snapshot = sent.find((item) => item.channel === 'places:changed')?.args[0] as { localPlaceId: string };
+    const snapshot = sent.find((item) => item.channel === 'places:changed')?.args[0] as {
+      localPlaceId: string;
+    };
     expect(snapshot.localPlaceId).toBe('study');
   });
 
@@ -172,7 +266,10 @@ describe('Satellite', () => {
 
   it('reads and sets "Start when I sign in" through the helper, and says off when there is none', async () => {
     let on = false;
-    const startAtLogin = { isEnabled: vi.fn(async () => on), set: vi.fn(async (next: boolean) => ((on = next), true)) };
+    const startAtLogin = {
+      isEnabled: vi.fn(async () => on),
+      set: vi.fn(async (next: boolean) => ((on = next), true)),
+    };
     const { ipc } = await setup({}, { startAtLogin });
     expect(await ipc('satellite:start-at-login')).toBe(false);
     expect(startAtLogin.set).not.toHaveBeenCalled();
@@ -191,7 +288,10 @@ describe('Satellite', () => {
     const deviceId = harness.hub.status().devices[0].id;
     await harness.hub.revoke(deviceId);
     await waitFor(() => satellite.status().link === 'refused');
-    expect(satellite.status()).toMatchObject({ linkCode: 'revoked', lastError: expect.stringContaining('removed') });
+    expect(satellite.status()).toMatchObject({
+      linkCode: 'revoked',
+      lastError: expect.stringContaining('removed'),
+    });
   });
 
   describe('avatar bodies', () => {
@@ -204,9 +304,13 @@ describe('Satellite', () => {
       await pairNow();
       await online(harness, () => satellite.status());
       await ipc('avatar-model:list');
-      expect(Array.from((await ipc('avatar-model:load', 'm1')) as Uint8Array)).toEqual([1, 2, 3, 4]);
+      expect(Array.from((await ipc('avatar-model:load', 'm1')) as Uint8Array)).toEqual([
+        1, 2, 3, 4,
+      ]);
       await satellite.cacheIdle();
-      expect(Array.from((await ipc('avatar-model:load', 'm1')) as Uint8Array)).toEqual([1, 2, 3, 4]);
+      expect(Array.from((await ipc('avatar-model:load', 'm1')) as Uint8Array)).toEqual([
+        1, 2, 3, 4,
+      ]);
       expect(load).toHaveBeenCalledTimes(1);
     });
 
@@ -282,12 +386,27 @@ describe('satellite settings', () => {
     const file = path.join(folder, SATELLITE_FILE);
     const store = new SatelliteSettingsStore(file);
     expect(store.isPaired()).toBe(false);
-    store.update({ hubUrl: 'ws://bija:8791', deviceId: 'room-1', placeId: 'study', bounds: { x: 10, y: 20, width: 900, height: 700, fullScreen: false } });
+    store.update({
+      hubUrl: 'ws://bija:8791',
+      deviceId: 'room-1',
+      placeId: 'study',
+      bounds: { x: 10, y: 20, width: 900, height: 700, fullScreen: false },
+    });
     const again = new SatelliteSettingsStore(file);
     expect(again.isPaired()).toBe(true);
-    expect(again.get().bounds).toEqual({ x: 10, y: 20, width: 900, height: 700, fullScreen: false });
+    expect(again.get().bounds).toEqual({
+      x: 10,
+      y: 20,
+      width: 900,
+      height: 700,
+      fullScreen: false,
+    });
     again.clearPairing();
-    expect(new SatelliteSettingsStore(file).get()).toMatchObject({ hubUrl: null, deviceId: null, bounds: { width: 900 } });
+    expect(new SatelliteSettingsStore(file).get()).toMatchObject({
+      hubUrl: null,
+      deviceId: null,
+      bounds: { width: 900 },
+    });
   });
 
   it('survives a broken file and junk bounds', () => {
@@ -304,7 +423,10 @@ describe('satellite settings', () => {
     expect(detectSatelliteRole({}, folder)).toBe(false);
     expect(detectSatelliteRole({ AIEMBODIED_ROLE: 'satellite' }, folder)).toBe(true);
     expect(detectSatelliteRole({ AIEMBODIED_ROLE: ' Satellite ' }, folder)).toBe(true);
-    new SatelliteSettingsStore(path.join(folder, SATELLITE_FILE)).update({ hubUrl: 'ws://bija:8791', deviceId: 'room-1' });
+    new SatelliteSettingsStore(path.join(folder, SATELLITE_FILE)).update({
+      hubUrl: 'ws://bija:8791',
+      deviceId: 'room-1',
+    });
     expect(detectSatelliteRole({}, folder)).toBe(true);
     expect(detectSatelliteRole({ AIEMBODIED_ROLE: 'full' }, folder)).toBe(false);
   });
@@ -312,7 +434,9 @@ describe('satellite settings', () => {
   it('takes the user data folder from AIEMBODIED_USER_DATA', () => {
     expect(userDataOverride({})).toBeNull();
     expect(userDataOverride({ AIEMBODIED_USER_DATA: '  ' })).toBeNull();
-    expect(userDataOverride({ AIEMBODIED_USER_DATA: '/tmp/satellite-data' })).toBe(path.resolve('/tmp/satellite-data'));
+    expect(userDataOverride({ AIEMBODIED_USER_DATA: '/tmp/satellite-data' })).toBe(
+      path.resolve('/tmp/satellite-data'),
+    );
   });
 });
 
@@ -323,13 +447,18 @@ describe('Satellite devices', () => {
     satellite.attachDevices({
       state: () => ({}) as never,
       setLinkUp: (up) => void calls.push(`link:${up}`),
-      setSnapshot: (snapshot) => void calls.push(`snapshot:${(snapshot as { localPlaceId: string }).localPlaceId}`),
+      setSnapshot: (snapshot) =>
+        void calls.push(`snapshot:${(snapshot as { localPlaceId: string }).localPlaceId}`),
       hubOff: (reason) => void calls.push(`off:${reason}`),
       setOpen: () => ({}) as never,
       captureStopped: () => undefined,
     });
     await pairNow();
-    await waitFor(() => calls.includes('link:true') && calls.includes('snapshot:study'), 5000, 'link and snapshot');
+    await waitFor(
+      () => calls.includes('link:true') && calls.includes('snapshot:study'),
+      5000,
+      'link and snapshot',
+    );
     harness.hub.deviceOff(harness.hub.status().devices[0].id, 'test');
     await waitFor(() => calls.includes('off:test'), 5000, 'device.off');
     await satellite.forget();
@@ -342,7 +471,7 @@ describe('Satellite devices', () => {
     expect(satellite.sendOp({ op: 'room.close' })).toBe(false);
   });
 
-  it('keeps this PC\'s speakers in satellite.json and logs turn timings', async () => {
+  it("keeps this PC's speakers in satellite.json and logs turn timings", async () => {
     const { ipc, settings } = await setup();
     await ipc('config:set-audio-devices', { audioOutputDeviceId: 'speaker-2' });
     expect(settings.get().audioOutputDeviceId).toBe('speaker-2');
@@ -355,9 +484,16 @@ describe('KeychainTokenStore', () => {
     const calls: string[][] = [];
     const vault = new Map<string, string>();
     const store = new KeychainTokenStore(async () => ({
-      getPassword: async (service, account) => (calls.push(['get', service, account]), vault.get(`${service}|${account}`) ?? null),
-      setPassword: async (service, account, password) => void (calls.push(['set', service, account]), vault.set(`${service}|${account}`, password)),
-      deletePassword: async (service, account) => (calls.push(['delete', service, account]), vault.delete(`${service}|${account}`)),
+      getPassword: async (service, account) => (
+        calls.push(['get', service, account]),
+        vault.get(`${service}|${account}`) ?? null
+      ),
+      setPassword: async (service, account, password) =>
+        void (calls.push(['set', service, account]), vault.set(`${service}|${account}`, password)),
+      deletePassword: async (service, account) => (
+        calls.push(['delete', service, account]),
+        vault.delete(`${service}|${account}`)
+      ),
     }));
     await store.set('ws://bija:8791', 'tok');
     expect(await store.get('ws://bija:8791')).toBe('tok');

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { MAX_SOLE_LIFT, companionHome, measureSoleLift, placeAtHome } from '../../src/rooms/avatar-placement.js';
+import {
+  MAX_SOLE_LIFT,
+  companionHome,
+  measureSoleLift,
+  placeAtHome,
+} from '../../src/rooms/avatar-placement.js';
 
 /** An avatar normalised the 2D way: ankles on y = 0, so the boot box reaches below it. */
 function avatar(soleY: number, extra?: (root: THREE.Group) => void): THREE.Group {
@@ -41,7 +46,10 @@ describe('measureSoleLift', () => {
 
 describe('placeAtHome', () => {
   it('adds the home height to the base offset', () => {
-    const placed = placeAtHome({ position: [0, -0.08, 0], rotationY: 0 }, { position: [1, 0.08, 2], facing: 0 });
+    const placed = placeAtHome(
+      { position: [0, -0.08, 0], rotationY: 0 },
+      { position: [1, 0.08, 2], facing: 0 },
+    );
     expect(placed.position[1]).toBeCloseTo(0);
   });
 });

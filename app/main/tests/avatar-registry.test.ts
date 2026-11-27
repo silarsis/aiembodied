@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_PROFILES_KEY, AvatarRegistry, DEFAULT_AVATAR_ID } from '../src/avatars/avatar-registry.js';
-import { AvatarSettingsKeys, avatarOnlyKeys, pseudoModelIdForAvatar } from '../src/avatars/avatar-settings.js';
+import {
+  AVATAR_PROFILES_KEY,
+  AvatarRegistry,
+  DEFAULT_AVATAR_ID,
+} from '../src/avatars/avatar-registry.js';
+import {
+  AvatarSettingsKeys,
+  avatarOnlyKeys,
+  pseudoModelIdForAvatar,
+} from '../src/avatars/avatar-settings.js';
 
 function makeRegistry(active: string | null = 'vrm-1') {
   const kv = new Map<string, string>();
   const state = { active };
   const registry = new AvatarRegistry({
-    store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) },
+    store: {
+      getValue: (key) => kv.get(key) ?? null,
+      setValue: (key, value) => void kv.set(key, value),
+    },
     activeVrmModelId: () => state.active,
   });
   return { registry, kv, state };
@@ -46,7 +57,11 @@ describe('AvatarRegistry', () => {
     expect(registry.idFor('vrm-2')).toBe('sage');
     expect(registry.idFor('nope')).toBeNull();
     expect(registry.idFor(null)).toBeNull();
-    expect(registry.update('sage', { name: 'Sage 2', vrmModelId: 'vrm-3' })).toEqual({ id: 'sage', name: 'Sage 2', vrmModelId: 'vrm-3' });
+    expect(registry.update('sage', { name: 'Sage 2', vrmModelId: 'vrm-3' })).toEqual({
+      id: 'sage',
+      name: 'Sage 2',
+      vrmModelId: 'vrm-3',
+    });
     expect(() => registry.update('ghost', {})).toThrow(/Unknown/);
     registry.remove('sage');
     expect(registry.list().map((p) => p.id)).toEqual(['echo']);
@@ -83,7 +98,7 @@ describe('AvatarSettingsKeys', () => {
     expect(makeRegistryKeys(null).prompt()).toBeNull();
   });
 
-  it('gives an avatar sharing Echo\'s body its own voice and idle habits keys, and no prompt key', () => {
+  it("gives an avatar sharing Echo's body its own voice and idle habits keys, and no prompt key", () => {
     const { registry } = makeRegistry('vrm-1');
     registry.add({ id: 'sage', prompt: 'Be calm.' });
     registry.add({ id: 'twin', vrmModelId: 'vrm-1' });

@@ -1,3 +1,4 @@
+import type { AvatarProfile } from '../shared/avatars/avatar-registry-types.js';
 /**
  * The avatars the app knows about. Today there is one, `echo`; phase 3 adds more to the same
  * scene. Profiles are kept as a JSON array in the memory store's KV table, created lazily on the
@@ -9,18 +10,6 @@
 
 export const DEFAULT_AVATAR_ID = 'echo';
 export const AVATAR_PROFILES_KEY = 'avatars.profiles';
-
-export interface AvatarProfile {
-  id: string;
-  name: string;
-  /** The body (VRM model) this avatar wears, or null when it has none of its own yet. */
-  vrmModelId: string | null;
-  /**
-   * System prompt for this avatar when no prompt is saved for its own VRM model (avatars sharing
-   * Echo's body must not borrow Echo's saved prompt). Set for avatars made from the environment.
-   */
-  prompt?: string;
-}
 
 export interface AvatarRegistryStore {
   getValue(key: string): string | null;
@@ -38,7 +27,12 @@ export interface AvatarRegistryOptions {
   defaultName?: string;
 }
 
-export type AvatarProfileInput = { id: string; name?: string; vrmModelId?: string | null; prompt?: string };
+export type AvatarProfileInput = {
+  id: string;
+  name?: string;
+  vrmModelId?: string | null;
+  prompt?: string;
+};
 /** `prompt`: an empty string clears it. */
 export type AvatarProfileUpdate = { name?: string; vrmModelId?: string | null; prompt?: string };
 
@@ -84,7 +78,11 @@ export class AvatarRegistry {
     const stored = parseProfiles(this.store.getValue(AVATAR_PROFILES_KEY));
     if (stored) return stored;
     const created: AvatarProfile[] = [
-      { id: DEFAULT_AVATAR_ID, name: this.defaultName, vrmModelId: this.activeVrmModelId() ?? null },
+      {
+        id: DEFAULT_AVATAR_ID,
+        name: this.defaultName,
+        vrmModelId: this.activeVrmModelId() ?? null,
+      },
     ];
     this.save(created);
     return created;
@@ -106,7 +104,9 @@ export class AvatarRegistry {
    */
   peek(): AvatarProfile[] {
     return (
-      parseProfiles(this.store.getValue(AVATAR_PROFILES_KEY)) ?? [{ id: DEFAULT_AVATAR_ID, name: this.defaultName, vrmModelId: null }]
+      parseProfiles(this.store.getValue(AVATAR_PROFILES_KEY)) ?? [
+        { id: DEFAULT_AVATAR_ID, name: this.defaultName, vrmModelId: null },
+      ]
     );
   }
 
@@ -122,7 +122,9 @@ export class AvatarRegistry {
   add(input: AvatarProfileInput): AvatarProfile {
     const id = input.id.trim();
     if (!ID_PATTERN.test(id)) {
-      throw new Error(`Invalid avatar id "${input.id}": use lowercase letters, digits, "-" or "_".`);
+      throw new Error(
+        `Invalid avatar id "${input.id}": use lowercase letters, digits, "-" or "_".`,
+      );
     }
     const profiles = this.load();
     if (profiles.some((profile) => profile.id === id)) {

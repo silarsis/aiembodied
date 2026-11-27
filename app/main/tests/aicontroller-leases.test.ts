@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AicontrollerBridge, ControllerModelMissing } from '../src/aicontroller/bridge.js';
 import { ComfyUIPool } from '../src/avatar/generation/comfyui-pool.js';
 import type { ComfyUIRuntime } from '../src/avatar/generation/comfyui-runtime.js';
-import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/shared/config/model-routing.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+  type StoredModels,
+} from '../src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { LocalLlmControl } from '../src/local-voice/local-llm-control.js';
 import { VisionServer } from '../src/local-vision/vision-server.js';
@@ -12,7 +17,10 @@ const logger = { info: vi.fn(), warn: vi.fn() };
 
 const routing = (stored: StoredModels = { servers: [], routes: {} }) =>
   resolveModelRouting(
-    builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+    builtInServers({
+      providers: DEFAULT_PROVIDER_SETTINGS,
+      comfyUiBaseUrl: 'http://127.0.0.1:8188',
+    }),
     defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
     stored,
   );
@@ -25,7 +33,14 @@ function fakeComfy() {
     urls.push(`${init?.method ?? 'GET'} ${url.origin}${url.pathname}`);
     if (url.pathname === '/prompt') return new Response(JSON.stringify({ prompt_id: 'p1' }));
     if (url.pathname.startsWith('/history/')) {
-      return new Response(JSON.stringify({ p1: { status: { completed: true }, outputs: { 9: { images: [{ type: 'output', filename: 'a.png' }] } } } }));
+      return new Response(
+        JSON.stringify({
+          p1: {
+            status: { completed: true },
+            outputs: { 9: { images: [{ type: 'output', filename: 'a.png' }] } },
+          },
+        }),
+      );
     }
     if (url.pathname === '/view') return new Response(new Uint8Array([1, 2, 3]));
     return new Response('{}');
@@ -43,11 +58,25 @@ describe('aicontroller leases for the other GPU servers', () => {
     await fake.stop();
   });
 
-  const bridge = (extra: Partial<ConstructorParameters<typeof AicontrollerBridge>[0]> = {}, env: Record<string, string> = {}) =>
-    new AicontrollerBridge({ logger, env: { AICONTROLLER_URL: fake.url, ...env }, watchMs: 0, sharedIdleMs: 120, ...extra });
+  const bridge = (
+    extra: Partial<ConstructorParameters<typeof AicontrollerBridge>[0]> = {},
+    env: Record<string, string> = {},
+  ) =>
+    new AicontrollerBridge({
+      logger,
+      env: { AICONTROLLER_URL: fake.url, ...env },
+      watchMs: 0,
+      sharedIdleMs: 120,
+      ...extra,
+    });
 
   describe('ComfyUI', () => {
-    const pool = (b: AicontrollerBridge, comfy: ReturnType<typeof fakeComfy>, stored?: StoredModels, ensureReady = vi.fn(async () => undefined)) =>
+    const pool = (
+      b: AicontrollerBridge,
+      comfy: ReturnType<typeof fakeComfy>,
+      stored?: StoredModels,
+      ensureReady = vi.fn(async () => undefined),
+    ) =>
       new ComfyUIPool({
         routing: () => routing(stored),
         logDirectory: 'unused',
@@ -75,7 +104,9 @@ describe('aicontroller leases for the other GPU servers', () => {
       expect(fake.active('comfyui')[0]?.client).toBe('aiembodied');
       expect(ensureReady).not.toHaveBeenCalled();
       expect(comfy.urls).toContain(`POST ${FAKE_BACKEND_URLS.comfyui}/prompt`);
-      expect(comfy.urls.every((entry) => entry.includes(FAKE_BACKEND_URLS.comfyui as string))).toBe(true);
+      expect(comfy.urls.every((entry) => entry.includes(FAKE_BACKEND_URLS.comfyui as string))).toBe(
+        true,
+      );
       expect(comfy.urls.some((entry) => entry.includes('/free'))).toBe(false);
       // The controller never evicts a leased Echo, so Echo's lease is given back meanwhile.
       expect(fake.active('echo-llm')).toHaveLength(0);
@@ -112,7 +143,10 @@ describe('aicontroller leases for the other GPU servers', () => {
       const b = bridge();
       await b.start();
       const comfy = fakeComfy();
-      const stored: StoredModels = { servers: [{ id: 'rack', name: 'Rack', type: 'comfy', url: 'http://rack:8188' }], routes: { image: { server: 'rack' } } };
+      const stored: StoredModels = {
+        servers: [{ id: 'rack', name: 'Rack', type: 'comfy', url: 'http://rack:8188' }],
+        routes: { image: { server: 'rack' } },
+      };
       const client = await pool(b, comfy, stored).pick('image');
       await client.run({});
       expect(client.baseUrl).toBe('http://rack:8188');
@@ -144,8 +178,14 @@ describe('aicontroller leases for the other GPU servers', () => {
       await p.pick('image');
       await p.pick('image');
       expect(ensureReady).toHaveBeenCalledTimes(2);
-      expect(fake.leaseRequests.filter((request) => request.backend === 'comfyui').length).toBeLessThanOrEqual(1);
-      expect(logger.warn.mock.calls.filter(([message]) => String(message).includes('no comfyui backend'))).toHaveLength(1);
+      expect(
+        fake.leaseRequests.filter((request) => request.backend === 'comfyui').length,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        logger.warn.mock.calls.filter(([message]) =>
+          String(message).includes('no comfyui backend'),
+        ),
+      ).toHaveLength(1);
       expect(b.managesBackend('comfyui')).toBe(false);
       expect(b.status().line).toContain('comfyui not on the controller');
       await b.shutdown();
@@ -188,7 +228,9 @@ describe('aicontroller leases for the other GPU servers', () => {
         b.check();
         expect(b.motionUrl()).toBeNull();
       });
-      expect(b.status().line).toContain('Motion paused by the model controller (GPU needed by game.exe).');
+      expect(b.status().line).toContain(
+        'Motion paused by the model controller (GPU needed by game.exe).',
+      );
       expect(b.status().leases).toContainEqual({ backend: 'motion', state: 'paused' });
       await b.ensureMotion();
       expect(b.motionUrl()).toBe(FAKE_BACKEND_URLS.motion);
@@ -236,7 +278,8 @@ describe('aicontroller leases for the other GPU servers', () => {
         logDirectory: 'unused',
         platform: 'linux',
         // Without the controller the app would find its own server running.
-        fetchFn: (async () => new Response('', { status: running ? 200 : 500 })) as unknown as typeof fetch,
+        fetchFn: (async () =>
+          new Response('', { status: running ? 200 : 500 })) as unknown as typeof fetch,
         launch,
         stop: async () => undefined,
         leases: b,
@@ -275,7 +318,11 @@ describe('aicontroller leases for the other GPU servers', () => {
       await other.start();
       other.statusWorks = false;
       other.unknown.add('vision');
-      const c = new AicontrollerBridge({ logger, env: { AICONTROLLER_URL: other.url }, watchMs: 0 });
+      const c = new AicontrollerBridge({
+        logger,
+        env: { AICONTROLLER_URL: other.url },
+        watchMs: 0,
+      });
       await c.start();
       const { vision: second } = server(c, true);
       await second.ensureRunning();
@@ -293,8 +340,20 @@ describe('aicontroller leases for the other GPU servers', () => {
     const fooPath = 'C:\\models\\unsloth\\Foo-GGUF\\Foo-Q4_K_M.gguf';
 
     beforeEach(() => {
-      fake.models.push({ id: 'llm-foo', kind: 'llm', path: 'c:/models/unsloth/Foo-GGUF/Foo-Q4_K_M.gguf', file_name: 'Foo-Q4_K_M.gguf', alias: 'foo' });
-      fake.models.push({ id: 'llm-bar', kind: 'llm', path: '/elsewhere/Bar-Q8_0.gguf', file_name: 'Bar-Q8_0.gguf', alias: 'bar' });
+      fake.models.push({
+        id: 'llm-foo',
+        kind: 'llm',
+        path: 'c:/models/unsloth/Foo-GGUF/Foo-Q4_K_M.gguf',
+        file_name: 'Foo-Q4_K_M.gguf',
+        alias: 'foo',
+      });
+      fake.models.push({
+        id: 'llm-bar',
+        kind: 'llm',
+        path: '/elsewhere/Bar-Q8_0.gguf',
+        file_name: 'Bar-Q8_0.gguf',
+        alias: 'bar',
+      });
     });
 
     it('releases Echo’s lease and leases echo-llm again with the picked model', async () => {
@@ -337,8 +396,12 @@ describe('aicontroller leases for the other GPU servers', () => {
       await b.start();
       await b.ensureEcho();
       const before = fake.leaseRequests.length;
-      await expect(b.useEchoModel({ path: 'D:\\other\\Missing-Q4.gguf', alias: 'missing' })).rejects.toThrow(ControllerModelMissing);
-      await expect(b.useEchoModel({ path: 'D:\\other\\Missing-Q4.gguf', alias: 'missing' })).rejects.toThrow(
+      await expect(
+        b.useEchoModel({ path: 'D:\\other\\Missing-Q4.gguf', alias: 'missing' }),
+      ).rejects.toThrow(ControllerModelMissing);
+      await expect(
+        b.useEchoModel({ path: 'D:\\other\\Missing-Q4.gguf', alias: 'missing' }),
+      ).rejects.toThrow(
         "model controller doesn't have missing; add its folder to the controller's model_store",
       );
       expect(fake.leaseRequests).toHaveLength(before);
@@ -361,7 +424,10 @@ describe('aicontroller leases for the other GPU servers', () => {
         viaController: () => b.inUse(),
         useModelViaController: (pick) => b.useEchoModel(pick),
       });
-      await expect(control.restart()).resolves.toMatchObject({ restarted: true, message: expect.stringContaining('foo') });
+      await expect(control.restart()).resolves.toMatchObject({
+        restarted: true,
+        message: expect.stringContaining('foo'),
+      });
       await vi.waitFor(() => expect(fake.active('echo-llm')[0]?.model).toBe('llm-foo'));
       const missing = new LocalLlmControl({
         baseUrl: () => 'http://127.0.0.1:1234/v1',
@@ -371,7 +437,10 @@ describe('aicontroller leases for the other GPU servers', () => {
         viaController: () => true,
         useModelViaController: (pick) => b.useEchoModel(pick),
       });
-      await expect(missing.restart()).resolves.toMatchObject({ restarted: false, message: expect.stringContaining('model_store') });
+      await expect(missing.restart()).resolves.toMatchObject({
+        restarted: false,
+        message: expect.stringContaining('model_store'),
+      });
       await b.shutdown();
     });
   });
@@ -379,7 +448,8 @@ describe('aicontroller leases for the other GPU servers', () => {
   describe('giving Echo its lease back after a per-use lease', () => {
     const until = async (condition: () => boolean, ms = 3000) => {
       const end = Date.now() + ms;
-      while (!condition() && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 10));
+      while (!condition() && Date.now() < end)
+        await new Promise((resolve) => setTimeout(resolve, 10));
     };
 
     it('asks again when the first hand-back fails, without waiting for a turn', async () => {
@@ -391,7 +461,11 @@ describe('aicontroller leases for the other GPU servers', () => {
       // The controller refuses echo-llm at the moment ComfyUI lets go (it is busy, or the GPU is wanted).
       fake.refuse.add('echo-llm');
       handle?.done();
-      await until(() => logger.warn.mock.calls.some(([message]) => String(message).includes('Could not lease echo-llm again')));
+      await until(() =>
+        logger.warn.mock.calls.some(([message]) =>
+          String(message).includes('Could not lease echo-llm again'),
+        ),
+      );
       expect(fake.active('echo-llm')).toHaveLength(0);
       fake.refuse.delete('echo-llm');
       await until(() => fake.active('echo-llm').length === 1, 4000);
@@ -404,7 +478,8 @@ describe('aicontroller leases for the other GPU servers', () => {
       // client then refuses every lease for a minute without sending anything, so no POST is seen.
       let healthDown = false;
       const fetchFn = ((input: string | URL | Request, init?: RequestInit) => {
-        if (healthDown && String(input).endsWith('/health')) return Promise.reject(new Error('timed out'));
+        if (healthDown && String(input).endsWith('/health'))
+          return Promise.reject(new Error('timed out'));
         return fetch(input, init);
       }) as typeof fetch;
       const b = bridge({ watchMs: 15, echoRetryMs: 30, fetchFn });
@@ -413,7 +488,11 @@ describe('aicontroller leases for the other GPU servers', () => {
       const handle = await b.acquire('comfyui');
       healthDown = true;
       handle?.done();
-      await until(() => logger.warn.mock.calls.some(([message]) => String(message).includes('Could not lease echo-llm again')));
+      await until(() =>
+        logger.warn.mock.calls.some(([message]) =>
+          String(message).includes('Could not lease echo-llm again'),
+        ),
+      );
       const posts = fake.leaseRequests.length;
       healthDown = false;
       // The client would refuse for its own minute; the bridge makes it look again.
@@ -436,11 +515,18 @@ describe('aicontroller leases for the other GPU servers', () => {
       fake.refuse.add('echo-llm');
       fake.refuse.add('motion');
       await b.resume();
-      await until(() => logger.warn.mock.calls.filter(([message]) => String(message).includes('after resume')).length >= 2);
+      await until(
+        () =>
+          logger.warn.mock.calls.filter(([message]) => String(message).includes('after resume'))
+            .length >= 2,
+      );
       fake.refuse.delete('echo-llm');
       fake.refuse.delete('motion');
       // No turn and no motion request: the bridge asks again by itself.
-      await until(() => fake.active('echo-llm').length === 1 && fake.active('motion').length === 1, 4000);
+      await until(
+        () => fake.active('echo-llm').length === 1 && fake.active('motion').length === 1,
+        4000,
+      );
       expect(fake.active('echo-llm')).toHaveLength(1);
       expect(fake.active('motion')).toHaveLength(1);
       await b.shutdown();
@@ -467,7 +553,9 @@ describe('aicontroller leases for the other GPU servers', () => {
       expect(fake.active('echo-llm')).toHaveLength(0);
       const handle = await b.acquire('comfyui');
       await new Promise((resolve) => setTimeout(resolve, 150));
-      expect(fake.leaseRequests.filter((request) => request.backend === 'echo-llm')).toHaveLength(1);
+      expect(fake.leaseRequests.filter((request) => request.backend === 'echo-llm')).toHaveLength(
+        1,
+      );
       handle?.done();
       await b.shutdown();
     });
@@ -479,7 +567,9 @@ describe('aicontroller leases for the other GPU servers', () => {
     await b.ensureEcho();
     const handle = await b.acquire('comfyui');
     fake.refuse.add('echo-llm');
-    await expect(b.ensureEcho()).rejects.toThrow(/Echo's model is unloaded while comfyui uses the GPU/);
+    await expect(b.ensureEcho()).rejects.toThrow(
+      /Echo's model is unloaded while comfyui uses the GPU/,
+    );
     fake.refuse.delete('echo-llm');
     handle?.done();
     await b.shutdown();

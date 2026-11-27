@@ -47,8 +47,8 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
 
   if (!enabled) {
     return {
-      trackWindow: () => { },
-      dispose: () => { },
+      trackWindow: () => {},
+      dispose: () => {},
     };
   }
 
@@ -164,14 +164,17 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
       },
     );
 
-    register('did-fail-provisional-load', (_event, errorCode: number, errorDescription: string, validatedURL: string) => {
-      logger.error('Diagnostics: renderer provisional load failed.', {
-        ...baseMeta(),
-        errorCode,
-        errorDescription,
-        validatedURL,
-      });
-    });
+    register(
+      'did-fail-provisional-load',
+      (_event, errorCode: number, errorDescription: string, validatedURL: string) => {
+        logger.error('Diagnostics: renderer provisional load failed.', {
+          ...baseMeta(),
+          errorCode,
+          errorDescription,
+          validatedURL,
+        });
+      },
+    );
 
     register('dom-ready', () => {
       logger.debug('Diagnostics: renderer DOM ready.', baseMeta());
@@ -372,16 +375,19 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
     monitorWindow(window);
   });
 
-  registerAppListener('render-process-gone', (_event, contents: WebContents, details: RenderProcessGoneDetails) => {
-    logger.error('Diagnostics: renderer process terminated (app listener).', {
-      webContentsId: contents?.id,
-      reason: details.reason,
-      exitCode: details.exitCode,
-    });
-    if (contents) {
-      monitorWebContents(contents, 'app.render-process-gone');
-    }
-  });
+  registerAppListener(
+    'render-process-gone',
+    (_event, contents: WebContents, details: RenderProcessGoneDetails) => {
+      logger.error('Diagnostics: renderer process terminated (app listener).', {
+        webContentsId: contents?.id,
+        reason: details.reason,
+        exitCode: details.exitCode,
+      });
+      if (contents) {
+        monitorWebContents(contents, 'app.render-process-gone');
+      }
+    },
+  );
 
   registerAppListener('child-process-gone', (_event, details: Details) => {
     logger.error('Diagnostics: child process gone.', {
@@ -396,7 +402,8 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
   });
 
   registerAppListener('session-created', (_event, session: Session) => {
-    const storagePath = typeof session?.getStoragePath === 'function' ? session.getStoragePath() : null;
+    const storagePath =
+      typeof session?.getStoragePath === 'function' ? session.getStoragePath() : null;
     logger.debug('Diagnostics: session created.', {
       storagePath: storagePath ?? undefined,
     });
@@ -419,12 +426,15 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
     logger.warn('Diagnostics: process warning.', normalizeError(warning));
   });
 
-  registerProcessListener('uncaughtExceptionMonitor', (error: Error, origin: NodeJS.UncaughtExceptionOrigin) => {
-    logger.error('Diagnostics: uncaught exception observed.', {
-      ...normalizeError(error),
-      origin,
-    });
-  });
+  registerProcessListener(
+    'uncaughtExceptionMonitor',
+    (error: Error, origin: NodeJS.UncaughtExceptionOrigin) => {
+      logger.error('Diagnostics: uncaught exception observed.', {
+        ...normalizeError(error),
+        origin,
+      });
+    },
+  );
 
   registerProcessListener('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
     logger.error('Diagnostics: unhandled rejection observed.', {

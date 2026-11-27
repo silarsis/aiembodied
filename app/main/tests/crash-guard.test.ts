@@ -41,7 +41,11 @@ describe('CrashGuard', () => {
 
     crashGuard.watch(initialWindow);
 
-    initialWindow.webContents.emit('render-process-gone', {} as any, { reason: 'crashed', exitCode: 1 } as any);
+    initialWindow.webContents.emit(
+      'render-process-gone',
+      {} as any,
+      { reason: 'crashed', exitCode: 1 } as any,
+    );
 
     expect(logger.error).toHaveBeenCalled();
     expect(createWindow).toHaveBeenCalledTimes(1);
@@ -59,7 +63,11 @@ describe('CrashGuard', () => {
     crashGuard.watch(initialWindow);
     crashGuard.notifyAppQuitting();
 
-    initialWindow.webContents.emit('render-process-gone', {} as any, { reason: 'crashed', exitCode: 1 } as any);
+    initialWindow.webContents.emit(
+      'render-process-gone',
+      {} as any,
+      { reason: 'crashed', exitCode: 1 } as any,
+    );
 
     vi.runAllTimers();
 

@@ -7,7 +7,7 @@
 import { OPENAI_TTS_VOICES } from '../shared/config/model-routing.js';
 import { pcm16ToWav } from './openai-audio-client.js';
 import type { TextToSpeechEngine } from './speech-engines.js';
-import type { LocalVoiceTtsStatus } from './types.js';
+import type { LocalVoiceTtsStatus } from '../shared/local-voice/types.js';
 
 type Logger = Pick<Console, 'warn'>;
 
@@ -31,7 +31,10 @@ export interface RealtimeSocket {
   onerror: ((event: unknown) => void) | null;
 }
 
-export type RealtimeSocketFactory = (url: string, headers: Record<string, string>) => RealtimeSocket;
+export type RealtimeSocketFactory = (
+  url: string,
+  headers: Record<string, string>,
+) => RealtimeSocket;
 
 const OPEN = 1;
 
@@ -88,7 +91,9 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
     this.model = options.model;
     this.voice = options.voice;
     const style = options.style?.trim();
-    this.instructions = style ? `${VERBATIM_INSTRUCTIONS}\n\nSpeaking style: ${style}` : VERBATIM_INSTRUCTIONS;
+    this.instructions = style
+      ? `${VERBATIM_INSTRUCTIONS}\n\nSpeaking style: ${style}`
+      : VERBATIM_INSTRUCTIONS;
     this.url = `${options.url ?? REALTIME_URL}?model=${encodeURIComponent(options.model)}`;
     this.createSocket = options.createSocket ?? defaultSocketFactory;
     this.idleCloseMs = options.idleCloseMs ?? 10 * 60_000;
@@ -97,7 +102,10 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
   }
 
   /** Speak `text`; returns a 16-bit PCM WAV. Sentences are spoken one at a time, in order. */
-  synthesize(text: string, options: { signal?: AbortSignal; voice?: string } = {}): Promise<Uint8Array> {
+  synthesize(
+    text: string,
+    options: { signal?: AbortSignal; voice?: string } = {},
+  ): Promise<Uint8Array> {
     if (!this.apiKey) {
       return Promise.reject(new Error('OpenAI text-to-speech needs an OpenAI API key.'));
     }
@@ -175,7 +183,11 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
           instructions: this.instructions,
           input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text }] }],
           // A character's own voice, when it differs from the session's.
-          ...(voice && voice !== this.voice && (OPENAI_TTS_VOICES as readonly string[]).includes(voice) ? { audio: { output: { voice } } } : {}),
+          ...(voice &&
+          voice !== this.voice &&
+          (OPENAI_TTS_VOICES as readonly string[]).includes(voice)
+            ? { audio: { output: { voice } } }
+            : {}),
         },
       }),
     );
@@ -216,7 +228,10 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
               instructions: this.instructions,
               audio: {
                 input: { turn_detection: null },
-                output: { format: { type: 'audio/pcm', rate: OUTPUT_SAMPLE_RATE }, voice: this.voice },
+                output: {
+                  format: { type: 'audio/pcm', rate: OUTPUT_SAMPLE_RATE },
+                  voice: this.voice,
+                },
               },
             },
           }),
@@ -252,7 +267,11 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
       type?: string;
       response_id?: string;
       delta?: string;
-      response?: { id?: string; status?: string; status_details?: { error?: { message?: string } } };
+      response?: {
+        id?: string;
+        status?: string;
+        status_details?: { error?: { message?: string } };
+      };
       error?: { message?: string };
     };
     try {
@@ -279,7 +298,8 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
         }
         const status = event.response?.status;
         if (status === 'failed') {
-          const message = event.response?.status_details?.error?.message ?? 'OpenAI text-to-speech failed.';
+          const message =
+            event.response?.status_details?.error?.message ?? 'OpenAI text-to-speech failed.';
           this.lastError = message;
           this.settle(pending, new Error(message));
         } else {
@@ -350,7 +370,11 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
   }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve(value: T): void; reject(error: Error): void } {
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: Error): void;
+} {
   let resolve: (value: T) => void = () => undefined;
   let reject: (error: Error) => void = () => undefined;
   const promise = new Promise<T>((res, rej) => {

@@ -1,4 +1,4 @@
-import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import type { AvatarState } from './scene-actions.js';
 
 /** What the avatar may be asked to do on its own: scene tags, a gesture, or nothing this time. */

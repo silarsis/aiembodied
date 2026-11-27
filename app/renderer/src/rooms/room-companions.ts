@@ -1,7 +1,12 @@
 import * as THREE from 'three';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 import type { AvatarRig } from './scene-env.js';
-import { companionHome, measureAvatarHeight, measureSoleLift, placeAtHome } from './avatar-placement.js';
+import {
+  companionHome,
+  measureAvatarHeight,
+  measureSoleLift,
+  placeAtHome,
+} from './avatar-placement.js';
 
 interface Companion {
   root: THREE.Object3D;
@@ -24,12 +29,19 @@ interface Companion {
 export class RoomCompanions {
   private readonly entries = new Map<string, Companion>();
 
-  attach(id: string, root: THREE.Object3D | null, humanoid?: AvatarRig['humanoid'] | null, restHipsHeight = 0): void {
+  attach(
+    id: string,
+    root: THREE.Object3D | null,
+    humanoid?: AvatarRig['humanoid'] | null,
+    restHipsHeight = 0,
+  ): void {
     if (!root) {
       this.entries.delete(id);
       return;
     }
-    const taken = new Set([...this.entries].filter(([other]) => other !== id).map(([, entry]) => entry.slot));
+    const taken = new Set(
+      [...this.entries].filter(([other]) => other !== id).map(([, entry]) => entry.slot),
+    );
     let slot = 0;
     while (taken.has(slot)) slot += 1;
     this.entries.set(id, {
@@ -40,7 +52,9 @@ export class RoomCompanions {
       // Measured before placement, while the avatar still stands at its normalised spot.
       soleLift: measureSoleLift(root),
       naturalHeight: measureAvatarHeight(root),
-      rig: humanoid ? { scene: root, baseRotationY: root.rotation.y, humanoid, restHipsHeight } : null,
+      rig: humanoid
+        ? { scene: root, baseRotationY: root.rotation.y, humanoid, restHipsHeight }
+        : null,
     });
   }
 
@@ -97,7 +111,14 @@ export class RoomCompanions {
       const slot = companionHome(home, entry.slot);
       const placed = placeAtHome(
         { position: [bx * factor, by * factor, bz * factor], rotationY: entry.base.rotationY },
-        { position: [slot.position[0], slot.position[1] + entry.soleLift * factor, slot.position[2]], facing: slot.facing },
+        {
+          position: [
+            slot.position[0],
+            slot.position[1] + entry.soleLift * factor,
+            slot.position[2],
+          ],
+          facing: slot.facing,
+        },
       );
       entry.root.scale.setScalar(entry.base.scale * factor);
       entry.root.position.set(...placed.position);

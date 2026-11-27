@@ -7,7 +7,10 @@ import type { WorkflowsClient } from './workflows-client.js';
 
 export const AGENT_SYNC_RETRY_MS = 15_000;
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface AgentSyncOptions {
   client: Pick<WorkflowsClient, 'putAgents'>;
@@ -40,13 +43,23 @@ export class AgentSync {
       const agents = this.options.avatars().map(({ id, name }) => ({ id, name }));
       try {
         const result = await this.options.client.putAgents(agents);
-        if (this.failing) this.options.logger?.info('Workflows service reached again', { agents: result.agents?.length ?? agents.length });
-        else this.options.logger?.info('Agents synced with the workflows service', { agents: agents.map((agent) => agent.id), started: result.started, stopped: result.stopped });
+        if (this.failing)
+          this.options.logger?.info('Workflows service reached again', {
+            agents: result.agents?.length ?? agents.length,
+          });
+        else
+          this.options.logger?.info('Agents synced with the workflows service', {
+            agents: agents.map((agent) => agent.id),
+            started: result.started,
+            stopped: result.stopped,
+          });
         this.failing = false;
         return true;
       } catch (error) {
         if (!this.failing) {
-          this.options.logger?.warn('Workflows service not reachable; will keep trying', { message: error instanceof Error ? error.message : String(error) });
+          this.options.logger?.warn('Workflows service not reachable; will keep trying', {
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
         this.failing = true;
         this.scheduleRetry();
@@ -77,7 +90,9 @@ export class AgentSync {
 
   private clearRetry(): void {
     if (this.timer === null) return;
-    (this.options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)))(this.timer);
+    (
+      this.options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
+    )(this.timer);
     this.timer = null;
   }
 }

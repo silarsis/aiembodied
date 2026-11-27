@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { FloorController } from '../src/floor/index.js';
-import { LOCATIONS_KEY, PLACES_KEY, PlaceManager, scopedPlaces } from '../src/places/place-manager.js';
+import {
+  LOCATIONS_KEY,
+  PLACES_KEY,
+  PlaceManager,
+  scopedPlaces,
+} from '../src/places/place-manager.js';
 import { summon } from '../src/places/summon.js';
-import type { LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
+import type {
+  LocalVoiceRespondRequest,
+  LocalVoiceRespondResult,
+} from '../src/shared/local-voice/types.js';
 
 const PROFILES = [
   { id: 'echo', name: 'Echo', vrmModelId: 'm1' },
@@ -16,8 +24,14 @@ function harness() {
     [PLACES_KEY, JSON.stringify([{ id: 'study', name: 'the study', node: 'room-1' }])],
     [LOCATIONS_KEY, JSON.stringify({ sage: 'study' })],
   ]);
-  const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
-  const registry = { list: () => PROFILES, get: (id: string) => PROFILES.find((p) => p.id === id) ?? null };
+  const store = {
+    getValue: (key: string) => kv.get(key) ?? null,
+    setValue: (key: string, value: string) => void kv.set(key, value),
+  };
+  const registry = {
+    list: () => PROFILES,
+    get: (id: string) => PROFILES.find((p) => p.id === id) ?? null,
+  };
   const places = new PlaceManager({ store, registry });
   places.setOnline('study', true);
   const turns: Array<{ place: string; avatar: string }> = [];
@@ -28,7 +42,14 @@ function harness() {
       places: scopedPlaces(places, placeId),
       store,
       summon: (avatarId, reason) => summon(scopedPlaces(places, placeId), avatarId, reason),
-      voice: () => ({ respond: async (request: LocalVoiceRespondRequest) => ({ requestId: request.requestId, text: '', cancelled: false }), cancel: () => undefined }),
+      voice: () => ({
+        respond: async (request: LocalVoiceRespondRequest) => ({
+          requestId: request.requestId,
+          text: '',
+          cancelled: false,
+        }),
+        cancel: () => undefined,
+      }),
       runPersonTurn: async (avatarId, request): Promise<LocalVoiceRespondResult> => {
         turns.push({ place: placeId, avatar: avatarId });
         return { requestId: request.requestId, text: `${avatarId} speaks.`, cancelled: false };
@@ -43,13 +64,22 @@ function harness() {
 describe('one floor for each place', () => {
   it('each scene holds the avatars at that place only', () => {
     const { home, study } = harness();
-    expect(home.manager.scene()).toMatchObject({ id: 'home', avatarIds: ['echo', 'rex'], awayIds: ['sage'] });
-    expect(study.manager.scene()).toMatchObject({ id: 'study', avatarIds: ['sage'], hostId: 'sage', awayIds: ['echo', 'rex'] });
+    expect(home.manager.scene()).toMatchObject({
+      id: 'home',
+      avatarIds: ['echo', 'rex'],
+      awayIds: ['sage'],
+    });
+    expect(study.manager.scene()).toMatchObject({
+      id: 'study',
+      avatarIds: ['sage'],
+      hostId: 'sage',
+      awayIds: ['echo', 'rex'],
+    });
     expect(study.isMulti()).toBe(false);
     expect(study.hasAway()).toBe(true);
   });
 
-  it('a line from the satellite is answered by the avatar there, not by bija\'s', async () => {
+  it("a line from the satellite is answered by the avatar there, not by bija's", async () => {
     const { study, turns } = harness();
     const result = await study.respondToPerson({ requestId: 'r1', text: 'Hello?' });
     expect(result.text).toBe('sage speaks.');
@@ -78,6 +108,8 @@ describe('one floor for each place', () => {
   it('summoning to an offline satellite fails', async () => {
     const { places } = harness();
     places.setOnline('study', false);
-    await expect(summon(scopedPlaces(places, 'study'), 'echo', 'summoned', 50)).resolves.toBe(false);
+    await expect(summon(scopedPlaces(places, 'study'), 'echo', 'summoned', 50)).resolves.toBe(
+      false,
+    );
   });
 });

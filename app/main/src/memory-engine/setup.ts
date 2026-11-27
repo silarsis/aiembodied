@@ -3,7 +3,7 @@
  * the local voice, tool calls) for the memory engine, and import the old SQLite history once.
  */
 import type { ConversationManager } from '../conversation/conversation-manager.js';
-import type { ConversationMessage, ConversationSession } from '../conversation/types.js';
+import type { ConversationMessage, ConversationSession } from '../shared/conversation/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import { MemoryCapture, type CaptureAgent } from './capture.js';
 import { MemoryEngineClient } from './client.js';
@@ -25,7 +25,13 @@ export interface MemoryEngineRuntime {
   /** The session brief and auto-recall for one avatar (the agent name it asks with); no id is the default avatar, `voice`. */
   voiceFor(avatarId?: string): VoiceMemory;
   /** Record a local-voice tool call against the current conversation. */
-  recordToolCall(call: { name: string; arguments: unknown; result: string; ok: boolean; at: number }): void;
+  recordToolCall(call: {
+    name: string;
+    arguments: unknown;
+    result: string;
+    ok: boolean;
+    at: number;
+  }): void;
   stop(): void;
 }
 
@@ -40,7 +46,9 @@ export interface SetupMemoryEngineOptions {
 }
 
 /** The active character: the VRM model's name, or a generic one. */
-export function activeAgent(store: Pick<MemoryStore, 'getActiveVrmModelId' | 'getVrmModel'>): CaptureAgent {
+export function activeAgent(
+  store: Pick<MemoryStore, 'getActiveVrmModelId' | 'getVrmModel'>,
+): CaptureAgent {
   try {
     const id = store.getActiveVrmModelId();
     const model = id ? store.getVrmModel(id) : null;
@@ -60,7 +68,11 @@ export function setupMemoryEngine(options: SetupMemoryEngineOptions): MemoryEngi
     return null;
   }
 
-  const client = new MemoryEngineClient({ baseUrl: settings.url, apiToken: settings.apiToken, fetchFn: options.fetchFn });
+  const client = new MemoryEngineClient({
+    baseUrl: settings.url,
+    apiToken: settings.apiToken,
+    fetchFn: options.fetchFn,
+  });
   const outbox = new MemoryOutbox({ store, client, logger });
   const agentFor = options.agentFor ?? (() => activeAgent(store));
   const capture = new MemoryCapture({ outbox, agent: agentFor, logger });
@@ -78,7 +90,10 @@ export function setupMemoryEngine(options: SetupMemoryEngineOptions): MemoryEngi
     });
   }
   outbox.start();
-  logger?.info('Long-term memory writes go to the memory engine', { url: settings.url, pending: outbox.status().pending });
+  logger?.info('Long-term memory writes go to the memory engine', {
+    url: settings.url,
+    pending: outbox.status().pending,
+  });
 
   const voices = new Map<string, VoiceMemory>();
   const voiceFor = (avatarId?: string): VoiceMemory => {

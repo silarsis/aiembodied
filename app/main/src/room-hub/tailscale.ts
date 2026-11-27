@@ -29,7 +29,9 @@ function text(value: unknown): string {
 }
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 /** "kevins-desk.tail1234.ts.net." -> "kevins-desk". */
@@ -42,7 +44,8 @@ export function parseWhois(json: unknown): TailscaleIdentity | null {
   const root = record(json);
   const node = record(root?.Node);
   const hostInfo = record(node?.Hostinfo) ?? record(node?.HostInfo);
-  const name = text(node?.ComputedName) || shortNodeName(text(node?.Name)) || text(hostInfo?.Hostname);
+  const name =
+    text(node?.ComputedName) || shortNodeName(text(node?.Name)) || text(hostInfo?.Hostname);
   const login = text(record(root?.UserProfile)?.LoginName);
   if (!name || !login) return null;
   return { node: shortNodeName(name), login: login.toLowerCase() };
@@ -62,7 +65,11 @@ export function parseSelf(json: unknown): TailscaleIdentity | null {
 }
 
 /** The tailscale CLI: from PATH, else the Windows install folder. */
-export function tailscaleCommand(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform, exists: (file: string) => boolean = existsSync): string {
+export function tailscaleCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: string = process.platform,
+  exists: (file: string) => boolean = existsSync,
+): string {
   if (platform === 'win32') {
     const base = env.ProgramFiles ?? 'C:\\Program Files';
     const installed = path.win32.join(base, 'Tailscale', 'tailscale.exe');
@@ -75,22 +82,30 @@ export type ExecJson = (command: string, args: string[]) => Promise<unknown>;
 
 const defaultExec: ExecJson = (command, args) =>
   new Promise((resolve, reject) => {
-    execFile(command, args, { timeout: 5000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (parseError) {
-        reject(parseError);
-      }
-    });
+    execFile(
+      command,
+      args,
+      { timeout: 5000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (parseError) {
+          reject(parseError);
+        }
+      },
+    );
   });
 
-export function createTailscaleLookup(options: { exec?: ExecJson; command?: string } = {}): TailscaleLookup {
+export function createTailscaleLookup(
+  options: { exec?: ExecJson; command?: string } = {},
+): TailscaleLookup {
   const exec = options.exec ?? defaultExec;
-  const run = async (args: string[]): Promise<unknown> => exec(options.command ?? tailscaleCommand(), args);
+  const run = async (args: string[]): Promise<unknown> =>
+    exec(options.command ?? tailscaleCommand(), args);
   return {
     async whois(ip) {
       try {

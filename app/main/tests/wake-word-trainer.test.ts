@@ -19,7 +19,11 @@ function setup() {
   mkdirSync(scripts);
   writeFileSync(path.join(scripts, 'train_wake_word.py'), '');
   const trained = path.join(root, 'wake-words');
-  const run = vi.fn(async (): Promise<CommandResult> => ({ code: 0, stdout: 'Python 3.12.3', stderr: '' }));
+  const run = vi.fn(async (): Promise<CommandResult> => ({
+    code: 0,
+    stdout: 'Python 3.12.3',
+    stderr: '',
+  }));
   const launch = vi.fn();
   return { root, scripts, trained, run, launch };
 }
@@ -46,7 +50,9 @@ describe('wake word phrases and paths', () => {
   });
 
   it('turns Windows paths into WSL ones', () => {
-    expect(toWslPath('C:\\Users\\kevin\\AppData\\Roaming\\x')).toBe('/mnt/c/Users/kevin/AppData/Roaming/x');
+    expect(toWslPath('C:\\Users\\kevin\\AppData\\Roaming\\x')).toBe(
+      '/mnt/c/Users/kevin/AppData/Roaming/x',
+    );
     expect(toWslPath('D:/data')).toBe('/mnt/d/data');
     expect(toWslPath('\\\\server\\share')).toBeNull();
   });
@@ -55,11 +61,21 @@ describe('wake word phrases and paths', () => {
 describe('WakeWordTrainer', () => {
   it('is unavailable off Windows, or without WSL', async () => {
     const { scripts, trained, run } = setup();
-    trainer = new WakeWordTrainer({ trainedDirectory: trained, scriptsDirectory: scripts, platform: 'linux', run });
+    trainer = new WakeWordTrainer({
+      trainedDirectory: trained,
+      scriptsDirectory: scripts,
+      platform: 'linux',
+      run,
+    });
     expect((await trainer.getStatus()).available).toBe(false);
 
     run.mockResolvedValueOnce({ code: 1, stdout: '', stderr: 'no distro' });
-    const noWsl = new WakeWordTrainer({ trainedDirectory: trained, scriptsDirectory: scripts, platform: 'win32', run });
+    const noWsl = new WakeWordTrainer({
+      trainedDirectory: trained,
+      scriptsDirectory: scripts,
+      platform: 'win32',
+      run,
+    });
     const status = await noWsl.getStatus();
     expect(status).toMatchObject({ available: false, job: null });
     expect(status.reason).toMatch(/wsl --install -d Ubuntu-24\.04/);
@@ -78,15 +94,24 @@ describe('WakeWordTrainer', () => {
       now: () => NOW,
     });
     // The scripts check reads the real disk; point it at a folder that has the script.
-    (trainer as unknown as { availability: Promise<unknown> }).availability = Promise.resolve({ available: true });
+    (trainer as unknown as { availability: Promise<unknown> }).availability = Promise.resolve({
+      available: true,
+    });
 
     const status = await trainer.start('Hey Computer');
-    expect(status.job).toMatchObject({ slug: 'hey_computer', phrase: 'Hey Computer', state: 'running', progress: 0 });
+    expect(status.job).toMatchObject({
+      slug: 'hey_computer',
+      phrase: 'Hey Computer',
+      state: 'running',
+      progress: 0,
+    });
     expect(launch).toHaveBeenCalledTimes(1);
     const [command, args] = launch.mock.calls[0] as [string, string[]];
     expect(command).toBe('wsl.exe');
     expect(args.slice(0, 5)).toEqual(['-d', 'Ubuntu-24.04', '--', 'bash', '-lc']);
-    expect(args[5]).toContain("setsid --wait python3 '/mnt/c/repo/services/wakeword-trainer/train_wake_word.py'");
+    expect(args[5]).toContain(
+      "setsid --wait python3 '/mnt/c/repo/services/wakeword-trainer/train_wake_word.py'",
+    );
     expect(args[5]).toContain("--phrase 'Hey Computer'");
 
     await expect(trainer.start('hey echo')).rejects.toThrow(/still training/);
@@ -94,7 +119,13 @@ describe('WakeWordTrainer', () => {
 
   it('reads progress, marks a stalled run interrupted, and finds the finished model', async () => {
     const { scripts, trained, run } = setup();
-    trainer = new WakeWordTrainer({ trainedDirectory: trained, scriptsDirectory: scripts, platform: 'win32', run, now: () => NOW });
+    trainer = new WakeWordTrainer({
+      trainedDirectory: trained,
+      scriptsDirectory: scripts,
+      platform: 'win32',
+      run,
+      now: () => NOW,
+    });
 
     writeStatus(trained, 'hey_echo', {
       phrase: 'hey echo',
@@ -106,7 +137,11 @@ describe('WakeWordTrainer', () => {
       startedAt: '2026-10-30T01:00:00Z',
       updatedAt: '2026-10-30T02:59:55Z',
     });
-    expect((await trainer.getStatus()).job).toMatchObject({ state: 'running', progress: 0.31, stage: 'generate' });
+    expect((await trainer.getStatus()).job).toMatchObject({
+      state: 'running',
+      progress: 0.31,
+      stage: 'generate',
+    });
 
     writeStatus(trained, 'hey_echo', {
       phrase: 'hey echo',
@@ -137,7 +172,14 @@ describe('WakeWordTrainer', () => {
   it('cancels by signalling the script’s process group', async () => {
     const { scripts, trained, run } = setup();
     const onStatus = vi.fn();
-    trainer = new WakeWordTrainer({ trainedDirectory: trained, scriptsDirectory: scripts, platform: 'win32', run, now: () => NOW, onStatus });
+    trainer = new WakeWordTrainer({
+      trainedDirectory: trained,
+      scriptsDirectory: scripts,
+      platform: 'win32',
+      run,
+      now: () => NOW,
+      onStatus,
+    });
     writeStatus(trained, 'computer', {
       phrase: 'computer',
       state: 'running',
@@ -149,10 +191,22 @@ describe('WakeWordTrainer', () => {
     });
 
     const status = await trainer.cancel();
-    expect(run).toHaveBeenCalledWith('wsl.exe', ['-d', 'Ubuntu-24.04', '--', 'kill', '-TERM', '--', '-4242']);
+    expect(run).toHaveBeenCalledWith('wsl.exe', [
+      '-d',
+      'Ubuntu-24.04',
+      '--',
+      'kill',
+      '-TERM',
+      '--',
+      '-4242',
+    ]);
     expect(status.job?.state).toBe('cancelled');
-    expect(JSON.parse(readFileSync(path.join(trained, 'jobs', 'computer', 'status.json'), 'utf8')).state).toBe('cancelled');
-    expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ job: expect.objectContaining({ state: 'cancelled' }) }));
+    expect(
+      JSON.parse(readFileSync(path.join(trained, 'jobs', 'computer', 'status.json'), 'utf8')).state,
+    ).toBe('cancelled');
+    expect(onStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ job: expect.objectContaining({ state: 'cancelled' }) }),
+    );
   });
 });
 
@@ -163,7 +217,11 @@ describe('listWakeWords', () => {
     writeFileSync(path.join(trained, 'hey_computer.onnx'), '');
     writeFileSync(
       path.join(trained, 'hey_computer.json'),
-      JSON.stringify({ phrase: 'hey computer', trainedAt: '2026-10-30T02:00:00Z', metrics: { recall: 0.6 } }),
+      JSON.stringify({
+        phrase: 'hey computer',
+        trainedAt: '2026-10-30T02:00:00Z',
+        metrics: { recall: 0.6 },
+      }),
     );
     writeFileSync(path.join(trained, 'by_hand.onnx'), '');
 

@@ -5,13 +5,69 @@
 import type { LayoutObject } from '../room-layout.js';
 
 const MATERIAL_WORDS = new Set([
-  'wooden', 'wood', 'oak', 'walnut', 'pine', 'teak', 'bamboo', 'rattan', 'wicker', 'metal', 'steel', 'iron', 'brass', 'copper', 'chrome',
-  'leather', 'fabric', 'velvet', 'linen', 'cotton', 'wool', 'glass', 'ceramic', 'porcelain', 'marble', 'stone', 'concrete', 'plastic',
-  'rubber', 'paper', 'woven', 'upholstered', 'padded',
+  'wooden',
+  'wood',
+  'oak',
+  'walnut',
+  'pine',
+  'teak',
+  'bamboo',
+  'rattan',
+  'wicker',
+  'metal',
+  'steel',
+  'iron',
+  'brass',
+  'copper',
+  'chrome',
+  'leather',
+  'fabric',
+  'velvet',
+  'linen',
+  'cotton',
+  'wool',
+  'glass',
+  'ceramic',
+  'porcelain',
+  'marble',
+  'stone',
+  'concrete',
+  'plastic',
+  'rubber',
+  'paper',
+  'woven',
+  'upholstered',
+  'padded',
 ]);
 const COLOUR_WORDS = new Set([
-  'white', 'cream', 'ivory', 'beige', 'tan', 'grey', 'gray', 'silver', 'black', 'brown', 'red', 'burgundy', 'pink', 'orange', 'rust',
-  'terracotta', 'yellow', 'mustard', 'gold', 'green', 'olive', 'sage', 'teal', 'turquoise', 'blue', 'navy', 'purple', 'lavender',
+  'white',
+  'cream',
+  'ivory',
+  'beige',
+  'tan',
+  'grey',
+  'gray',
+  'silver',
+  'black',
+  'brown',
+  'red',
+  'burgundy',
+  'pink',
+  'orange',
+  'rust',
+  'terracotta',
+  'yellow',
+  'mustard',
+  'gold',
+  'green',
+  'olive',
+  'sage',
+  'teal',
+  'turquoise',
+  'blue',
+  'navy',
+  'purple',
+  'lavender',
 ]);
 
 /** A plain colour word for a hex colour (#rgb or #rrggbb), or null when it is not one. */
@@ -25,7 +81,8 @@ export function colourWordForHex(hex: string): string | null {
   const lightness = (max + min) / 2;
   const delta = max - min;
   if (delta < 0.08) return lightness > 0.85 ? 'white' : lightness < 0.2 ? 'black' : 'grey';
-  let hue = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  let hue =
+    max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
   hue = (hue * 60 + 360) % 360;
   const saturation = delta / (1 - Math.abs(2 * lightness - 1));
   let word: string;
@@ -37,7 +94,11 @@ export function colourWordForHex(hex: string): string | null {
   else if (hue < 260) word = 'blue';
   else if (hue < 300) word = 'purple';
   else word = 'pink';
-  return lightness > 0.75 && word !== 'white' ? `light ${word}` : lightness < 0.25 ? `dark ${word}` : word;
+  return lightness > 0.75 && word !== 'white'
+    ? `light ${word}`
+    : lightness < 0.25
+      ? `dark ${word}`
+      : word;
 }
 
 /** Colour and material words for the object: those in its search words, then its colour (a word or a hex). */
@@ -47,21 +108,33 @@ export function appearanceWords(object: Pick<LayoutObject, 'search' | 'name' | '
     if (word && !words.includes(word)) words.push(word);
   };
   const color = object.color?.trim() ?? '';
-  if (color) add(colourWordForHex(color) ?? (/^#/.test(color) ? null : color.toLowerCase().slice(0, 40)));
-  const wordsOf = `${object.search} ${object.name}`.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  if (color)
+    add(colourWordForHex(color) ?? (/^#/.test(color) ? null : color.toLowerCase().slice(0, 40)));
+  const wordsOf = `${object.search} ${object.name}`
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
   for (const word of wordsOf) if (COLOUR_WORDS.has(word)) add(word);
   for (const word of wordsOf) if (MATERIAL_WORDS.has(word)) add(word);
   return words.slice(0, 4);
 }
 
 /** What to draw, in the framing the 3D step works best with: one object, plain white, seen from the front. */
-export function buildObjectImagePrompt(object: Pick<LayoutObject, 'search' | 'name' | 'category' | 'color'>): string {
+export function buildObjectImagePrompt(
+  object: Pick<LayoutObject, 'search' | 'name' | 'category' | 'color'>,
+): string {
   const name = object.name.trim().toLowerCase();
   const nameWords = name.split(/[^a-z]+/);
   const extra = object.search
     .toLowerCase()
     .split(/[^a-z]+/)
-    .filter((word) => word.length > 1 && !nameWords.includes(word) && !COLOUR_WORDS.has(word) && !MATERIAL_WORDS.has(word));
+    .filter(
+      (word) =>
+        word.length > 1 &&
+        !nameWords.includes(word) &&
+        !COLOUR_WORDS.has(word) &&
+        !MATERIAL_WORDS.has(word),
+    );
   const subject = extra.length ? `${name}, ${[...new Set(extra)].slice(0, 3).join(' ')}` : name;
   const look = appearanceWords(object);
   return [

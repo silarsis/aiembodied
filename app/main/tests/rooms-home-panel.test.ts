@@ -8,9 +8,15 @@ import { buildWalkability, findUnreachable } from '../src/rooms/room-walkability
 describe('home panel in the built-in rooms', () => {
   for (const file of ['studio-flat', 'reading-room']) {
     it(`${file}: validates, hangs on a wall, and its stand spot is free and reachable`, () => {
-      const room = validateRoomFile(JSON.parse(readFileSync(join(__dirname, '../assets/rooms', `${file}.json`), 'utf8')));
+      const room = validateRoomFile(
+        JSON.parse(readFileSync(join(__dirname, '../assets/rooms', `${file}.json`), 'utf8')),
+      );
       const panel = room.objects.find((o) => o.id === 'home-panel')!;
-      expect(panel).toMatchObject({ name: 'home panel', description: 'a wall panel that controls the house', collider: 'none' });
+      expect(panel).toMatchObject({
+        name: 'home panel',
+        description: 'a wall panel that controls the house',
+        collider: 'none',
+      });
       expect(panel.position[1]).toBeCloseTo(1.4);
       expect(panel.size).toEqual([0.3, 0.2, 0.03]);
       // On the east wall, facing into the room.

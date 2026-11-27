@@ -1,7 +1,4 @@
-export type LatencyMetricName =
-  | 'wake_to_capture_ms'
-  | 'capture_to_first_audio_ms'
-  | 'wake_to_first_audio_ms';
+import type { LatencyMetricName } from '../shared/metrics/types.js';
 
 export interface LatencyObservation {
   metric: LatencyMetricName;

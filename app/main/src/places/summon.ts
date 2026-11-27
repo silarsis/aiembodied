@@ -3,8 +3,18 @@
  * (a move with reason 'summoned') and the turn waits until it is here.
  */
 import { MOVE_DEADLINE_MS, type PlaceManager } from './place-manager.js';
+import type { CallResult } from '../shared/places/summon-types.js';
 
-type Moves = Pick<PlaceManager, 'startMove' | 'waitForArrival' | 'localPlaceId' | 'isPresent' | 'inTransit' | 'snapshot' | 'onChanged'>;
+type Moves = Pick<
+  PlaceManager,
+  | 'startMove'
+  | 'waitForArrival'
+  | 'localPlaceId'
+  | 'isPresent'
+  | 'inTransit'
+  | 'snapshot'
+  | 'onChanged'
+>;
 
 /** Waits until the avatar's current move is over (it arrived somewhere or failed). */
 function waitForMoveEnd(places: Moves, avatarId: string, timeoutMs: number): Promise<void> {
@@ -30,7 +40,12 @@ function waitForMoveEnd(places: Moves, avatarId: string, timeoutMs: number): Pro
  * Brings `avatarId` to this PC's place and resolves true once it is present. Resolves true at once when it is
  * already here. False when the move could not start or the avatar did not arrive in time.
  */
-export async function summon(places: Moves, avatarId: string, reason = 'summoned', timeoutMs = MOVE_DEADLINE_MS): Promise<boolean> {
+export async function summon(
+  places: Moves,
+  avatarId: string,
+  reason = 'summoned',
+  timeoutMs = MOVE_DEADLINE_MS,
+): Promise<boolean> {
   if (places.isPresent(avatarId)) return true;
   const local = places.localPlaceId();
   // It is on its way somewhere: if that is here, wait for it; otherwise let it get there first, then call it back.
@@ -39,7 +54,8 @@ export async function summon(places: Moves, avatarId: string, reason = 'summoned
   if (going) await waitForMoveEnd(places, avatarId, timeoutMs);
   if (places.isPresent(avatarId)) return true;
   const started = places.startMove(avatarId, local, reason);
-  if (!started.ok) return started.reason === 'already moving' ? places.waitForArrival(avatarId, timeoutMs) : false;
+  if (!started.ok)
+    return started.reason === 'already moving' ? places.waitForArrival(avatarId, timeoutMs) : false;
   return places.waitForArrival(avatarId, timeoutMs);
 }
 
@@ -52,10 +68,6 @@ export function chooseSummon(partnerId: string | null, avatarIds: string[]): str
   if (avatarIds.includes('echo')) return 'echo';
   return avatarIds[0] ?? null;
 }
-
-export type CallResult =
-  | { ok: true; avatarId: string; name: string; /** Somebody is at the place already: nobody was called. */ alreadyHere: boolean }
-  | { ok: false; reason: string };
 
 type CallPlaces = Pick<PlaceManager, 'startMove' | 'avatarsAt' | 'snapshot'>;
 
@@ -71,21 +83,36 @@ export function callToPlace(
   avatars: Array<{ id: string; name: string }>,
 ): CallResult {
   const here = places.avatarsAt(placeId);
-  const nameOf = (avatarId: string) => avatars.find((avatar) => avatar.id === avatarId)?.name ?? avatarId;
-  if (here.length > 0) return { ok: true, avatarId: here[0], name: nameOf(here[0]), alreadyHere: true };
+  const nameOf = (avatarId: string) =>
+    avatars.find((avatar) => avatar.id === avatarId)?.name ?? avatarId;
+  if (here.length > 0)
+    return { ok: true, avatarId: here[0], name: nameOf(here[0]), alreadyHere: true };
   const ids = avatars.map((avatar) => avatar.id);
   const first = chooseSummon(partnerId, ids);
   if (!first) return { ok: false, reason: 'nobody to call' };
-  const order = [first, ...(ids.includes('echo') ? ['echo'] : []), ...ids].filter((id, index, all) => all.indexOf(id) === index);
+  const order = [first, ...(ids.includes('echo') ? ['echo'] : []), ...ids].filter(
+    (id, index, all) => all.indexOf(id) === index,
+  );
   const coming = places.snapshot().transit.find((move) => move.to === placeId);
-  if (coming) return { ok: true, avatarId: coming.avatarId, name: nameOf(coming.avatarId), alreadyHere: false };
+  if (coming)
+    return {
+      ok: true,
+      avatarId: coming.avatarId,
+      name: nameOf(coming.avatarId),
+      alreadyHere: false,
+    };
   let failure = 'nobody to call';
   for (const avatarId of order) {
     const started = places.startMove(avatarId, placeId, 'summoned');
     if (started.ok) return { ok: true, avatarId, name: nameOf(avatarId), alreadyHere: false };
     failure = started.reason;
     // Closed or unknown place: no other avatar will do better.
-    if (started.reason !== 'already moving' && started.reason !== 'already there' && started.reason !== 'unknown avatar') break;
+    if (
+      started.reason !== 'already moving' &&
+      started.reason !== 'already there' &&
+      started.reason !== 'unknown avatar'
+    )
+      break;
   }
   return { ok: false, reason: failure };
 }

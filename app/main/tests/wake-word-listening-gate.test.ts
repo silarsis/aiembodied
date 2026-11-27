@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WakeWordListeningController } from '../src/wake-word/listening-controller.js';
-import type { WakeWordConfig } from '../src/config/config-manager.js';
+import type { WakeWordConfig } from '../src/shared/config/config-manager-types.js';
 
-const CONFIG: WakeWordConfig = { model: 'hey_echo', keywordLabel: 'Hey Echo', threshold: 0.5, cooldownMs: 1500 };
+const CONFIG: WakeWordConfig = {
+  model: 'hey_echo',
+  keywordLabel: 'Hey Echo',
+  threshold: 0.5,
+  cooldownMs: 1500,
+};
 
 function setup() {
   const disposed: number[] = [];
@@ -35,7 +40,7 @@ describe('WakeWordListeningController gate', () => {
     expect(start).toHaveBeenCalledTimes(2);
   });
 
-  it('a closed gate does not start listening when the page asks for it, and the page\'s intent is kept', async () => {
+  it("a closed gate does not start listening when the page asks for it, and the page's intent is kept", async () => {
     const { controller, start } = setup();
     await controller.configure(CONFIG);
     await controller.setGate(false);

@@ -5,7 +5,7 @@ import { LocalVoiceService } from '../src/local-voice/local-voice-service.js';
 import { PlaceManager } from '../src/places/place-manager.js';
 import { READING_ROOM_ID, StationRegistry } from '../src/stations/station-registry.js';
 import { StationTrips } from '../src/stations/station-trips.js';
-import type { StationUseEvent } from '../src/stations/types.js';
+import type { StationUseEvent } from '../src/shared/stations/types.js';
 import { createVoiceStations } from '../src/stations/voice-stations.js';
 import { ToolRegistry, type RegisteredTool } from '../src/tools/tool-registry.js';
 
@@ -20,10 +20,26 @@ function sseResponse(deltas: Delta[]): Response {
 }
 
 const papersCall: Delta[] = [
-  { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'search_papers', arguments: '{"topic":"agents"}' } }] },
+  {
+    tool_calls: [
+      {
+        index: 0,
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'search_papers', arguments: '{"topic":"agents"}' },
+      },
+    ],
+  },
 ];
 
-function setup(options: { activeRoom?: string | null; holdMs?: number; toolDelayMs?: number; avatarId?: string } = {}) {
+function setup(
+  options: {
+    activeRoom?: string | null;
+    holdMs?: number;
+    toolDelayMs?: number;
+    avatarId?: string;
+  } = {},
+) {
   const chats: Array<Record<string, unknown>> = [];
   const tts: string[] = [];
   let round = 0;
@@ -43,12 +59,26 @@ function setup(options: { activeRoom?: string | null; holdMs?: number; toolDelay
   }) as unknown as typeof fetch;
 
   const kv = new Map<string, string>();
-  const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
-  const places = new PlaceManager({ store, registry: { list: () => [{ id: 'echo', name: 'Echo', vrmModelId: null }, { id: 'sage', name: 'Sage', vrmModelId: null }] } });
+  const store = {
+    getValue: (key: string) => kv.get(key) ?? null,
+    setValue: (key: string, value: string) => void kv.set(key, value),
+  };
+  const places = new PlaceManager({
+    store,
+    registry: {
+      list: () => [
+        { id: 'echo', name: 'Echo', vrmModelId: null },
+        { id: 'sage', name: 'Sage', vrmModelId: null },
+      ],
+    },
+  });
   const registry = new StationRegistry({
     store,
     servers: () => [{ id: 'srv-1', httpUrl: 'https://academy.dair.ai/api/mcp' }],
-    describeRoom: async () => ({ name: 'Reading room', objects: [{ id: 'bookshelf', name: 'bookshelf' }] }),
+    describeRoom: async () => ({
+      name: 'Reading room',
+      objects: [{ id: 'bookshelf', name: 'bookshelf' }],
+    }),
   });
   const events: StationUseEvent[] = [];
   const trips = new StationTrips({
@@ -71,7 +101,8 @@ function setup(options: { activeRoom?: string | null; holdMs?: number; toolDelay
     readOnly: true,
     execute: async () => {
       ran.push(Date.now());
-      if (options.toolDelayMs) await new Promise((resolve) => setTimeout(resolve, options.toolDelayMs));
+      if (options.toolDelayMs)
+        await new Promise((resolve) => setTimeout(resolve, options.toolDelayMs));
       return 'three papers';
     },
   };
@@ -101,7 +132,9 @@ describe('LocalVoiceService with stations', () => {
     const { service, chats, tts, tool, events } = setup({ holdMs: 20 });
     await service.respond({ requestId: 'r1', text: 'Find papers on agents.' }, () => undefined);
     const offered = chats[0].tools as Array<{ function: { name: string; description: string } }>;
-    expect(offered[0].function.description).toBe('Search the paper library. (kept on the bookshelf in the Reading room)');
+    expect(offered[0].function.description).toBe(
+      'Search the paper library. (kept on the bookshelf in the Reading room)',
+    );
     // The stored description is untouched.
     expect(tool.description).toBe('Search the paper library.');
     expect(tts[0]).toBe('Let me check the bookshelf.');

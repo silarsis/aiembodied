@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ConversationManager } from '../src/conversation/conversation-manager.js';
-import type {
-  ConversationMessage,
-  ConversationSession,
-} from '../src/conversation/types.js';
+import type { ConversationMessage, ConversationSession } from '../src/shared/conversation/types.js';
 import type {
   MemoryStore,
   MessageRecord,
@@ -98,7 +95,12 @@ describe('ConversationManager', () => {
   it('creates sessions, tracks current session, and emits start events', () => {
     const { store, state } = createStoreDouble();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const manager = new ConversationManager({ store, logger, maxSessions: 5, maxMessagesPerSession: 5 });
+    const manager = new ConversationManager({
+      store,
+      logger,
+      maxSessions: 5,
+      maxMessagesPerSession: 5,
+    });
 
     const started: ConversationSession[] = [];
     manager.on('session-started', (session) => {
@@ -117,7 +119,12 @@ describe('ConversationManager', () => {
   it('appends messages, enforces per-session retention, and emits append events', () => {
     const { store, state } = createStoreDouble();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const manager = new ConversationManager({ store, logger, maxSessions: 5, maxMessagesPerSession: 2 });
+    const manager = new ConversationManager({
+      store,
+      logger,
+      maxSessions: 5,
+      maxMessagesPerSession: 2,
+    });
 
     const session = manager.startSession({ id: 'session-1', startedAt: 1_700_000_000_000 });
     const appended: ConversationMessage[] = [];
@@ -138,7 +145,12 @@ describe('ConversationManager', () => {
   it('prunes the oldest sessions while keeping the active conversation', () => {
     const { store, state } = createStoreDouble();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const manager = new ConversationManager({ store, logger, maxSessions: 2, maxMessagesPerSession: 10 });
+    const manager = new ConversationManager({
+      store,
+      logger,
+      maxSessions: 2,
+      maxMessagesPerSession: 10,
+    });
 
     const first = manager.startSession({ id: 'session-oldest', startedAt: 1_000 });
     manager.startSession({ id: 'session-middle', startedAt: 2_000 });
@@ -153,7 +165,12 @@ describe('ConversationManager', () => {
   it('throws when appending without an active session', () => {
     const { store } = createStoreDouble();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const manager = new ConversationManager({ store, logger, maxSessions: 5, maxMessagesPerSession: 5 });
+    const manager = new ConversationManager({
+      store,
+      logger,
+      maxSessions: 5,
+      maxMessagesPerSession: 5,
+    });
 
     expect(() => manager.appendMessage({ role: 'system', content: 'orphan message' })).toThrow();
   });
@@ -166,7 +183,12 @@ describe('ConversationManager', () => {
       const manager = new ConversationManager({ store });
       const now = Date.now();
       const session = manager.startSession({ startedAt: now - 2 * 60 * MIN });
-      manager.appendMessage({ sessionId: session.id, role: 'user', content: 'hi', ts: now - 5 * MIN });
+      manager.appendMessage({
+        sessionId: session.id,
+        role: 'user',
+        content: 'hi',
+        ts: now - 5 * MIN,
+      });
 
       const started = vi.fn();
       manager.on('session-started', started);
@@ -210,7 +232,9 @@ describe('ConversationManager', () => {
       const second = manager.appendToRecentSession([{ role: 'system', content: 'b' }]);
       expect(second[0]?.sessionId).not.toBe(empty.id);
       expect(second[0]?.sessionId).not.toBe(first[0]?.sessionId);
-      expect(manager.appendToRecentSession([{ role: 'system', content: 'c' }], 60 * MIN)).toHaveLength(1);
+      expect(
+        manager.appendToRecentSession([{ role: 'system', content: 'c' }], 60 * MIN),
+      ).toHaveLength(1);
     });
   });
 });
@@ -226,12 +250,27 @@ describe('ConversationManager speakers', () => {
 
     const user = manager.appendMessage({ role: 'user', content: 'hi', ts: 1 });
     const assistant = manager.appendMessage({ role: 'assistant', content: 'hello', ts: 2 });
-    const other = manager.appendMessage({ role: 'assistant', content: 'hey', ts: 3, speaker: 'sage' });
+    const other = manager.appendMessage({
+      role: 'assistant',
+      content: 'hey',
+      ts: 3,
+      speaker: 'sage',
+    });
     const system = manager.appendMessage({ role: 'system', content: 'note', ts: 4 });
 
-    expect([user.speaker, assistant.speaker, other.speaker, system.speaker]).toEqual(['user', 'echo', 'sage', undefined]);
+    expect([user.speaker, assistant.speaker, other.speaker, system.speaker]).toEqual([
+      'user',
+      'echo',
+      'sage',
+      undefined,
+    ]);
     expect(events.map((m) => m.speaker)).toEqual(['user', 'echo', 'sage', undefined]);
     const history = manager.getHistory();
-    expect(history.sessions[0]?.messages.map((m) => m.speaker)).toEqual(['user', 'echo', 'sage', undefined]);
+    expect(history.sessions[0]?.messages.map((m) => m.speaker)).toEqual([
+      'user',
+      'echo',
+      'sage',
+      undefined,
+    ]);
   });
 });

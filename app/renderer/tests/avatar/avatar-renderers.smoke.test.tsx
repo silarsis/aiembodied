@@ -6,11 +6,20 @@ vi.mock('three', () => {
   const noop = () => {};
 
   class Euler {
-    constructor(public x = 0, public y = 0, public z = 0) {}
+    constructor(
+      public x = 0,
+      public y = 0,
+      public z = 0,
+    ) {}
   }
 
   class Quaternion {
-    constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+    constructor(
+      public x = 0,
+      public y = 0,
+      public z = 0,
+      public w = 1,
+    ) {}
 
     clone(): Quaternion {
       return new Quaternion(this.x, this.y, this.z, this.w);
@@ -42,7 +51,11 @@ vi.mock('three', () => {
   }
 
   class NumberKeyframeTrack {
-    constructor(public name: string, public times: number[], public values: number[]) {}
+    constructor(
+      public name: string,
+      public times: number[],
+      public values: number[],
+    ) {}
 
     clone(): NumberKeyframeTrack {
       return new NumberKeyframeTrack(this.name, [...this.times], [...this.values]);
@@ -52,7 +65,11 @@ vi.mock('three', () => {
   class QuaternionKeyframeTrack extends NumberKeyframeTrack {}
 
   class AnimationClip {
-    constructor(public name: string, public duration: number, public tracks: unknown[]) {}
+    constructor(
+      public name: string,
+      public duration: number,
+      public tracks: unknown[],
+    ) {}
 
     clone(): AnimationClip {
       return new AnimationClip(this.name, this.duration, [...this.tracks]);
@@ -184,7 +201,11 @@ vi.mock('three', () => {
   }
 
   class Vector3 {
-    constructor(public x = 0, public y = 0, public z = 0) {}
+    constructor(
+      public x = 0,
+      public y = 0,
+      public z = 0,
+    ) {}
 
     add(other: Vector3) {
       this.x += other.x;
@@ -210,7 +231,10 @@ vi.mock('three', () => {
   }
 
   class Box3 {
-    constructor(public min = new Vector3(), public max = new Vector3(1, 1, 1)) {}
+    constructor(
+      public min = new Vector3(),
+      public max = new Vector3(1, 1, 1),
+    ) {}
 
     clone() {
       return new Box3(this.min.clone(), this.max.clone());
@@ -279,7 +303,12 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
   const noop = () => {};
 
   class MockQuaternion {
-    constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+    constructor(
+      public x = 0,
+      public y = 0,
+      public z = 0,
+      public w = 1,
+    ) {}
 
     clone() {
       return new MockQuaternion(this.x, this.y, this.z, this.w);
@@ -374,7 +403,12 @@ vi.mock('@pixiv/three-vrm', () => {
   const noop = () => {};
 
   class MockQuaternion {
-    constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+    constructor(
+      public x = 0,
+      public y = 0,
+      public z = 0,
+      public w = 1,
+    ) {}
 
     clone() {
       return new MockQuaternion(this.x, this.y, this.z, this.w);
@@ -475,9 +509,9 @@ vi.mock('@pixiv/three-vrm', () => {
   };
 });
 
-let cleanup: typeof import('@testing-library/react')['cleanup'];
-let render: typeof import('@testing-library/react')['render'];
-let waitFor: typeof import('@testing-library/react')['waitFor'];
+let cleanup: (typeof import('@testing-library/react'))['cleanup'];
+let render: (typeof import('@testing-library/react'))['render'];
+let waitFor: (typeof import('@testing-library/react'))['waitFor'];
 
 beforeAll(async () => {
   const testingLibrary = await import('@testing-library/react');
@@ -518,7 +552,15 @@ describe('avatar renderer smoke tests', () => {
     const { container } = render(
       <VrmAvatarRenderer
         frame={null}
-        model={{ id: 'vrm-1', name: 'Model', createdAt: Date.now(), version: '1.0', fileSha: 'abc', thumbnailDataUrl: null, description: null }}
+        model={{
+          id: 'vrm-1',
+          name: 'Model',
+          createdAt: Date.now(),
+          version: '1.0',
+          fileSha: 'abc',
+          thumbnailDataUrl: null,
+          description: null,
+        }}
       />,
     );
 
@@ -537,12 +579,20 @@ describe('avatar renderer smoke tests', () => {
     const { container } = render(
       <VrmAvatarRenderer
         frame={null}
-        model={{ id: 'vrm-2', name: 'Idle Model', createdAt: Date.now(), version: '1.0', fileSha: 'def', thumbnailDataUrl: null, description: null }}
+        model={{
+          id: 'vrm-2',
+          name: 'Idle Model',
+          createdAt: Date.now(),
+          version: '1.0',
+          fileSha: 'def',
+          thumbnailDataUrl: null,
+          description: null,
+        }}
       />,
     );
 
     expect(container.querySelector('canvas[data-renderer="vrm"]')).toBeTruthy();
-    
+
     await waitFor(() => {
       expect(loadModelBinary).toHaveBeenCalledWith('vrm-2');
     });

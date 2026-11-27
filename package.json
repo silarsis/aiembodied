@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "lint": "pnpm -r lint",
+    "format": "prettier --write \"app/**/*.{ts,tsx,js,mjs}\" \"scripts/**/*.mjs\" eslint.config.js",
+    "format:check": "prettier --check \"app/**/*.{ts,tsx,js,mjs}\" \"scripts/**/*.mjs\" eslint.config.js",
     "typecheck": "pnpm -r typecheck",
     "test": "cross-env NO_COLOR=1 pnpm typecheck && cross-env NO_COLOR=1 pnpm -r test",
     "test:coverage": "pnpm -r test:coverage",

@@ -28,9 +28,9 @@ function mockFileReader(mockDataUrl: string) {
       }
     }
 
-    removeEventListener() { }
+    removeEventListener() {}
 
-    abort() { }
+    abort() {}
 
     dispatchEvent() {
       return true;
@@ -130,7 +130,9 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
       },
     }),
     generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
-    getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
+    getAvatarGenerationStatus: vi
+      .fn()
+      .mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
     acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
     listAvatarImageModels: vi.fn().mockResolvedValue({ models: [], selectedModelId: null }),
     setAvatarImageModel: vi.fn().mockResolvedValue(undefined),
@@ -147,7 +149,6 @@ describe('AvatarConfigurator', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
 
   it('renders VRM models with metadata and handles activation and deletion', async () => {
     const models = [
@@ -201,10 +202,9 @@ describe('AvatarConfigurator', () => {
     fireEvent.click(useModelButton);
     await waitFor(() => expect(setActiveModel).toHaveBeenCalledWith('vrm-2'));
 
-    const deleteButton = within(screen.getByRole('heading', { name: 'Model One' }).closest('article')!).getByRole(
-      'button',
-      { name: 'Delete' },
-    );
+    const deleteButton = within(
+      screen.getByRole('heading', { name: 'Model One' }).closest('article')!,
+    ).getByRole('button', { name: 'Delete' });
     fireEvent.click(deleteButton);
     await waitFor(() => expect(deleteModel).toHaveBeenCalledWith('vrm-1'));
     await waitFor(() => expect(listModels).toHaveBeenCalledTimes(2));
@@ -233,7 +233,9 @@ describe('AvatarConfigurator', () => {
     try {
       render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-      const file = new File([Uint8Array.from([1, 2, 3])], 'avatar.vrm', { type: 'application/octet-stream' });
+      const file = new File([Uint8Array.from([1, 2, 3])], 'avatar.vrm', {
+        type: 'application/octet-stream',
+      });
       const fileInput = await screen.findByLabelText('VRM file');
       fireEvent.change(fileInput, { target: { files: [file] } });
 
@@ -271,13 +273,15 @@ describe('AvatarConfigurator', () => {
     const form = screen.getByRole('form', { name: 'Upload new VRM model' });
     fireEvent.submit(form);
 
-    expect(screen.getByRole('alert')).toHaveTextContent('VRM upload rejected: file must use the .vrm extension.');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'VRM upload rejected: file must use the .vrm extension.',
+    );
     expect(uploadModel).not.toHaveBeenCalled();
   });
 
   it('logs a warning when the avatar bridge is unavailable', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
-    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => { });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
     try {
       await act(async () => {
@@ -294,8 +298,8 @@ describe('AvatarConfigurator', () => {
   });
 
   it('logs connection info when the avatar bridge is provided', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
-    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => { });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
     try {
       const avatarApi = createAvatarBridgeStub();
@@ -313,5 +317,3 @@ describe('AvatarConfigurator', () => {
     }
   });
 });
-
-

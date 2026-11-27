@@ -5,7 +5,11 @@
  */
 import type { OpenAiAudioClient } from './openai-audio-client.js';
 import type { SpeechServiceClient, SpeechServiceHealth } from './speech-service-client.js';
-import type { LocalVoiceSttStatus, LocalVoiceTranscribeResult, LocalVoiceTtsStatus } from './types.js';
+import type {
+  LocalVoiceSttStatus,
+  LocalVoiceTranscribeResult,
+  LocalVoiceTtsStatus,
+} from '../shared/local-voice/types.js';
 
 type CallOptions = { signal?: AbortSignal };
 /** `voice`: the character's own voice for this engine, used instead of the engine's default. */
@@ -48,7 +52,11 @@ export class SpeechServiceStt implements SpeechToTextEngine {
 export class SpeechServiceTts implements TextToSpeechEngine {
   constructor(
     private readonly speech: SpeechServiceClient,
-    private readonly target: { engine: 'kokoro' | 'kitten' | 'piper'; model?: string; voice?: string },
+    private readonly target: {
+      engine: 'kokoro' | 'kitten' | 'piper';
+      model?: string;
+      voice?: string;
+    },
   ) {}
 
   get engine(): 'kokoro' | 'kitten' | 'piper' {
@@ -58,12 +66,24 @@ export class SpeechServiceTts implements TextToSpeechEngine {
   async synthesize(text: string, options?: SpeakOptions): Promise<Uint8Array> {
     const { engine, model } = this.target;
     const voice = options?.voice || this.target.voice || undefined;
-    const request = { text, voice, ...(engine === 'kokoro' ? {} : { engine, ...(model ? { model } : {}) }) };
+    const request = {
+      text,
+      voice,
+      ...(engine === 'kokoro' ? {} : { engine, ...(model ? { model } : {}) }),
+    };
     try {
       return await this.speech.synthesize(request, { signal: options?.signal });
     } catch (error) {
-      if (voice && voice !== this.target.voice && error instanceof Error && /unknown voice/i.test(error.message)) {
-        return this.speech.synthesize({ ...request, voice: this.target.voice || undefined }, { signal: options?.signal });
+      if (
+        voice &&
+        voice !== this.target.voice &&
+        error instanceof Error &&
+        /unknown voice/i.test(error.message)
+      ) {
+        return this.speech.synthesize(
+          { ...request, voice: this.target.voice || undefined },
+          { signal: options?.signal },
+        );
       }
       throw error;
     }
@@ -74,8 +94,14 @@ export class SpeechServiceTts implements TextToSpeechEngine {
       provider: this.target.engine,
       available: Boolean(health),
       ready: health?.ready === true,
-      model: this.target.engine === 'kokoro' ? health?.ttsModel ?? null : this.target.model ?? this.target.engine,
-      voice: this.target.voice || (this.target.engine === 'kokoro' ? health?.defaultVoice : null) || null,
+      model:
+        this.target.engine === 'kokoro'
+          ? (health?.ttsModel ?? null)
+          : (this.target.model ?? this.target.engine),
+      voice:
+        this.target.voice ||
+        (this.target.engine === 'kokoro' ? health?.defaultVoice : null) ||
+        null,
       error: health?.error ?? null,
     };
   }

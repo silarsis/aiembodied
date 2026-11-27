@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { RoomCamera, RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomCamera, RoomFile, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { buildRoom, type BuildRoomOptions, type BuiltRoom } from './room-builder.js';
 import { RoomNavMesh } from './room-navmesh.js';
 import { RoomPhysics } from './room-physics.js';
@@ -134,7 +134,13 @@ export class RoomStage {
    * first hit wins, falling back to the box top (position.y + size[1]) when the object has no meshes or
    * the point misses them.
    */
-  surfaceHeightAt(id: string, x: number, z: number, nearY?: number, band = SURFACE_BAND): number | null {
+  surfaceHeightAt(
+    id: string,
+    x: number,
+    z: number,
+    nearY?: number,
+    band = SURFACE_BAND,
+  ): number | null {
     const node = this.built.objectNodes.get(id);
     const object = this.room.objects.find((candidate) => candidate.id === id);
     if (!node || !object) return null;
@@ -142,7 +148,9 @@ export class RoomStage {
     const from = nearY !== undefined ? nearY + band : boxTop + 0.5;
     node.updateWorldMatrix(true, true);
     const ray = new THREE.Raycaster(new THREE.Vector3(x, from, z), new THREE.Vector3(0, -1, 0));
-    const hit = ray.intersectObject(node, true).find((candidate) => candidate.object instanceof THREE.Mesh);
+    const hit = ray
+      .intersectObject(node, true)
+      .find((candidate) => candidate.object instanceof THREE.Mesh);
     if (nearY !== undefined) return hit && hit.point.y >= nearY - band ? hit.point.y : null;
     return hit ? hit.point.y : boxTop;
   }
@@ -166,14 +174,22 @@ export class RoomStage {
       const down = new THREE.Vector3(0, -1, 0);
       const start = new THREE.Vector3();
       sample = (x, z, fromY) => {
-        raycaster.set(node.localToWorld(start.set(x, fromY, z)), down.set(0, -1, 0).transformDirection(node.matrixWorld));
-        const hit = raycaster.intersectObject(node, true).find((candidate) => candidate.object instanceof THREE.Mesh);
+        raycaster.set(
+          node.localToWorld(start.set(x, fromY, z)),
+          down.set(0, -1, 0).transformDirection(node.matrixWorld),
+        );
+        const hit = raycaster
+          .intersectObject(node, true)
+          .find((candidate) => candidate.object instanceof THREE.Mesh);
         return hit ? node.worldToLocal(hit.point.clone()).y : null;
       };
     }
     const local = applySeatOverrides(seatGeometryLocal(tag, sample), tag.seat);
     const position = this.objectPosition(id) ?? object.position;
-    return seatGeometryToWorld(local, tag, { position, yawDegrees: (this.objectYaw(id) * 180) / Math.PI });
+    return seatGeometryToWorld(local, tag, {
+      position,
+      yawDegrees: (this.objectYaw(id) * 180) / Math.PI,
+    });
   }
 
   /** Where an object's floor-contact origin is in the world right now (it may have been moved or carried). */
@@ -216,7 +232,11 @@ export class RoomStage {
   }
 
   /** Advances physics. The avatar's capsule follows the avatar root's world position. */
-  step(dt: number, avatarRoot?: THREE.Object3D | null, others: ReadonlyArray<{ id: string; root: THREE.Object3D }> = []): void {
+  step(
+    dt: number,
+    avatarRoot?: THREE.Object3D | null,
+    others: ReadonlyArray<{ id: string; root: THREE.Object3D }> = [],
+  ): void {
     if (!this.physics) return;
     for (const [id, node] of this.built.objectNodes) {
       if (!this.physics.isHeld(id)) continue;
@@ -264,7 +284,11 @@ export class RoomStage {
     if (!this.debugOn || !this.physics) return;
     const { vertices, colors } = this.physics.debugLines();
     if (!this.colliderLines) {
-      const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthTest: false });
+      const material = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        depthTest: false,
+      });
       this.colliderLines = new THREE.LineSegments(new THREE.BufferGeometry(), material);
       this.colliderLines.name = 'debug:colliders';
       this.colliderLines.frustumCulled = false;

@@ -3,17 +3,34 @@
  * app's local servers, everything else as "Other", and the rest free.
  */
 import { useEffect, useState } from 'react';
-import type { GpuMemoryBridge, GpuMemorySnapshot, GpuMemoryUse } from '../../../main/src/diagnostics/gpu-memory.js';
+import type {
+  GpuMemoryBridge,
+  GpuMemorySnapshot,
+  GpuMemoryUse,
+} from '../../../main/src/shared/diagnostics/gpu-memory-types.js';
 
 export const GPU_MEMORY_POLL_MS = 5000;
 
-const SERVER_COLOURS = ['#38bdf8', '#a78bfa', '#34d399', '#f472b6', '#fbbf24', '#fb923c', '#2dd4bf', '#818cf8'];
+const SERVER_COLOURS = [
+  '#38bdf8',
+  '#a78bfa',
+  '#34d399',
+  '#f472b6',
+  '#fbbf24',
+  '#fb923c',
+  '#2dd4bf',
+  '#818cf8',
+];
 const OTHER_COLOUR = '#64748b';
 
 const GB = 1024 ** 3;
 export function formatGb(bytes: number): string {
   const gb = bytes / GB;
-  return gb >= 10 ? `${gb.toFixed(0)} GB` : gb >= 0.1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+  return gb >= 10
+    ? `${gb.toFixed(0)} GB`
+    : gb >= 0.1
+      ? `${gb.toFixed(1)} GB`
+      : `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
 interface Segment {
@@ -27,7 +44,10 @@ interface Segment {
 type Pool = keyof GpuMemoryUse;
 
 /** Segments for one pool (dedicated or shared): each server, Other, then free. */
-export function buildSegments(snapshot: GpuMemorySnapshot, pool: Pool): { segments: Segment[]; used: number; total: number | null } {
+export function buildSegments(
+  snapshot: GpuMemorySnapshot,
+  pool: Pool,
+): { segments: Segment[]; used: number; total: number | null } {
   const segments: Segment[] = [];
   snapshot.servers.forEach((server, index) => {
     if (server[pool] <= 0) return;
@@ -39,24 +59,45 @@ export function buildSegments(snapshot: GpuMemorySnapshot, pool: Pool): { segmen
       title: `${server.name}: ${formatGb(server[pool])} (port ${server.port}${server.processName ? `, ${server.processName}` : ''})`,
     });
   });
-  const otherBytes = snapshot.others.reduce((sum, proc) => sum + proc[pool], 0) + snapshot.unattributed[pool];
+  const otherBytes =
+    snapshot.others.reduce((sum, proc) => sum + proc[pool], 0) + snapshot.unattributed[pool];
   if (otherBytes > 0) {
     const top = snapshot.others
       .filter((proc) => proc[pool] > 0)
       .slice(0, 6)
       .map((proc) => `${proc.name} (pid ${proc.pid}): ${formatGb(proc[pool])}`);
-    if (snapshot.unattributed[pool] > 0) top.push(`Not tied to a process: ${formatGb(snapshot.unattributed[pool])}`);
-    segments.push({ key: 'other', label: 'Other', colour: OTHER_COLOUR, bytes: otherBytes, title: `Other: ${formatGb(otherBytes)}\n${top.join('\n')}` });
+    if (snapshot.unattributed[pool] > 0)
+      top.push(`Not tied to a process: ${formatGb(snapshot.unattributed[pool])}`);
+    segments.push({
+      key: 'other',
+      label: 'Other',
+      colour: OTHER_COLOUR,
+      bytes: otherBytes,
+      title: `Other: ${formatGb(otherBytes)}\n${top.join('\n')}`,
+    });
   }
   const used = snapshot.used[pool];
   const total = pool === 'dedicated' ? snapshot.dedicatedTotal : snapshot.sharedTotal;
   return { segments, used, total };
 }
 
-function PoolBar({ snapshot, pool, label }: { snapshot: GpuMemorySnapshot; pool: Pool; label: string }) {
+function PoolBar({
+  snapshot,
+  pool,
+  label,
+}: {
+  snapshot: GpuMemorySnapshot;
+  pool: Pool;
+  label: string;
+}) {
   const { segments, used, total } = buildSegments(snapshot, pool);
   // With no known total, scale to what is in use.
-  const scale = Math.max(total ?? 0, used, segments.reduce((sum, segment) => sum + segment.bytes, 0), 1);
+  const scale = Math.max(
+    total ?? 0,
+    used,
+    segments.reduce((sum, segment) => sum + segment.bytes, 0),
+    1,
+  );
   return (
     <div className="gpuMemory__pool" data-testid={`gpu-memory-${pool}`}>
       <div className="gpuMemory__poolHeader">
@@ -66,7 +107,11 @@ function PoolBar({ snapshot, pool, label }: { snapshot: GpuMemorySnapshot; pool:
           {total !== null ? ` · ${formatGb(Math.max(0, total - used))} free` : ''}
         </span>
       </div>
-      <div className="gpuMemory__bar" role="img" aria-label={`${label}: ${segments.map((s) => `${s.label} ${formatGb(s.bytes)}`).join(', ')}`}>
+      <div
+        className="gpuMemory__bar"
+        role="img"
+        aria-label={`${label}: ${segments.map((s) => `${s.label} ${formatGb(s.bytes)}`).join(', ')}`}
+      >
         {segments.map((segment) => (
           <div
             key={segment.key}
@@ -90,14 +135,19 @@ function PoolBar({ snapshot, pool, label }: { snapshot: GpuMemorySnapshot; pool:
 
 export function GpuMemoryView({ snapshot }: { snapshot: GpuMemorySnapshot | null }) {
   if (!snapshot) return <p className="gpuMemory__note">Reading GPU memory…</p>;
-  if (!snapshot.supported) return <p className="gpuMemory__note">{snapshot.reason ?? 'GPU memory is not available.'}</p>;
-  const idle = snapshot.servers.filter((server) => server.dedicated + server.shared <= 0).map((server) => server.name);
+  if (!snapshot.supported)
+    return <p className="gpuMemory__note">{snapshot.reason ?? 'GPU memory is not available.'}</p>;
+  const idle = snapshot.servers
+    .filter((server) => server.dedicated + server.shared <= 0)
+    .map((server) => server.name);
   return (
     <>
       {snapshot.adapterName ? <p className="gpuMemory__note">{snapshot.adapterName}</p> : null}
       <PoolBar snapshot={snapshot} pool="dedicated" label="Dedicated" />
       <PoolBar snapshot={snapshot} pool="shared" label="Shared (system RAM)" />
-      {idle.length > 0 ? <p className="gpuMemory__note">Not using the GPU or not running: {idle.join(', ')}</p> : null}
+      {idle.length > 0 ? (
+        <p className="gpuMemory__note">Not using the GPU or not running: {idle.join(', ')}</p>
+      ) : null}
     </>
   );
 }

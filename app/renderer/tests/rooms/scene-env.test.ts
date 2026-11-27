@@ -6,7 +6,9 @@ import { RoomSceneEnv, type AvatarRig } from '../../src/rooms/scene-env.js';
 import { surfaceSpec } from '../../src/rooms/scene-actions.js';
 import { builtInRoom } from './fixtures.js';
 
-function buildRig(baseRotationY = 0): AvatarRig & { hands: Record<'left' | 'right', THREE.Object3D> } {
+function buildRig(
+  baseRotationY = 0,
+): AvatarRig & { hands: Record<'left' | 'right', THREE.Object3D> } {
   const scene = new THREE.Group();
   scene.rotation.y = baseRotationY;
   scene.scale.setScalar(1.25);
@@ -49,7 +51,12 @@ describe('RoomSceneEnv', () => {
   });
 
   it('leaves others and occupancy undefined while the avatar is alone', () => {
-    const alone = new RoomSceneEnv({ stage: () => stage, rig: () => rig, avatarId: 'echo', occupancy: () => null });
+    const alone = new RoomSceneEnv({
+      stage: () => stage,
+      rig: () => rig,
+      avatarId: 'echo',
+      occupancy: () => null,
+    });
     const world = alone.planWorld()!;
     expect(world.others).toBeUndefined();
     expect(world.occupancy).toBeUndefined();
@@ -60,7 +67,12 @@ describe('RoomSceneEnv', () => {
     const occupancy = new RoomOccupancy();
     occupancy.standing('sage', { x: 1, z: -1 });
     rig.scene.position.set(0, 0, -0.3);
-    const shared = new RoomSceneEnv({ stage: () => stage, rig: () => rig, avatarId: 'echo', occupancy: () => occupancy });
+    const shared = new RoomSceneEnv({
+      stage: () => stage,
+      rig: () => rig,
+      avatarId: 'echo',
+      occupancy: () => occupancy,
+    });
     const world = shared.planWorld()!;
     expect(world.others).toEqual([{ id: 'sage', x: 1, z: -1 }]);
     expect(world.occupancy).toBeDefined();
@@ -123,7 +135,9 @@ describe('RoomSceneEnv', () => {
     // The hand is well beyond the table's edge; the mug lands on the nearest part of the top.
     rig.scene.position.set(0, 0, 0);
     rig.scene.updateWorldMatrix(true, true);
-    rig.hands.right.position.copy(rig.scene.worldToLocal(new THREE.Vector3(table.position[0] + 3, 0.6, table.position[2] + 3)));
+    rig.hands.right.position.copy(
+      rig.scene.worldToLocal(new THREE.Vector3(table.position[0] + 3, 0.6, table.position[2] + 3)),
+    );
     rig.scene.updateWorldMatrix(true, true);
     env.detach({ t: 1.7, kind: 'detach', objectId: 'mug', hand: 'right', surface });
     const mug = stage.objectNode('mug')!;
@@ -169,7 +183,9 @@ describe('RoomSceneEnv', () => {
       fingers.set(name, bone);
     }
     const base = rig.humanoid;
-    rig.humanoid = { getNormalizedBoneNode: (name) => fingers.get(name) ?? base.getNormalizedBoneNode(name) };
+    rig.humanoid = {
+      getNormalizedBoneNode: (name) => fingers.get(name) ?? base.getNormalizedBoneNode(name),
+    };
     env.attach('mug', 'right');
     for (let i = 0; i < 20; i += 1) env.step(0.05);
     const curled = fingers.get('rightIndexProximal')!.quaternion.angleTo(new THREE.Quaternion());
@@ -184,7 +200,11 @@ describe('RoomSceneEnv', () => {
       const hips = new THREE.Object3D();
       hips.position.set(0, hipsY, 0);
       rig.scene.add(hips);
-      const bones = new Map<string, THREE.Object3D>([['hips', hips], ['leftHand', rig.hands.left], ['rightHand', rig.hands.right]]);
+      const bones = new Map<string, THREE.Object3D>([
+        ['hips', hips],
+        ['leftHand', rig.hands.left],
+        ['rightHand', rig.hands.right],
+      ]);
       rig.humanoid.getNormalizedBoneNode = (name) => bones.get(name) ?? null;
       return hips;
     }
@@ -192,7 +212,10 @@ describe('RoomSceneEnv', () => {
     function cushionedSofa() {
       const node = stage.objectNode('sofa')!;
       node.clear();
-      const cushion = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 2), new THREE.MeshBasicMaterial());
+      const cushion = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 0.4, 2),
+        new THREE.MeshBasicMaterial(),
+      );
       cushion.position.y = 0.2;
       node.add(cushion);
       node.updateMatrixWorld(true);
@@ -253,7 +276,9 @@ describe('RoomSceneEnv', () => {
       for (let i = 0; i < 60; i += 1) env.step(1 / 60);
       const centre = new THREE.Box3().setFromObject(mug).getCenter(new THREE.Vector3());
       const tag = room.objects.find((o) => o.id === 'mug')!.tags?.grab;
-      const grab = tag ? mug.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2])) : centre;
+      const grab = tag
+        ? mug.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2]))
+        : centre;
       const palm = rig.hands.right.getWorldPosition(new THREE.Vector3());
       expect(grab.distanceTo(palm)).toBeLessThan(1e-3);
       env.detach({ t: 1, kind: 'detach', objectId: 'mug', hand: 'right' });
@@ -265,7 +290,10 @@ describe('RoomSceneEnv', () => {
       const knuckle = new THREE.Object3D();
       knuckle.position.set(0, 0, 0.1);
       rig.hands.right.add(knuckle);
-      const bones = new Map<string, THREE.Object3D>([['rightHand', rig.hands.right], ['rightMiddleProximal', knuckle]]);
+      const bones = new Map<string, THREE.Object3D>([
+        ['rightHand', rig.hands.right],
+        ['rightMiddleProximal', knuckle],
+      ]);
       rig.humanoid.getNormalizedBoneNode = (name) => bones.get(name) ?? null;
       rig.scene.scale.setScalar(1);
       rig.scene.rotation.y = 0;
@@ -276,7 +304,9 @@ describe('RoomSceneEnv', () => {
       for (let i = 0; i < 60; i += 1) env.step(1 / 60);
       const mug = stage.objectNode('mug')!;
       const tag = room.objects.find((o) => o.id === 'mug')!.tags?.grab;
-      const grab = tag ? mug.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2])) : new THREE.Box3().setFromObject(mug).getCenter(new THREE.Vector3());
+      const grab = tag
+        ? mug.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2]))
+        : new THREE.Box3().setFromObject(mug).getCenter(new THREE.Vector3());
       const palm = rig.hands.right.localToWorld(new THREE.Vector3(0, 0, 0.05));
       expect(grab.distanceTo(palm)).toBeLessThan(1e-3);
     });

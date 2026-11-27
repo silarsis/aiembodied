@@ -2,7 +2,11 @@ import { templatePromptGuidance } from './template-compatibility.js';
 /** Each supported family owns a workflow; model variants supply filenames, not custom UI. */
 import type { ComfyGraph } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, CONCEPT_NEGATIVE } from './graphs.js';
-import { characterConceptPrompt, faceSurfaceGuidance, faceSurfaceExclusions } from './character/graphs.js';
+import {
+  characterConceptPrompt,
+  faceSurfaceGuidance,
+  faceSurfaceExclusions,
+} from './character/graphs.js';
 import { applyPoseControl, applyPoseReference } from './pose-control.js';
 
 export type ImageFamily = 'qwen-image-2.1' | 'z-image-turbo' | 'sdxl' | 'sd1';
@@ -141,7 +145,9 @@ export function buildImageWorkflow(
  * only (LoraLoaderModelOnly), as its text encoder is a separate file.
  */
 export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): ComfyGraph {
-  const loaderId = Object.keys(graph).find((id) => ['CheckpointLoaderSimple', 'UNETLoader'].includes(graph[id].class_type));
+  const loaderId = Object.keys(graph).find((id) =>
+    ['CheckpointLoaderSimple', 'UNETLoader'].includes(graph[id].class_type),
+  );
   if (!loaderId) return graph;
   const withClip = graph[loaderId].class_type === 'CheckpointLoaderSimple';
   let model: [string, number] = [loaderId, 0];
@@ -151,8 +157,20 @@ export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): Comfy
     const id = `lora${index}`;
     const strength = Math.min(2, Math.max(0, lora.strength));
     added[id] = withClip
-      ? { class_type: 'LoraLoader', inputs: { model, clip, lora_name: lora.name, strength_model: strength, strength_clip: strength } }
-      : { class_type: 'LoraLoaderModelOnly', inputs: { model, lora_name: lora.name, strength_model: strength } };
+      ? {
+          class_type: 'LoraLoader',
+          inputs: {
+            model,
+            clip,
+            lora_name: lora.name,
+            strength_model: strength,
+            strength_clip: strength,
+          },
+        }
+      : {
+          class_type: 'LoraLoaderModelOnly',
+          inputs: { model, lora_name: lora.name, strength_model: strength },
+        };
     model = [id, 0];
     if (withClip) clip = [id, 1];
   });
@@ -171,7 +189,8 @@ export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): Comfy
       .filter((steps) => steps > 0);
     if (stepCounts.length) {
       for (const node of Object.values(graph)) {
-        if (['KSampler', 'KSamplerAdvanced'].includes(node.class_type)) node.inputs.steps = Math.min(...stepCounts);
+        if (['KSampler', 'KSamplerAdvanced'].includes(node.class_type))
+          node.inputs.steps = Math.min(...stepCounts);
       }
     }
   }
@@ -194,7 +213,9 @@ export function buildAvatarImageWorkflow(
     const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? `${templatePromptGuidance}, ${faceSurfaceGuidance}, appearance as described, clear gaps between adjacent body parts, short hair, clearly visible neutral humanoid face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render` : 'clean cel shading, character reference'}`;
     const graph = buildImageWorkflow(model, compact, seed);
     graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? `${faceSurfaceExclusions}, fused limbs, arms at sides, hands touching thighs, hands on hips, long hair, oversized head, chibi proportions, featureless face, ` : ''}props, scenery, ground shadow`;
-    return model.poseControlNet && poseImage ? applyPoseControl(graph, model.poseControlNet, poseImage) : graph;
+    return model.poseControlNet && poseImage
+      ? applyPoseControl(graph, model.poseControlNet, poseImage)
+      : graph;
   }
   const graph = buildImageWorkflow(
     model,

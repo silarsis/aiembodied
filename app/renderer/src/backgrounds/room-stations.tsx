@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
-import type { MCPServerSummary } from '../../../main/src/mcp/types.js';
-import type { Station, StationBody, StationSource, StationView } from '../../../main/src/stations/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
+import type { MCPServerSummary } from '../../../main/src/shared/mcp/types.js';
+import type {
+  Station,
+  StationBody,
+  StationSource,
+  StationView,
+} from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, StationsBridge } from '../preload-api.js';
 import type { BackgroundController } from './use-backgrounds.js';
 
@@ -38,11 +43,18 @@ export function RoomStations({
   const [error, setError] = useState<string | null>(null);
 
   // The room being edited: the one picked here, else the one on stage, else the first.
-  const shownId = roomId ?? (rooms.some((entry) => entry.id === activeId) ? activeId : null) ?? rooms[0]?.id ?? null;
+  const shownId =
+    roomId ??
+    (rooms.some((entry) => entry.id === activeId) ? activeId : null) ??
+    rooms[0]?.id ??
+    null;
 
   const reload = useCallback(async () => {
     if (!stations) return;
-    const [nextList, nextServers] = await Promise.all([stations.list().catch(() => [] as StationView[]), mcp?.listServers().catch(() => [] as MCPServerSummary[]) ?? []]);
+    const [nextList, nextServers] = await Promise.all([
+      stations.list().catch(() => [] as StationView[]),
+      mcp?.listServers().catch(() => [] as MCPServerSummary[]) ?? [],
+    ]);
     setList(nextList);
     setServers(nextServers);
   }, [stations, mcp]);
@@ -67,15 +79,28 @@ export function RoomStations({
   }, [shownId, loadRoom]);
 
   // Only objects an avatar can stand at can hold something.
-  const objects = useMemo(() => (room && room.id === shownId ? room.objects.filter((object) => object.tags?.stand) : []), [room, shownId]);
+  const objects = useMemo(
+    () => (room && room.id === shownId ? room.objects.filter((object) => object.tags?.stand) : []),
+    [room, shownId],
+  );
 
   // What a reading character can sit on, and what it can take from the object.
-  const seats = useMemo(() => (room && room.id === shownId ? room.objects.filter((object) => object.tags?.sit) : []), [room, shownId]);
-  const takeable = useMemo(() => (room && room.id === shownId ? room.objects.filter((object) => object.dynamic === true && object.tags?.grab) : []), [room, shownId]);
+  const seats = useMemo(
+    () => (room && room.id === shownId ? room.objects.filter((object) => object.tags?.sit) : []),
+    [room, shownId],
+  );
+  const takeable = useMemo(
+    () =>
+      room && room.id === shownId
+        ? room.objects.filter((object) => object.dynamic === true && object.tags?.grab)
+        : [],
+    [room, shownId],
+  );
 
   if (!stations) return null;
 
-  const stationAt = (objectId: string): StationView | undefined => list.find((station) => station.roomId === shownId && station.objectId === objectId);
+  const stationAt = (objectId: string): StationView | undefined =>
+    list.find((station) => station.roomId === shownId && station.objectId === objectId);
 
   const save = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -90,10 +115,16 @@ export function RoomStations({
   const changeHolds = (objectName: string, objectId: string, value: string) => {
     if (!shownId) return;
     const source: StationSource | null =
-      value === 'none' ? null : value === WEB_SEARCH_VALUE ? WEB_SEARCH_SOURCE : { kind: 'mcp', serverId: value.slice('mcp:'.length) };
+      value === 'none'
+        ? null
+        : value === WEB_SEARCH_VALUE
+          ? WEB_SEARCH_SOURCE
+          : { kind: 'mcp', serverId: value.slice('mcp:'.length) };
     const existing = stationAt(objectId);
     // A new station gets a plain activity; an existing one keeps what it had.
-    const extra: Partial<Pick<Station, 'activity' | 'verb'>> = existing ? {} : { verb: 'use', activity: `uses the ${objectName}` };
+    const extra: Partial<Pick<Station, 'activity' | 'verb'>> = existing
+      ? {}
+      : { verb: 'use', activity: `uses the ${objectName}` };
     void save(() => stations.hold(shownId, objectId, source, extra));
   };
 
@@ -109,12 +140,17 @@ export function RoomStations({
     <section className="backgroundControls__idle" aria-labelledby="room-stations-title">
       <h3 id="room-stations-title">Things kept in the room</h3>
       <p className="kiosk__helper">
-        Choose what an object holds. When a character uses a tool that is kept there, it walks to the object while the tool runs.
+        Choose what an object holds. When a character uses a tool that is kept there, it walks to
+        the object while the tool runs.
       </p>
       {rooms.length > 1 ? (
         <div className="control">
           <label htmlFor="stations-room">Room</label>
-          <select id="stations-room" value={shownId ?? ''} onChange={(event) => setRoomId(event.target.value)}>
+          <select
+            id="stations-room"
+            value={shownId ?? ''}
+            onChange={(event) => setRoomId(event.target.value)}
+          >
             {rooms.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.name}
@@ -123,7 +159,9 @@ export function RoomStations({
           </select>
         </div>
       ) : null}
-      {objects.length === 0 ? <p className="kiosk__helper">This room has no objects to walk to.</p> : null}
+      {objects.length === 0 ? (
+        <p className="kiosk__helper">This room has no objects to walk to.</p>
+      ) : null}
       <ul className="toolsSettings__list" aria-label="Objects in the room">
         {objects.map((object) => {
           const station = stationAt(object.id);
@@ -152,7 +190,13 @@ export function RoomStations({
                   <select
                     aria-label={`When to walk to the ${object.name}`}
                     value={station.trip}
-                    onChange={(event) => void save(() => stations.update(station.id, { trip: event.target.value as 'all' | 'writes' }))}
+                    onChange={(event) =>
+                      void save(() =>
+                        stations.update(station.id, {
+                          trip: event.target.value as 'all' | 'writes',
+                        }),
+                      )
+                    }
                   >
                     <option value="all">Every use</option>
                     <option value="writes">Only changes</option>

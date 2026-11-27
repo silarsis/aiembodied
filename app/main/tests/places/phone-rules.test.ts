@@ -2,13 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cameraPresenceOn } from '../../src/shared/places/camera-setting.js';
 import { doorbellOn } from '../../src/shared/places/doorbell-setting.js';
 import { DEFAULT_DESKTOP_ROOM, DEFAULT_PHONE_ROOM } from '../../src/shared/places/default-room.js';
-import { LOCATIONS_KEY, OFFLINE_GRACE_MS, PHONE_OFFLINE_GRACE_MS, PLACES_KEY, PlaceManager } from '../../src/places/place-manager.js';
+import {
+  LOCATIONS_KEY,
+  OFFLINE_GRACE_MS,
+  PHONE_OFFLINE_GRACE_MS,
+  PLACES_KEY,
+  PlaceManager,
+} from '../../src/places/place-manager.js';
 import type { PlaceKind } from '../../src/shared/places/place-kind.js';
 import { NextDoorReturn, RETURN_CHANCE } from '../../src/places/next-door-return.js';
 import { URGENT_QUIET_MS, urgentTarget } from '../../src/places/urgent-walk.js';
 import { wanderRefusal } from '../../src/shared/places/wander.js';
 import { cameraSettingHere } from '../../src/shared/satellite/snapshot-facts.js';
-import { PHONE_AWAY_HOME_MS, LOCKED_HOME_MS, PlaceDevices } from '../../src/room-hub/place-devices.js';
+import {
+  PHONE_AWAY_HOME_MS,
+  LOCKED_HOME_MS,
+  PlaceDevices,
+} from '../../src/room-hub/place-devices.js';
 import { PlacePresence } from '../../src/presence/place-presence.js';
 
 const PROFILES = [
@@ -17,11 +27,19 @@ const PROFILES = [
 ];
 const NOW = 9_000_000;
 
-function setup(kind: PlaceKind, options: { locations?: Record<string, string>; activeAt?: Record<string, number> } = {}) {
-  const data = new Map<string, string>(options.locations ? [[LOCATIONS_KEY, JSON.stringify(options.locations)]] : []);
+function setup(
+  kind: PlaceKind,
+  options: { locations?: Record<string, string>; activeAt?: Record<string, number> } = {},
+) {
+  const data = new Map<string, string>(
+    options.locations ? [[LOCATIONS_KEY, JSON.stringify(options.locations)]] : [],
+  );
   const clock = { now: NOW };
   const places = new PlaceManager({
-    store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) },
+    store: {
+      getValue: (key) => data.get(key) ?? null,
+      setValue: (key, value) => void data.set(key, value),
+    },
     registry: { list: () => PROFILES },
     now: () => clock.now,
     activeAt: (placeId) => options.activeAt?.[placeId] ?? null,
@@ -36,18 +54,38 @@ describe('phone rules: the kind of a place', () => {
     for (const kind of ['phone', 'browser'] as const) {
       const { places, data } = setup(kind);
       expect(places.get('pocket')?.kind).toBe(kind);
-      expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual(expect.objectContaining({ id: 'pocket', kind }));
-      const again = new PlaceManager({ store: { getValue: (k) => data.get(k) ?? null, setValue: () => undefined }, registry: { list: () => PROFILES } });
+      expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual(
+        expect.objectContaining({ id: 'pocket', kind }),
+      );
+      const again = new PlaceManager({
+        store: { getValue: (k) => data.get(k) ?? null, setValue: () => undefined },
+        registry: { list: () => PROFILES },
+      });
       expect(again.get('pocket')?.kind).toBe(kind);
     }
     const desktop = setup('desktop');
     expect(desktop.places.get('pocket')).not.toHaveProperty('kind');
-    expect(JSON.parse(desktop.data.get(PLACES_KEY) as string).find((p: { id: string }) => p.id === 'pocket')).not.toHaveProperty('kind');
+    expect(
+      JSON.parse(desktop.data.get(PLACES_KEY) as string).find(
+        (p: { id: string }) => p.id === 'pocket',
+      ),
+    ).not.toHaveProperty('kind');
   });
 
   it('ignores a made-up kind and never gives a built-in place one', () => {
-    const data = new Map([[PLACES_KEY, JSON.stringify([{ id: 'home', name: 'x', node: 'local', kind: 'phone' }, { id: 'r', name: 'r', node: 'room-9', kind: 'toaster' }])]]);
-    const places = new PlaceManager({ store: { getValue: (k) => data.get(k) ?? null, setValue: () => undefined }, registry: { list: () => PROFILES } });
+    const data = new Map([
+      [
+        PLACES_KEY,
+        JSON.stringify([
+          { id: 'home', name: 'x', node: 'local', kind: 'phone' },
+          { id: 'r', name: 'r', node: 'room-9', kind: 'toaster' },
+        ]),
+      ],
+    ]);
+    const places = new PlaceManager({
+      store: { getValue: (k) => data.get(k) ?? null, setValue: () => undefined },
+      registry: { list: () => PROFILES },
+    });
     expect(places.get('home')).not.toHaveProperty('kind');
     expect(places.get('r')).not.toHaveProperty('kind');
   });
@@ -73,7 +111,17 @@ describe('phone rules: defaults by kind (truth table)', () => {
   });
 
   it('the satellite reads the kind from the snapshot', () => {
-    const snapshot = (kind?: string, camera?: boolean) => ({ localPlaceId: 'p', places: [{ id: 'p', node: 'room-1', ...(kind ? { kind } : {}), ...(camera === undefined ? {} : { camera }) }] });
+    const snapshot = (kind?: string, camera?: boolean) => ({
+      localPlaceId: 'p',
+      places: [
+        {
+          id: 'p',
+          node: 'room-1',
+          ...(kind ? { kind } : {}),
+          ...(camera === undefined ? {} : { camera }),
+        },
+      ],
+    });
     expect(cameraSettingHere(snapshot())).toBe(true);
     expect(cameraSettingHere(snapshot('phone'))).toBe(false);
     expect(cameraSettingHere(snapshot('browser'))).toBe(false);
@@ -101,12 +149,21 @@ describe('phone rules: no unprompted wandering into a phone', () => {
   });
 
   it('a summon, an explicit move and urgent news still go to a phone', () => {
-    const { places } = setup('phone', { activeAt: { pocket: NOW - 1000 }, locations: { echo: 'home' } });
+    const { places } = setup('phone', {
+      activeAt: { pocket: NOW - 1000 },
+      locations: { echo: 'home' },
+    });
     // Urgent news: the phone counts as in use within 2 minutes.
     expect(urgentTarget(places.snapshot(), 'echo')).toBe('pocket');
-    const quiet = setup('phone', { activeAt: { pocket: NOW - URGENT_QUIET_MS + 1000 }, locations: { echo: 'home' } });
+    const quiet = setup('phone', {
+      activeAt: { pocket: NOW - URGENT_QUIET_MS + 1000 },
+      locations: { echo: 'home' },
+    });
     expect(urgentTarget(quiet.places.snapshot(), 'echo')).toBe('pocket');
-    const stale = setup('phone', { activeAt: { pocket: NOW - URGENT_QUIET_MS - 1000 }, locations: { echo: 'home' } });
+    const stale = setup('phone', {
+      activeAt: { pocket: NOW - URGENT_QUIET_MS - 1000 },
+      locations: { echo: 'home' },
+    });
     expect(urgentTarget(stale.places.snapshot(), 'echo')).toBeNull();
     // A move that is not 'wandered' is not asked of wanderRefusal at all.
     expect(places.startMove('echo', 'pocket', 'summoned').ok).toBe(true);
@@ -117,9 +174,17 @@ describe('phone rules: no unprompted wandering into a phone', () => {
     afterEach(() => vi.useRealTimers());
 
     function tickFor(kind: PlaceKind, active: Record<string, number>) {
-      const { places } = setup(kind, { activeAt: active, locations: { echo: 'next-door', sage: 'next-door' } });
+      const { places } = setup(kind, {
+        activeAt: active,
+        locations: { echo: 'next-door', sage: 'next-door' },
+      });
       const rng = vi.fn(() => 0);
-      const tick = new NextDoorReturn({ places, restlessness: () => 'normal', talkedAgoMs: () => null, rng });
+      const tick = new NextDoorReturn({
+        places,
+        restlessness: () => 'normal',
+        talkedAgoMs: () => null,
+        rng,
+      });
       return { tick, rng };
     }
 
@@ -153,7 +218,11 @@ describe('phone rules: a phone that goes away sends its avatars home after 2 min
 
   it('offline: 2 minutes for a phone, 60 seconds for a desktop and a browser', () => {
     expect(PHONE_OFFLINE_GRACE_MS).toBe(2 * 60_000);
-    for (const [kind, ms] of [['phone', PHONE_OFFLINE_GRACE_MS], ['desktop', OFFLINE_GRACE_MS], ['browser', OFFLINE_GRACE_MS]] as const) {
+    for (const [kind, ms] of [
+      ['phone', PHONE_OFFLINE_GRACE_MS],
+      ['desktop', OFFLINE_GRACE_MS],
+      ['browser', OFFLINE_GRACE_MS],
+    ] as const) {
       const { places } = setup(kind);
       walkIn(places);
       places.setOnline('pocket', false);
@@ -179,7 +248,15 @@ describe('phone rules: a phone that goes away sends its avatars home after 2 min
     const { places } = setup(kind);
     walkIn(places);
     const devices = new PlaceDevices({ places, presence: new PlacePresence() });
-    const state = (locked: boolean) => ({ op: 'device.state', mic: 'live', camera: 'off', speakers: 'live', locked, closed: false, fullscreen: false });
+    const state = (locked: boolean) => ({
+      op: 'device.state',
+      mic: 'live',
+      camera: 'off',
+      speakers: 'live',
+      locked,
+      closed: false,
+      fullscreen: false,
+    });
     return { places, devices, state };
   }
 

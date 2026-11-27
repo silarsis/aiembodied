@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { Place, PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { Place, PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { cameraPresenceOn } from '../../../main/src/shared/places/camera-setting.js';
 import { doorbellOn } from '../../../main/src/shared/places/doorbell-setting.js';
 import { deviceSummary } from './room-devices-status.js';
-import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
+import type {
+  PairingStart,
+  RoomHubBridge,
+  RoomHubStatus,
+} from '../../../main/src/shared/room-hub/bridge-types.js';
 
 const DEFAULT_ROOM_NAME = 'the study';
 
 function kindOf(place: Place): string {
   if (place.node === 'local') return 'This PC';
   if (place.node === 'offscreen') return 'Next door';
-  return place.kind === 'phone' ? 'Phone room' : place.kind === 'browser' ? 'Browser room' : 'Desktop room';
+  return place.kind === 'phone'
+    ? 'Phone room'
+    : place.kind === 'browser'
+      ? 'Browser room'
+      : 'Desktop room';
 }
 
 function secondsLeft(expiresAt: number, now: number): number {
@@ -77,7 +85,9 @@ export function PlacesPanel({
         .then((first) => {
           if (!cancelled) setStatus((current) => current ?? first);
         })
-        .catch((reason: unknown) => setError(errorText(reason, 'Could not read the desktop rooms.')));
+        .catch((reason: unknown) =>
+          setError(errorText(reason, 'Could not read the desktop rooms.')),
+        );
     }
     return () => {
       cancelled = true;
@@ -86,7 +96,8 @@ export function PlacesPanel({
   }, [roomHub, active]);
 
   // The code was used up on bija's side (the other PC paired): the status no longer lists it, and the code on screen goes too.
-  const codeGone = pairing !== null && seenCode === pairing.code && status !== null && status.pairing === null;
+  const codeGone =
+    pairing !== null && seenCode === pairing.code && status !== null && status.pairing === null;
   const left = pairing ? secondsLeft(pairing.expiresAt, now) : 0;
   const showCode = pairing !== null && !codeGone && left > 0;
 
@@ -124,13 +135,16 @@ export function PlacesPanel({
 
   const saveName = async (place: Place) => {
     const wanted = names[place.id];
-    setNames((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== place.id)));
+    setNames((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => id !== place.id)),
+    );
     if (!roomHub || wanted === undefined || !wanted.trim() || wanted.trim() === place.name) return;
     await run(() => roomHub.rename(place.id, wanted), 'Could not rename.');
   };
 
   const places = snapshot?.places ?? [];
-  const deviceOf = (place: Place) => status?.devices.find((device) => device.placeId === place.id) ?? null;
+  const deviceOf = (place: Place) =>
+    status?.devices.find((device) => device.placeId === place.id) ?? null;
 
   return (
     <div className="placesPanel">
@@ -142,7 +156,9 @@ export function PlacesPanel({
 
       <section aria-labelledby="places-list-title" className="toolsSettings__section">
         <h3 id="places-list-title">Places</h3>
-        {places.length === 0 ? <p className="kiosk__helper">Places are not available yet.</p> : null}
+        {places.length === 0 ? (
+          <p className="kiosk__helper">Places are not available yet.</p>
+        ) : null}
         <ul className="placesPanel__list">
           {places.map((place) => {
             const device = deviceOf(place);
@@ -153,13 +169,20 @@ export function PlacesPanel({
             return (
               <li key={place.id} className="placesPanel__place" aria-label={place.name}>
                 <div className="placesPanel__header">
-                  <span className="placesPanel__dot" data-online={online ? 'true' : 'false'} role="img" aria-label={online ? 'Online' : 'Offline'} />
+                  <span
+                    className="placesPanel__dot"
+                    data-online={online ? 'true' : 'false'}
+                    role="img"
+                    aria-label={online ? 'Online' : 'Offline'}
+                  />
                   <input
                     aria-label={`Name of ${place.name}`}
                     value={names[place.id] ?? place.name}
                     maxLength={80}
                     disabled={!roomHub}
-                    onChange={(event) => setNames((current) => ({ ...current, [place.id]: event.target.value }))}
+                    onChange={(event) =>
+                      setNames((current) => ({ ...current, [place.id]: event.target.value }))
+                    }
                     onBlur={() => void saveName(place)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') event.currentTarget.blur();
@@ -167,7 +190,9 @@ export function PlacesPanel({
                   />
                   <span className="kiosk__helper">{kindOf(place)}</span>
                 </div>
-                <p className="kiosk__helper">{here.length > 0 ? `Here: ${here.join(', ')}` : 'Nobody is here.'}</p>
+                <p className="kiosk__helper">
+                  {here.length > 0 ? `Here: ${here.join(', ')}` : 'Nobody is here.'}
+                </p>
                 {place.node !== 'offscreen' ? (
                   <label className="placesPanel__camera">
                     <input
@@ -175,7 +200,14 @@ export function PlacesPanel({
                       aria-label={`Camera presence in ${place.name}`}
                       checked={cameraPresenceOn(place)}
                       disabled={!roomHub?.setCamera}
-                      onChange={(event) => void run(() => roomHub?.setCamera?.(place.id, event.target.checked) ?? Promise.resolve(), 'Could not change camera presence.')}
+                      onChange={(event) =>
+                        void run(
+                          () =>
+                            roomHub?.setCamera?.(place.id, event.target.checked) ??
+                            Promise.resolve(),
+                          'Could not change camera presence.',
+                        )
+                      }
                     />{' '}
                     Camera presence
                     <span className="kiosk__helper">
@@ -193,7 +225,14 @@ export function PlacesPanel({
                       aria-label={`Doorbell in ${place.name}`}
                       checked={doorbellOn(place)}
                       disabled={!roomHub?.setDoorbell}
-                      onChange={(event) => void run(() => roomHub?.setDoorbell?.(place.id, event.target.checked) ?? Promise.resolve(), 'Could not change the doorbell.')}
+                      onChange={(event) =>
+                        void run(
+                          () =>
+                            roomHub?.setDoorbell?.(place.id, event.target.checked) ??
+                            Promise.resolve(),
+                          'Could not change the doorbell.',
+                        )
+                      }
                     />{' '}
                     Doorbell
                     <span className="kiosk__helper">
@@ -211,9 +250,17 @@ export function PlacesPanel({
                       aria-label={`Room shown in ${place.name}`}
                       value={place.room ?? ''}
                       disabled={!roomHub?.setRoom}
-                      onChange={(event) => void run(() => roomHub?.setRoom?.(place.id, event.target.value) ?? Promise.resolve(), 'Could not change the room.')}
+                      onChange={(event) =>
+                        void run(
+                          () =>
+                            roomHub?.setRoom?.(place.id, event.target.value) ?? Promise.resolve(),
+                          'Could not change the room.',
+                        )
+                      }
                     >
-                      {place.room && !roomChoices.some((choice) => choice.id === place.room) ? <option value={place.room}>{place.room}</option> : null}
+                      {place.room && !roomChoices.some((choice) => choice.id === place.room) ? (
+                        <option value={place.room}>{place.room}</option>
+                      ) : null}
                       {roomChoices.map((choice) => (
                         <option key={choice.id} value={choice.id}>
                           {choice.name} ({choice.kind})
@@ -225,7 +272,11 @@ export function PlacesPanel({
                 {place.node !== 'local' && place.node !== 'offscreen' ? (
                   <div className="placesPanel__device">
                     {device ? (
-                      <span className="placesPanel__kind" data-testid={`device-kind-${place.id}`} title="What kind of device this room is">
+                      <span
+                        className="placesPanel__kind"
+                        data-testid={`device-kind-${place.id}`}
+                        title="What kind of device this room is"
+                      >
                         {KIND_WORDS[device.kind ?? 'desktop']}
                       </span>
                     ) : null}
@@ -240,7 +291,16 @@ export function PlacesPanel({
                       </span>
                     ) : null}
                     {device ? (
-                      <button type="button" onClick={() => void run(() => roomHub?.revoke(device.id) ?? Promise.resolve(), 'Could not revoke.')} aria-label={`Revoke ${place.name}`}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void run(
+                            () => roomHub?.revoke(device.id) ?? Promise.resolve(),
+                            'Could not revoke.',
+                          )
+                        }
+                        aria-label={`Revoke ${place.name}`}
+                      >
                         Revoke
                       </button>
                     ) : null}
@@ -263,7 +323,10 @@ export function PlacesPanel({
           <p className="kiosk__helper">Desktop rooms need a newer app build.</p>
         ) : showCode && pairing ? (
           <div className="placesPanel__pairing" data-testid="pairing-code">
-            <p className="kiosk__helper">On the other PC, install it with install-windows.ps1 -Role satellite, run pnpm satellite, and enter this code and one of these addresses.</p>
+            <p className="kiosk__helper">
+              On the other PC, install it with install-windows.ps1 -Role satellite, run pnpm
+              satellite, and enter this code and one of these addresses.
+            </p>
             <strong className="placesPanel__code" aria-label="Pairing code">
               {pairing.code}
             </strong>
@@ -279,7 +342,10 @@ export function PlacesPanel({
                 ))}
               </ul>
             ) : (
-              <p className="kiosk__helper">No Tailscale address was found on this PC. Start Tailscale on both PCs, then make a new code.</p>
+              <p className="kiosk__helper">
+                No Tailscale address was found on this PC. Start Tailscale on both PCs, then make a
+                new code.
+              </p>
             )}
             <button type="button" onClick={() => void cancel()}>
               Cancel
@@ -289,7 +355,12 @@ export function PlacesPanel({
           <form className="toolsSettings__add" onSubmit={(event) => void makeCode(event)}>
             <label>
               Name of the room
-              <input value={adding} onChange={(event) => setAdding(event.target.value)} placeholder={DEFAULT_ROOM_NAME} maxLength={80} />
+              <input
+                value={adding}
+                onChange={(event) => setAdding(event.target.value)}
+                placeholder={DEFAULT_ROOM_NAME}
+                maxLength={80}
+              />
             </label>
             <div className="toolsSettings__actions">
               <button type="submit">Make a code</button>
@@ -300,7 +371,11 @@ export function PlacesPanel({
           </form>
         ) : (
           <>
-            {pairing ? <p className="kiosk__helper">{codeGone ? 'The other PC is paired.' : 'That code has expired.'}</p> : null}
+            {pairing ? (
+              <p className="kiosk__helper">
+                {codeGone ? 'The other PC is paired.' : 'That code has expired.'}
+              </p>
+            ) : null}
             <button
               type="button"
               onClick={() => {

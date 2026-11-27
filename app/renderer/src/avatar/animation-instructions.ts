@@ -40,18 +40,18 @@ export function buildAnimationInstructions(
 ): string {
   const animList = availableAnimations.length > 0 ? availableAnimations.join(', ') : 'none';
   const poseList = availablePoses.length > 0 ? availablePoses.join(', ') : 'none';
-  const moveInstructions = liveMotionAvailable
-    ? MOVE_INSTRUCTION_LINES
-    : [];
+  const moveInstructions = liveMotionAvailable ? MOVE_INSTRUCTION_LINES : [];
   const tagText = [
     `${ANIMATION_INSTRUCTION_PREFIX} ${animList}.`,
     `Available poses: ${poseList}.`,
     'You have a 3D body you can control through animations or poses.',
     'To trigger an animation, include `{anim:<slug>}` in your response (e.g. `{anim:happy-wave}`).',
     'To apply a pose, include `{pose:<slug>}` in your response (e.g. `{pose:power-stance}`).',
-    ...(availablePoses.includes('relaxed-neutral') ? [
-      'Your base stances are relaxed-neutral, happiness, sadness, anger, fear, disgust, and surprise. Choose an available pose when it suits your emotion or the user asks for it. Use {pose:relaxed-neutral} to return to your relaxed stance.',
-    ] : []),
+    ...(availablePoses.includes('relaxed-neutral')
+      ? [
+          'Your base stances are relaxed-neutral, happiness, sadness, anger, fear, disgust, and surprise. Choose an available pose when it suits your emotion or the user asks for it. Use {pose:relaxed-neutral} to return to your relaxed stance.',
+        ]
+      : []),
     ...moveInstructions,
     'Multiple tags are allowed. Slug format: lowercase letters, numbers, and hyphens.',
   ].join(' ');

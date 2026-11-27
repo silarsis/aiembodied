@@ -5,7 +5,7 @@
  * Measured in object-local space first (y up from the object's floor contact, tag facing in degrees, 0 = +Z),
  * then moved to the world by `seatGeometryToWorld`.
  */
-import type { SitTag, Vec3 } from '../../../main/src/rooms/types.js';
+import type { SitTag, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { degToRad } from './room-geometry.js';
 import { shapeTopAt, type LocalShape } from './room-shapes.js';
 
@@ -118,7 +118,11 @@ export function applySeatOverrides(measured: SeatGeometry, seat: SitTag['seat'])
     ...measured,
     seatTopY: seat.top ?? measured.seatTopY,
     frontEdge,
-    depth: seat.depth ?? (seat.frontEdge !== undefined ? measured.depth - measured.frontEdge + frontEdge : measured.depth),
+    depth:
+      seat.depth ??
+      (seat.frontEdge !== undefined
+        ? measured.depth - measured.frontEdge + frontEdge
+        : measured.depth),
   };
 }
 
@@ -136,7 +140,9 @@ export function seatGeometryToWorld(
     seatTopY: local.seatTopY + y,
     frontEdge: local.frontEdge,
     depth: local.depth,
-    backRest: local.backRest ? { distance: local.backRest.distance, top: local.backRest.top + y } : null,
+    backRest: local.backRest
+      ? { distance: local.backRest.distance, top: local.backRest.top + y }
+      : null,
     footFloorY: local.footFloorY + y,
     position: [
       object.position[0] + tag.position[0] * cos + tag.position[2] * sin,

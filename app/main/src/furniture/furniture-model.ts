@@ -4,7 +4,7 @@
  * baked into a new root node, so any consumer gets metres without scaling it.
  */
 import { glbBounds, parseGlb, type Bounds } from '../rooms/asset-library/gltf-bounds.js';
-import type { FurnitureFit } from './types.js';
+import type { FurnitureFit } from '../shared/furniture/types.js';
 
 type Vec3 = [number, number, number];
 
@@ -16,12 +16,21 @@ const round = (n: number): number => Math.round(n * 1000) / 1000;
 
 /** The scale that makes the height `height` metres, the offset that grounds and centres the result, and its size. */
 export function fitBounds(bounds: Bounds, height: number): FurnitureFit & { dimensions: Vec3 } {
-  if (!(bounds.size[1] > 1e-6) || !(height > 0)) throw new Error('The model has no height to scale.');
+  if (!(bounds.size[1] > 1e-6) || !(height > 0))
+    throw new Error('The model has no height to scale.');
   const scale = height / bounds.size[1];
   return {
     scale,
-    offset: [-((bounds.min[0] + bounds.max[0]) / 2) * scale, -bounds.min[1] * scale, -((bounds.min[2] + bounds.max[2]) / 2) * scale],
-    dimensions: [round(bounds.size[0] * scale), round(bounds.size[1] * scale), round(bounds.size[2] * scale)],
+    offset: [
+      -((bounds.min[0] + bounds.max[0]) / 2) * scale,
+      -bounds.min[1] * scale,
+      -((bounds.min[2] + bounds.max[2]) / 2) * scale,
+    ],
+    dimensions: [
+      round(bounds.size[0] * scale),
+      round(bounds.size[1] * scale),
+      round(bounds.size[2] * scale),
+    ],
   };
 }
 
@@ -44,7 +53,11 @@ export function writeGlb(json: Record<string, unknown>, bin: Buffer | null): Buf
     head.writeUInt32LE(type, 4);
     return Buffer.concat([head, body]);
   };
-  return Buffer.concat([header, chunk(CHUNK_JSON, jsonChunk), ...(binChunk ? [chunk(CHUNK_BIN, binChunk)] : [])]);
+  return Buffer.concat([
+    header,
+    chunk(CHUNK_JSON, jsonChunk),
+    ...(binChunk ? [chunk(CHUNK_BIN, binChunk)] : []),
+  ]);
 }
 
 /** The same model under a new root node carrying the scale and translation. */
@@ -59,7 +72,12 @@ export function bakeTransform(glb: Buffer, fit: FurnitureFit): Buffer {
   const scene = json.scenes?.[json.scene ?? 0];
   if (!scene) throw new Error('The model has no scene to scale.');
   const nodes = json.nodes ?? (json.nodes = []);
-  nodes.push({ name: 'furniture', children: scene.nodes ?? [], scale: [fit.scale, fit.scale, fit.scale], translation: fit.offset });
+  nodes.push({
+    name: 'furniture',
+    children: scene.nodes ?? [],
+    scale: [fit.scale, fit.scale, fit.scale],
+    translation: fit.offset,
+  });
   scene.nodes = [nodes.length - 1];
   return writeGlb(parsed.json, parsed.bin);
 }
@@ -73,7 +91,8 @@ export interface FittedModel extends FurnitureFit {
 /** Scales a raw GLB to `height` metres tall, standing on y=0. Throws when it holds no usable mesh. */
 export function fitGlb(raw: Buffer, height: number): FittedModel {
   const bounds = glbBounds(raw);
-  if (!bounds || !bounds.size.every((n) => Number.isFinite(n) && n > 1e-3)) throw new Error('The 3D step did not produce a usable model.');
+  if (!bounds || !bounds.size.every((n) => Number.isFinite(n) && n > 1e-3))
+    throw new Error('The 3D step did not produce a usable model.');
   const { dimensions, ...fit } = fitBounds(bounds, height);
   return { ...fit, dimensions, glb: bakeTransform(raw, fit) };
 }

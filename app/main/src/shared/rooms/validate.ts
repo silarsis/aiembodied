@@ -1,4 +1,4 @@
-import type { RoomFile } from '../../rooms/types.js';
+import type { RoomFile } from './types.js';
 
 const WALLS = ['north', 'south', 'east', 'west'];
 const LIGHTS = ['ambient', 'directional', 'point', 'hemisphere'];
@@ -90,7 +90,8 @@ export function validateRoomFile(raw: unknown): RoomFile {
     if (typeof light.type !== 'string' || !LIGHTS.includes(light.type))
       fail(`${where}.type`, 'is not a known light type');
     color(light.color, `${where}.color`);
-    if (num(light.intensity, `${where}.intensity`) < 0) fail(`${where}.intensity`, 'cannot be negative');
+    if (num(light.intensity, `${where}.intensity`) < 0)
+      fail(`${where}.intensity`, 'cannot be negative');
     if (light.position !== undefined) vec3(light.position, `${where}.position`);
     if (light.groundColor !== undefined) color(light.groundColor, `${where}.groundColor`);
   });
@@ -118,7 +119,12 @@ export function validateRoomFile(raw: unknown): RoomFile {
     str(object.name, `${where}.name`);
     vec3(object.position, `${where}.position`);
     const position = object.position as number[];
-    if (Math.abs(position[0]) > halfW || Math.abs(position[2]) > halfD || position[1] < 0 || position[1] > height)
+    if (
+      Math.abs(position[0]) > halfW ||
+      Math.abs(position[2]) > halfD ||
+      position[1] < 0 ||
+      position[1] > height
+    )
       fail(`${where}.position`, 'is outside the room');
     if (object.rotationY !== undefined) num(object.rotationY, `${where}.rotationY`);
     vec3(object.size, `${where}.size`);
@@ -136,7 +142,7 @@ export function validateRoomFile(raw: unknown): RoomFile {
         if (typeof model.asset !== 'string' || !ASSET_REF.test(model.asset))
           fail(`${where}.model.asset`, 'must look like polyhaven/<id> or generated/<folder>');
       }
-      if (model.scale !== undefined && (positive(model.scale, `${where}.model.scale`) > 20))
+      if (model.scale !== undefined && positive(model.scale, `${where}.model.scale`) > 20)
         fail(`${where}.model.scale`, 'is too large');
     }
     if (object.parts !== undefined) {
@@ -167,15 +173,22 @@ export function validateRoomFile(raw: unknown): RoomFile {
         if (key === 'sit' && tag.seat !== undefined) {
           const seat = record(tag.seat, `${where}.tags.sit.seat`);
           if (seat.top !== undefined) num(seat.top, `${where}.tags.sit.seat.top`);
-          if (seat.frontEdge !== undefined) positive(seat.frontEdge, `${where}.tags.sit.seat.frontEdge`);
+          if (seat.frontEdge !== undefined)
+            positive(seat.frontEdge, `${where}.tags.sit.seat.frontEdge`);
           if (seat.depth !== undefined) positive(seat.depth, `${where}.tags.sit.seat.depth`);
         }
       }
-      if (tags.grab !== undefined) vec3(record(tags.grab, `${where}.tags.grab`).position, `${where}.tags.grab.position`);
-      if (tags.look !== undefined) vec3(record(tags.look, `${where}.tags.look`).position, `${where}.tags.look.position`);
+      if (tags.grab !== undefined)
+        vec3(record(tags.grab, `${where}.tags.grab`).position, `${where}.tags.grab.position`);
+      if (tags.look !== undefined)
+        vec3(record(tags.look, `${where}.tags.look`).position, `${where}.tags.look.position`);
       if (tags.surface !== undefined)
-        positive(record(tags.surface, `${where}.tags.surface`).height, `${where}.tags.surface.height`);
-      if (tags.idle !== undefined && typeof tags.idle !== 'string') fail(`${where}.tags.idle`, 'must be text');
+        positive(
+          record(tags.surface, `${where}.tags.surface`).height,
+          `${where}.tags.surface.height`,
+        );
+      if (tags.idle !== undefined && typeof tags.idle !== 'string')
+        fail(`${where}.tags.idle`, 'must be text');
     }
   });
   return raw as RoomFile;

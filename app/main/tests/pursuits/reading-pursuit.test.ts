@@ -1,8 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runPursuit } from '../../src/pursuits/pursuit.js';
 import { LlmGate, PursuitLlm } from '../../src/pursuits/pursuit-llm.js';
-import { CHUNK_CHARS, MAX_CHUNKS, ReadingPursuit, readingGuidance, type ReadingPursuitDeps } from '../../src/pursuits/reading-pursuit.js';
-import { FakeChat, MemoryNotes, executorFor, libraryTool, type Reply, type SeenCall } from './fakes.js';
+import {
+  CHUNK_CHARS,
+  MAX_CHUNKS,
+  ReadingPursuit,
+  readingGuidance,
+  type ReadingPursuitDeps,
+} from '../../src/pursuits/reading-pursuit.js';
+import {
+  FakeChat,
+  MemoryNotes,
+  executorFor,
+  libraryTool,
+  type Reply,
+  type SeenCall,
+} from './fakes.js';
 
 const PAPER_LINK = 'https://academy.example/papers/memory-agents';
 
@@ -13,23 +26,44 @@ function script(options: { paperText?: string; next?: string } = {}) {
     const user = [...call.messages].reverse().find((m) => m.role === 'user');
     const text = user && 'content' in user ? user.content : '';
     const afterTool = last?.role === 'tool';
-    if (text.includes('What do you feel like reading about')) return { text: 'I want to read about how agents keep memories.' };
+    if (text.includes('What do you feel like reading about'))
+      return { text: 'I want to read about how agents keep memories.' };
     if (text.includes('Look in the library now')) {
-      return afterTool ? { text: 'Found a few.' } : { calls: [{ name: 'search_papers', arguments: { query: 'agent memory' } }] };
+      return afterTool
+        ? { text: 'Found a few.' }
+        : { calls: [{ name: 'search_papers', arguments: { query: 'agent memory' } }] };
     }
-    if (text.includes('Choose ONE thing')) return { text: `PICK: Memory for Agents | ${PAPER_LINK} | It is about exactly what I wonder about.` };
+    if (text.includes('Choose ONE thing'))
+      return {
+        text: `PICK: Memory for Agents | ${PAPER_LINK} | It is about exactly what I wonder about.`,
+      };
     if (text.includes('Fetch its full text')) {
-      return afterTool ? { text: 'Got it.' } : { calls: [{ name: 'get_paper', arguments: { url: PAPER_LINK } }] };
+      return afterTool
+        ? { text: 'Got it.' }
+        : { calls: [{ name: 'get_paper', arguments: { url: PAPER_LINK } }] };
     }
     if (text.includes('Write your notes')) {
-      return { text: 'TAKEAWAY: Agents need forgetting too.\nOPINION: Convincing.\nKEVIN: Kevin is building a memory engine.\nQUESTIONS: How do they decide what fades? | Is it cheap?' };
+      return {
+        text: 'TAKEAWAY: Agents need forgetting too.\nOPINION: Convincing.\nKEVIN: Kevin is building a memory engine.\nQUESTIONS: How do they decide what fades? | Is it cheap?',
+      };
     }
-    if (text.includes('Do you want to read more')) return { text: options.next ?? 'NEXT: stop\nTELL: Kevin, there is a paper on forgetting you would like.' };
+    if (text.includes('Do you want to read more'))
+      return {
+        text:
+          options.next ?? 'NEXT: stop\nTELL: Kevin, there is a paper on forgetting you would like.',
+      };
     return { text: 'summary so far' };
   };
 }
 
-function setup(options: { paperText?: string; next?: string; respond?: (call: SeenCall, index: number) => Reply; toolCalls?: number } = {}) {
+function setup(
+  options: {
+    paperText?: string;
+    next?: string;
+    respond?: (call: SeenCall, index: number) => Reply;
+    toolCalls?: number;
+  } = {},
+) {
   const chat = new FakeChat(options.respond ?? script(options));
   const searches: unknown[] = [];
   const tools = [
@@ -84,7 +118,9 @@ describe('ReadingPursuit', () => {
     expect(JSON.stringify(chat.seen[0].messages[0])).toContain('Sage persona.');
     // The search round offered the station tools; the choice round did not.
     expect(chat.seen[1].tools.map((t) => t.function.name)).toEqual(['search_papers', 'get_paper']);
-    const chooseIndex = chat.seen.findIndex((c) => JSON.stringify(c.messages).includes('Choose ONE thing'));
+    const chooseIndex = chat.seen.findIndex((c) =>
+      JSON.stringify(c.messages).includes('Choose ONE thing'),
+    );
     expect(chat.seen[chooseIndex].tools).toEqual([]);
 
     // The note is in its own voice, with the link, and went to memory too.
@@ -112,7 +148,8 @@ describe('ReadingPursuit', () => {
       respond: (call, index) => {
         const user = [...call.messages].reverse().find((m) => m.role === 'user');
         const text = user && 'content' in user ? user.content : '';
-        if (text.includes('Do you want to read more')) return { text: round++ === 0 ? 'NEXT: continue\nTELL: none' : 'NEXT: stop\nTELL: none' };
+        if (text.includes('Do you want to read more'))
+          return { text: round++ === 0 ? 'NEXT: continue\nTELL: none' : 'NEXT: stop\nTELL: none' };
         return base(call, index);
       },
     });
@@ -129,13 +166,16 @@ describe('ReadingPursuit', () => {
       respond: (call, index) => {
         const user = [...call.messages].reverse().find((m) => m.role === 'user');
         const text = user && 'content' in user ? user.content : '';
-        if (text.includes('Choose ONE thing') && chooses++ === 0) return { text: 'REFINE: papers on forgetting in memory systems' };
+        if (text.includes('Choose ONE thing') && chooses++ === 0)
+          return { text: 'REFINE: papers on forgetting in memory systems' };
         return base(call, index);
       },
     });
     await runPursuit(pursuit, { signal: new AbortController().signal });
     expect(searches).toHaveLength(2);
-    const second = chat.seen.find((c) => JSON.stringify(c.messages).includes('papers on forgetting in memory systems'));
+    const second = chat.seen.find((c) =>
+      JSON.stringify(c.messages).includes('papers on forgetting in memory systems'),
+    );
     expect(second).toBeDefined();
   });
 
@@ -146,10 +186,13 @@ describe('ReadingPursuit', () => {
     const parts = chat.seen.filter((c) => JSON.stringify(c.messages).includes('running summary'));
     expect(parts).toHaveLength(MAX_CHUNKS);
     // Each prompt fits: one chunk plus the summary and the question.
-    for (const part of parts) expect(JSON.stringify(part.messages).length).toBeLessThan(CHUNK_CHARS + 2500);
+    for (const part of parts)
+      expect(JSON.stringify(part.messages).length).toBeLessThan(CHUNK_CHARS + 2500);
     // The second part sees the first part's summary, not the first part's text.
     expect(JSON.stringify(parts[1].messages)).toContain('summary so far');
-    expect(notes.notes[0].takeaway).toContain(`I only read the first ${MAX_CHUNKS} of ${MAX_CHUNKS + 2} parts.`);
+    expect(notes.notes[0].takeaway).toContain(
+      `I only read the first ${MAX_CHUNKS} of ${MAX_CHUNKS + 2} parts.`,
+    );
   });
 
   it('stops when two wishes in a row find nothing', async () => {
@@ -158,7 +201,8 @@ describe('ReadingPursuit', () => {
         const user = [...call.messages].reverse().find((m) => m.role === 'user');
         const text = user && 'content' in user ? user.content : '';
         if (text.includes('What do you feel like')) return { text: 'I want to read something.' };
-        if (text.includes('Look in the library now')) return { text: 'There is nothing I can think of.' };
+        if (text.includes('Look in the library now'))
+          return { text: 'There is nothing I can think of.' };
         return { text: 'NEXT: continue' };
       },
     });
@@ -166,7 +210,9 @@ describe('ReadingPursuit', () => {
     expect(result.end).toBe('finished');
     expect(notes.notes).toHaveLength(0);
     // Two empty wishes: no "do you want to read more" question was needed after the second.
-    expect(chat.seen.filter((c) => JSON.stringify(c.messages).includes('Do you want to read more'))).toHaveLength(1);
+    expect(
+      chat.seen.filter((c) => JSON.stringify(c.messages).includes('Do you want to read more')),
+    ).toHaveLength(1);
   });
 
   it('limits tool calls for the whole session', async () => {
@@ -178,7 +224,9 @@ describe('ReadingPursuit', () => {
 
   it('keeps what it had read when the session is cut short mid-note (partial note)', async () => {
     const controller = new AbortController();
-    const { chat, pursuit, notes, saved } = setup({ paperText: 'Short paper text about forgetting.' });
+    const { chat, pursuit, notes, saved } = setup({
+      paperText: 'Short paper text about forgetting.',
+    });
     // The model call that would write the note never returns until Kevin starts talking.
     const noteCall = 6;
     chat.holdOn.add(noteCall);
@@ -212,7 +260,8 @@ describe('ReadingPursuit', () => {
       respond: (call, index) => {
         const user = [...call.messages].reverse().find((m) => m.role === 'user');
         const text = user && 'content' in user ? user.content : '';
-        if (text.includes('Do you want to read more')) return { text: 'NEXT: continue\nTELL: Look at this.' };
+        if (text.includes('Do you want to read more'))
+          return { text: 'NEXT: continue\nTELL: Look at this.' };
         return base(call, index);
       },
     });
@@ -226,7 +275,10 @@ describe('LlmGate', () => {
     const gate = new LlmGate(1);
     const order: string[] = [];
     let release!: () => void;
-    const first = gate.run(new AbortController().signal, () => new Promise<void>((resolve) => ((release = resolve), order.push('first start'))));
+    const first = gate.run(
+      new AbortController().signal,
+      () => new Promise<void>((resolve) => ((release = resolve), order.push('first start'))),
+    );
     const controller = new AbortController();
     const second = gate.run(controller.signal, async () => void order.push('second'));
     const third = gate.run(new AbortController().signal, async () => void order.push('third'));

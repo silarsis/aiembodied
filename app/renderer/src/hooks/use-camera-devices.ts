@@ -27,7 +27,11 @@ export function useCameraDevices() {
     if (!navigator.mediaDevices?.enumerateDevices) return;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      setCameras(devices.filter((device) => device.kind === 'videoinput').map((device) => ({ deviceId: device.deviceId, label: device.label || 'Camera' })));
+      setCameras(
+        devices
+          .filter((device) => device.kind === 'videoinput')
+          .map((device) => ({ deviceId: device.deviceId, label: device.label || 'Camera' })),
+      );
     } catch {
       setCameras([]);
     }

@@ -1,8 +1,13 @@
 /** Fakes for the pursuit tests: a scripted chat model, library tools and an in-memory note store. */
-import type { ChatMessage, LlmStreamPart, LlmToolDefinition } from '../../src/local-voice/local-llm-client.js';
+import type {
+  ChatMessage,
+  LlmStreamPart,
+  LlmToolDefinition,
+} from '../../src/local-voice/local-llm-client.js';
 import type { ChatClient } from '../../src/local-voice/voice-engines.js';
 import type { RegisteredTool } from '../../src/tools/tool-registry.js';
-import type { NewReadingNote, ReadingNote, ReadingNoteStore } from '../../src/pursuits/types.js';
+import type { NewReadingNote, ReadingNoteStore } from '../../src/pursuits/types.js';
+import type { ReadingNote } from '../../src/shared/pursuits/types.js';
 
 export interface Reply {
   text?: string;
@@ -33,14 +38,19 @@ export class FakeChat implements ChatClient {
     return true;
   }
 
-  async *streamChat(messages: ChatMessage[], options: { signal?: AbortSignal; tools?: LlmToolDefinition[] } = {}): AsyncGenerator<LlmStreamPart> {
+  async *streamChat(
+    messages: ChatMessage[],
+    options: { signal?: AbortSignal; tools?: LlmToolDefinition[] } = {},
+  ): AsyncGenerator<LlmStreamPart> {
     const index = this.n++;
     const call: SeenCall = { messages: structuredClone(messages), tools: options.tools ?? [] };
     this.seen.push(call);
     if (this.holdOn.has(index)) {
       await new Promise<void>((_resolve, reject) => {
         if (options.signal?.aborted) reject(options.signal.reason);
-        options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+        options.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+          once: true,
+        });
       });
     }
     options.signal?.throwIfAborted();
@@ -49,7 +59,11 @@ export class FakeChat implements ChatClient {
     if (reply.calls?.length) {
       yield {
         type: 'tool_calls',
-        calls: reply.calls.map((c, i) => ({ id: `call_${index}_${i}`, name: c.name, arguments: JSON.stringify(c.arguments ?? {}) })),
+        calls: reply.calls.map((c, i) => ({
+          id: `call_${index}_${i}`,
+          name: c.name,
+          arguments: JSON.stringify(c.arguments ?? {}),
+        })),
       };
     }
   }
@@ -61,7 +75,11 @@ export class FakeChat implements ChatClient {
   }
 }
 
-export function libraryTool(name: string, run: (params: unknown) => unknown, overrides: Partial<RegisteredTool> = {}): RegisteredTool {
+export function libraryTool(
+  name: string,
+  run: (params: unknown) => unknown,
+  overrides: Partial<RegisteredTool> = {},
+): RegisteredTool {
   return {
     id: `srv-1:${name}`,
     serverId: 'srv-1',
@@ -84,7 +102,11 @@ export function executorFor(tools: RegisteredTool[]) {
     try {
       return { success: true, data: await tool.execute(params), durationMs: 1 };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error), durationMs: 1 };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: 1,
+      };
     }
   };
 }
@@ -94,12 +116,19 @@ export class MemoryNotes implements ReadingNoteStore {
   private id = 0;
 
   addReadingNote(note: NewReadingNote): ReadingNote {
-    const saved: ReadingNote = { ...note, id: `n${++this.id}`, createdAt: note.createdAt ?? 1000 + this.id };
+    const saved: ReadingNote = {
+      ...note,
+      id: `n${++this.id}`,
+      createdAt: note.createdAt ?? 1000 + this.id,
+    };
     this.notes.push(saved);
     return saved;
   }
 
   listReadingNotes(avatarId: string, limit = 20): ReadingNote[] {
-    return this.notes.filter((note) => note.avatarId === avatarId).reverse().slice(0, limit);
+    return this.notes
+      .filter((note) => note.avatarId === avatarId)
+      .reverse()
+      .slice(0, limit);
   }
 }

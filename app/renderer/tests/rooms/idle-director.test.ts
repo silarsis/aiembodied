@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_IDLE_SETTINGS, type IdleSettings } from '../../../main/src/shared/rooms/idle-settings.js';
-import type { IdlePickContext, IdlePickResult } from '../../../main/src/rooms/types.js';
+import {
+  DEFAULT_IDLE_SETTINGS,
+  type IdleSettings,
+} from '../../../main/src/shared/rooms/idle-settings.js';
+import type { IdlePickContext, IdlePickResult } from '../../../main/src/shared/rooms/types.js';
 import {
   FIRST_ACTION_DELAY_MS,
   IdleDirector,
@@ -37,7 +40,9 @@ class Clock {
   async advance(ms: number): Promise<void> {
     const end = this.time + ms;
     for (;;) {
-      const due = this.timers.filter((timer) => timer.at <= end).sort((a, b) => a.at - b.at || a.id - b.id)[0];
+      const due = this.timers
+        .filter((timer) => timer.at <= end)
+        .sort((a, b) => a.at - b.at || a.id - b.id)[0];
       if (!due) break;
       this.timers = this.timers.filter((timer) => timer !== due);
       this.time = Math.max(this.time, due.at);
@@ -107,7 +112,9 @@ function setup(overrides: Partial<IdleDirectorDeps> = {}): Setup {
   const settings: IdleSettings = { ...DEFAULT_IDLE_SETTINGS };
   const room: Setup['room'] = { current: reading };
   const motion = { ready: true };
-  const reply: Setup['reply'] = { current: async () => ({ text: '{go:bookshelf}{move:browses the books}' }) };
+  const reply: Setup['reply'] = {
+    current: async () => ({ text: '{go:bookshelf}{move:browses the books}' }),
+  };
   const random = { values: [0.5] };
   let i = 0;
   const director = new IdleDirector({
@@ -351,7 +358,9 @@ describe('IdleDirector log', () => {
     s.settings.restlessness = 'restless';
     s.director.start();
     await s.clock.advance(FIRST_ACTION_DELAY_MS);
-    expect(s.director.recent()).toEqual([{ at: s.clock.now(), text: 'walked to the bookshelf (browses the books)' }]);
+    expect(s.director.recent()).toEqual([
+      { at: s.clock.now(), text: 'walked to the bookshelf (browses the books)' },
+    ]);
     expect(s.director.recentSummary()).toBe('walked to the bookshelf (browses the books)');
 
     s.reply.current = async () => ({ text: '{sit:armchair}' });
@@ -386,7 +395,9 @@ describe('IdleDirector conversation note', () => {
     expect(notes).toHaveLength(1); // unchanged, so not published again
 
     await s.clock.advance(FIRST_ACTION_DELAY_MS + 5_000);
-    expect(notes.at(-1)).toBe('walked to the bookshelf (browses the books); sat down on the armchair');
+    expect(notes.at(-1)).toBe(
+      'walked to the bookshelf (browses the books); sat down on the armchair',
+    );
 
     // After ten minutes with no new action it is empty again, published at the next quiet moment.
     s.settings.enabled = false;
@@ -420,7 +431,9 @@ describe('IdleDirector when talking starts', () => {
     expect(s.executor.plans).toHaveLength(0);
     await s.clock.advance(200);
     expect(s.executor.plans).toHaveLength(1);
-    expect(s.executor.plans[0]?.build(s.executor.world(), s.executor.state)).toEqual([{ kind: 'come' }]);
+    expect(s.executor.plans[0]?.build(s.executor.world(), s.executor.state)).toEqual([
+      { kind: 'come' },
+    ]);
     // Once handled, talking again does not queue it again until the avatar has wandered again.
     s.executor.interrupt();
     await s.clock.advance(TALK_SETTLE_MS + 100);
@@ -439,6 +452,8 @@ describe('IdleDirector when talking starts', () => {
     await s.clock.advance(TALK_SETTLE_MS + 100);
     expect(s.executor.plans).toHaveLength(1);
     s.executor.position = { x: -2, z: -1, yaw: Math.PI };
-    expect(s.executor.plans[0]?.build(s.executor.world(), s.executor.state)).toMatchObject([{ kind: 'lookAtPoint' }]);
+    expect(s.executor.plans[0]?.build(s.executor.world(), s.executor.state)).toMatchObject([
+      { kind: 'lookAtPoint' },
+    ]);
   });
 });

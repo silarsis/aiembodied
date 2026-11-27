@@ -4,8 +4,13 @@ import { useIdleHabits } from '../../src/avatar/use-idle-habits.js';
 
 describe('useIdleHabits', () => {
   it('loads the character’s habits, reloads for another character and saves trimmed text of at most 500 characters', async () => {
-    const api = { getIdleHabits: vi.fn().mockResolvedValue('Sits by the window.'), setIdleHabits: vi.fn().mockResolvedValue(undefined) };
-    const { result, rerender } = renderHook(({ id }: { id?: string }) => useIdleHabits(api, id), { initialProps: { id: 'mei' } });
+    const api = {
+      getIdleHabits: vi.fn().mockResolvedValue('Sits by the window.'),
+      setIdleHabits: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result, rerender } = renderHook(({ id }: { id?: string }) => useIdleHabits(api, id), {
+      initialProps: { id: 'mei' },
+    });
     await waitFor(() => expect(result.current.habits).toBe('Sits by the window.'));
     expect(result.current.available).toBe(true);
 
@@ -32,7 +37,10 @@ describe('useIdleHabits', () => {
   it('survives a failing bridge', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const api = { getIdleHabits: vi.fn().mockRejectedValue(new Error('no')), setIdleHabits: vi.fn().mockRejectedValue(new Error('no')) };
+    const api = {
+      getIdleHabits: vi.fn().mockRejectedValue(new Error('no')),
+      setIdleHabits: vi.fn().mockRejectedValue(new Error('no')),
+    };
     const { result } = renderHook(() => useIdleHabits(api, 'mei'));
     await waitFor(() => expect(api.getIdleHabits).toHaveBeenCalled());
     await act(async () => result.current.save());

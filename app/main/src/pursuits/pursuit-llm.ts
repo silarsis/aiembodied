@@ -84,8 +84,12 @@ export function tidyReply(text: string): string {
 export function resultText(data: unknown): string {
   if (typeof data === 'string') return data;
   if (data && typeof data === 'object' && Array.isArray((data as { content?: unknown }).content)) {
-    const parts = ((data as { content: unknown[] }).content)
-      .map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string' ? (part as { text: string }).text : ''))
+    const parts = (data as { content: unknown[] }).content
+      .map((part) =>
+        part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+          ? (part as { text: string }).text
+          : '',
+      )
       .filter(Boolean);
     if (parts.length > 0) return parts.join('\n');
   }
@@ -113,7 +117,14 @@ export interface PursuitLlmOptions {
   /** Counts one tool call against the session's limit; false when the limit is used up. */
   allowToolCall: () => boolean;
   /** Told about every tool call once it has run (for the log): the name, the arguments, how long it took and how it went. */
-  onToolCall?: (call: { name: string; arguments: string; durationMs: number; ok: boolean; resultLength: number; error?: string }) => void;
+  onToolCall?: (call: {
+    name: string;
+    arguments: string;
+    durationMs: number;
+    ok: boolean;
+    resultLength: number;
+    error?: string;
+  }) => void;
 }
 
 export class PursuitLlm {
@@ -121,7 +132,14 @@ export class PursuitLlm {
 
   /** One model call with no tools: the reply text, thinking and avatar tags removed. */
   async ask(user: string, signal: AbortSignal): Promise<string> {
-    const { text } = await this.round([{ role: 'system', content: this.options.system() }, { role: 'user', content: user }], [], signal);
+    const { text } = await this.round(
+      [
+        { role: 'system', content: this.options.system() },
+        { role: 'user', content: user },
+      ],
+      [],
+      signal,
+    );
     return text;
   }
 
@@ -150,27 +168,44 @@ export class PursuitLlm {
       messages.push({
         role: 'assistant',
         content: reply.text,
-        tool_calls: reply.calls.map((call) => ({ id: call.id, type: 'function' as const, function: { name: call.name, arguments: call.arguments } })),
+        tool_calls: reply.calls.map((call) => ({
+          id: call.id,
+          type: 'function' as const,
+          function: { name: call.name, arguments: call.arguments },
+        })),
       });
       for (const call of reply.calls) {
         signal.throwIfAborted();
         const ran = await this.runTool(tools, call.name, call.arguments);
         results.push({ name: call.name, arguments: call.arguments, text: ran.text, ok: ran.ok });
-        messages.push({ role: 'tool', tool_call_id: call.id, content: clip(ran.text, MAX_TOOL_RESULT_CHARS) });
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: clip(ran.text, MAX_TOOL_RESULT_CHARS),
+        });
       }
     }
     return { text, results };
   }
 
-  private async runTool(tools: RegisteredTool[], name: string, rawArguments: string): Promise<{ text: string; ok: boolean }> {
+  private async runTool(
+    tools: RegisteredTool[],
+    name: string,
+    rawArguments: string,
+  ): Promise<{ text: string; ok: boolean }> {
     const tool = tools.find((candidate) => candidate.toolName === name);
-    if (!tool) return { text: JSON.stringify({ error: `There is no tool called ${name}.` }), ok: false };
-    if (!this.options.allowToolCall()) return { text: JSON.stringify({ error: 'You have looked enough for now.' }), ok: false };
+    if (!tool)
+      return { text: JSON.stringify({ error: `There is no tool called ${name}.` }), ok: false };
+    if (!this.options.allowToolCall())
+      return { text: JSON.stringify({ error: 'You have looked enough for now.' }), ok: false };
     let params: unknown;
     try {
       params = rawArguments.trim() ? (JSON.parse(rawArguments) as unknown) : {};
     } catch {
-      return { text: JSON.stringify({ error: 'The tool arguments were not valid JSON.' }), ok: false };
+      return {
+        text: JSON.stringify({ error: 'The tool arguments were not valid JSON.' }),
+        ok: false,
+      };
     }
     const startedAt = Date.now();
     let outcome: { text: string; ok: boolean; error?: string };
@@ -178,13 +213,24 @@ export class PursuitLlm {
       const result = await this.options.execute(tool.id, params);
       outcome = result.success
         ? { text: resultText(result.data), ok: true }
-        : { text: JSON.stringify({ error: result.error ?? 'The tool failed.' }), ok: false, error: result.error ?? 'The tool failed.' };
+        : {
+            text: JSON.stringify({ error: result.error ?? 'The tool failed.' }),
+            ok: false,
+            error: result.error ?? 'The tool failed.',
+          };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       outcome = { text: JSON.stringify({ error: message }), ok: false, error: message };
     }
     try {
-      this.options.onToolCall?.({ name, arguments: rawArguments, durationMs: Date.now() - startedAt, ok: outcome.ok, resultLength: outcome.text.length, ...(outcome.error ? { error: outcome.error } : {}) });
+      this.options.onToolCall?.({
+        name,
+        arguments: rawArguments,
+        durationMs: Date.now() - startedAt,
+        ok: outcome.ok,
+        resultLength: outcome.text.length,
+        ...(outcome.error ? { error: outcome.error } : {}),
+      });
     } catch {
       /* A logging listener must not break the call. */
     }
@@ -195,12 +241,18 @@ export class PursuitLlm {
   private round(messages: ChatMessage[], tools: RegisteredTool[], signal: AbortSignal) {
     const definitions: LlmToolDefinition[] = tools.map((tool) => ({
       type: 'function',
-      function: { name: tool.toolName, description: tool.description, parameters: tool.inputSchema },
+      function: {
+        name: tool.toolName,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
     }));
     return this.options.gate.run(signal, async () => {
       const thinking = new ThinkFilter();
       let calls: Array<{ id: string; name: string; arguments: string }> = [];
-      for await (const part of this.options.chat().streamChat(messages, { signal, tools: definitions })) {
+      for await (const part of this.options
+        .chat()
+        .streamChat(messages, { signal, tools: definitions })) {
         if (part.type === 'tool_calls') calls = part.calls;
         else thinking.push(part.text);
         if (thinking.visible.length > MAX_REPLY_CHARS) break;

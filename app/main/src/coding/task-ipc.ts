@@ -1,8 +1,15 @@
 /** IPC for the task cards on the status panel: list, follow and control coding tasks. */
-import type { CodingRunnerClient, RunnerAnswer, RunnerEvent, RunnerTask, RunnerTaskRequest } from './runner-client.js';
+import type { HandleIpc } from '../ipc/handle-ipc.js';
+import type { CodingRunnerClient } from './runner-client.js';
+import type {
+  RunnerAnswer,
+  RunnerEvent,
+  RunnerTask,
+  RunnerTaskRequest,
+} from '../shared/coding/runner-client-types.js';
 
 export interface CodingTaskIpcOptions {
-  ipcMain: { handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void };
+  handle: HandleIpc;
   client: () => CodingRunnerClient | null;
   /** Subscribe to the runner's event stream. */
   onRunnerEvent: (listener: (event: RunnerEvent) => void) => () => void;
@@ -20,14 +27,21 @@ export function registerCodingTaskIpc(options: CodingTaskIpcOptions): () => void
     if (!current) throw new Error('The coding runner is not connected.');
     return current;
   };
-  const on = (channel: string, fn: (...args: unknown[]) => unknown) => options.ipcMain.handle(channel, (_event, ...args) => fn(...args));
+  const on = (channel: string, fn: (...args: unknown[]) => unknown) =>
+    options.handle(channel, (_event, ...args) => fn(...args));
   on('coding:tasks', () => client().listTasks());
   on('coding:task', (id: unknown) => client().getTask(str(id, 'id')));
   on('coding:diff', (id: unknown) => client().taskDiff(str(id, 'id')));
   on('coding:start-task', (request: unknown) => {
     const r = (request ?? {}) as Partial<RunnerTaskRequest>;
-    const acceptance = Array.isArray(r.acceptance) ? r.acceptance.filter((a): a is string => typeof a === 'string' && a.trim() !== '') : [];
-    return client().createTask({ workspace_id: str(r.workspace_id, 'workspace'), goal: str(r.goal, 'goal'), acceptance });
+    const acceptance = Array.isArray(r.acceptance)
+      ? r.acceptance.filter((a): a is string => typeof a === 'string' && a.trim() !== '')
+      : [];
+    return client().createTask({
+      workspace_id: str(r.workspace_id, 'workspace'),
+      goal: str(r.goal, 'goal'),
+      acceptance,
+    });
   });
   on('coding:answer-task', (id: unknown, answer: unknown) => {
     const a = (answer ?? {}) as RunnerAnswer;
@@ -38,7 +52,9 @@ export function registerCodingTaskIpc(options: CodingTaskIpcOptions): () => void
       ...(typeof a.dialog_id === 'string' ? { dialog_id: a.dialog_id } : {}),
     });
   });
-  on('coding:follow-up', (id: unknown, message: unknown) => client().followUp(str(id, 'id'), str(message, 'message')));
+  on('coding:follow-up', (id: unknown, message: unknown) =>
+    client().followUp(str(id, 'id'), str(message, 'message')),
+  );
   on('coding:cancel-task', (id: unknown) => client().cancel(str(id, 'id')));
   on('coding:discard-task', (id: unknown) => client().discard(str(id, 'id')));
   // The Apply button is Kevin's own decision, so it needs no further approval.

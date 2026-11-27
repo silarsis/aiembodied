@@ -7,9 +7,35 @@ import { AvatarModelService } from '../src/avatar/avatar-model-service.js';
 
 function createMockThumbnail(): Buffer {
   return Buffer.from([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG header
-    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk (partial, minimal placeholder)
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00,
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a, // PNG header
+    0x00,
+    0x00,
+    0x00,
+    0x0d,
+    0x49,
+    0x48,
+    0x44,
+    0x52, // IHDR chunk (partial, minimal placeholder)
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x08,
+    0x02,
+    0x00,
+    0x00,
+    0x00,
   ]);
 }
 
@@ -235,21 +261,28 @@ describe('AvatarModelService', () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    await expect(service.uploadModel({ fileName: 'invalid.vrm', data: '***notbase64***' })).rejects.toThrow(/invalid base64/i);
+    await expect(
+      service.uploadModel({ fileName: 'invalid.vrm', data: '***notbase64***' }),
+    ).rejects.toThrow(/invalid base64/i);
   });
 
   it('rejects files without the .vrm extension', async () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    await expect(service.uploadModel({ fileName: 'avatar.glb', data: 'AAAA' })).rejects.toThrow(/must use the \.vrm extension/i);
+    await expect(service.uploadModel({ fileName: 'avatar.glb', data: 'AAAA' })).rejects.toThrow(
+      /must use the \.vrm extension/i,
+    );
   });
 
   it('clears active selection when requested', async () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    await service.uploadModel({ fileName: 'model.vrm', data: createMockVrmGlb({ useVrmc: true }).toString('base64') });
+    await service.uploadModel({
+      fileName: 'model.vrm',
+      data: createMockVrmGlb({ useVrmc: true }).toString('base64'),
+    });
 
     await service.setActiveModel(null);
     expect(store.getActiveVrmModelId()).toBeNull();
@@ -275,7 +308,10 @@ describe('AvatarModelService', () => {
 
     await service.uploadModel({
       fileName: 'model.vrm',
-      data: createMockVrmGlb({ useVrmc: true, bones: ['hips', 'leftUpperArm', 'rightUpperArm'] }).toString('base64'),
+      data: createMockVrmGlb({
+        useVrmc: true,
+        bones: ['hips', 'leftUpperArm', 'rightUpperArm'],
+      }).toString('base64'),
     });
 
     const bones = await service.listActiveModelBones();

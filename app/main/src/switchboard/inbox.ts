@@ -33,7 +33,10 @@ export interface InboxRule {
 
 /** Exact types and families (`home.*`); `*` is the fallback. The longest match wins. */
 export const DEFAULT_INBOX_POLICY: Record<string, InboxRule> = {
-  'avatar.inbox': { action: (event) => (event.priority === 'high' || event.priority === 'urgent' ? 'speak-urgent' : 'deliberate') },
+  'avatar.inbox': {
+    action: (event) =>
+      event.priority === 'high' || event.priority === 'urgent' ? 'speak-urgent' : 'deliberate',
+  },
   'home.alert': { action: 'speak-urgent', source: 'Home Assistant' },
   'home.change': { action: 'deliberate', source: 'Home Assistant', fallback: 'remember' },
   '*': { action: 'ignore' },
@@ -43,7 +46,12 @@ export function lookupRule(policy: Record<string, InboxRule>, type: string): Inb
   if (policy[type]) return policy[type];
   let best: string | null = null;
   for (const key of Object.keys(policy)) {
-    if (key.endsWith('.*') && type.startsWith(key.slice(0, -1)) && (best === null || key.length > best.length)) best = key;
+    if (
+      key.endsWith('.*') &&
+      type.startsWith(key.slice(0, -1)) &&
+      (best === null || key.length > best.length)
+    )
+      best = key;
   }
   return best ? policy[best] : policy['*'];
 }
@@ -90,7 +98,12 @@ export class AvatarInbox {
   start(): void {
     if (this.unsubscribe) return;
     const address = `avatar:${this.options.avatarId}` as const;
-    this.unsubscribe = this.options.bus.subscribe({ actor: address, to: [address], types: ['*'], onEvent: (event) => this.handle(event) });
+    this.unsubscribe = this.options.bus.subscribe({
+      actor: address,
+      to: [address],
+      types: ['*'],
+      onEvent: (event) => this.handle(event),
+    });
   }
 
   stop(): void {
@@ -106,15 +119,23 @@ export class AvatarInbox {
       return;
     }
     const rule = lookupRule(this.options.policy ?? DEFAULT_INBOX_POLICY, event.type);
-    let action = typeof rule?.action === 'function' ? rule.action(event) : (rule?.action ?? 'ignore');
+    let action =
+      typeof rule?.action === 'function' ? rule.action(event) : (rule?.action ?? 'ignore');
     // A sleeping avatar only speaks urgent news; everything else is kept quietly.
-    if (action !== 'ignore' && action !== 'speak-urgent' && event.priority !== 'urgent' && this.options.asleep?.() === true) {
+    if (
+      action !== 'ignore' &&
+      action !== 'speak-urgent' &&
+      event.priority !== 'urgent' &&
+      this.options.asleep?.() === true
+    ) {
       logger?.debug?.('Inbox: asleep, remembering', { type: event.type, id: event.id });
       action = 'remember';
     }
     if (action === 'deliberate') {
       void this.deliberating(event, rule, now).catch((error) => {
-        logger?.warn('Inbox: deliberation failed', { message: error instanceof Error ? error.message : String(error) });
+        logger?.warn('Inbox: deliberation failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
       return;
     }
@@ -133,7 +154,10 @@ export class AvatarInbox {
   private rememberByRule(event: SwitchboardEvent, rule: InboxRule | undefined, now: number): void {
     const text = this.textOf(event);
     if (!text) {
-      this.options.logger?.debug?.('Inbox: remember skipped, no text', { type: event.type, id: event.id });
+      this.options.logger?.debug?.('Inbox: remember skipped, no text', {
+        type: event.type,
+        id: event.id,
+      });
       return;
     }
     if (this.isRepeat(event, text, now)) return;
@@ -145,8 +169,15 @@ export class AvatarInbox {
 
   /** True when the same text was saved within REMEMBER_REPEAT_MS; otherwise notes this save. */
   private isRepeat(event: SwitchboardEvent, text: string, now: number): boolean {
-    if (this.lastSaved && this.lastSaved.text === text && now - this.lastSaved.at < REMEMBER_REPEAT_MS) {
-      this.options.logger?.debug?.('Inbox: remember skipped, same text just saved', { type: event.type, id: event.id });
+    if (
+      this.lastSaved &&
+      this.lastSaved.text === text &&
+      now - this.lastSaved.at < REMEMBER_REPEAT_MS
+    ) {
+      this.options.logger?.debug?.('Inbox: remember skipped, same text just saved', {
+        type: event.type,
+        id: event.id,
+      });
       return true;
     }
     this.lastSaved = { text, at: now };
@@ -164,12 +195,20 @@ export class AvatarInbox {
       logger?.warn('Inbox: event has no text to speak', { type: event.type, id: event.id });
       return;
     }
-    const payloadSource = typeof event.payload.source === 'string' && event.payload.source !== 'coding' ? event.payload.source : undefined;
+    const payloadSource =
+      typeof event.payload.source === 'string' && event.payload.source !== 'coding'
+        ? event.payload.source
+        : undefined;
     const say = (): void => {
       try {
-        this.options.notify(`${rule?.prefix ?? ''}${text}`, { urgent, source: rule?.source ?? payloadSource });
+        this.options.notify(`${rule?.prefix ?? ''}${text}`, {
+          urgent,
+          source: rule?.source ?? payloadSource,
+        });
       } catch (error) {
-        logger?.warn('Inbox: notify failed', { message: error instanceof Error ? error.message : String(error) });
+        logger?.warn('Inbox: notify failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     };
     if (!urgent || !this.options.beforeUrgent) {
@@ -179,7 +218,11 @@ export class AvatarInbox {
     // Urgent news may need the avatar to walk to Kevin first; it is said either way.
     void Promise.resolve()
       .then(() => this.options.beforeUrgent?.(event))
-      .catch((error: unknown) => logger?.warn('Inbox: the walk before urgent news failed', { message: error instanceof Error ? error.message : String(error) }))
+      .catch((error: unknown) =>
+        logger?.warn('Inbox: the walk before urgent news failed', {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
       .then(say);
   }
 
@@ -187,15 +230,26 @@ export class AvatarInbox {
     const { logger } = this.options;
     const text = this.textOf(event);
     if (!text) return;
-    const source = rule?.source ?? (typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`);
+    const source =
+      rule?.source ??
+      (typeof event.payload.source === 'string'
+        ? event.payload.source
+        : `${event.producer.kind}:${event.producer.id}`);
     try {
       this.options.remember?.(event, text, source);
     } catch (error) {
-      logger?.warn('Inbox: remember failed', { source, message: error instanceof Error ? error.message : String(error) });
+      logger?.warn('Inbox: remember failed', {
+        source,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
-  private async deliberating(event: SwitchboardEvent, rule: InboxRule | undefined, startedAt: number): Promise<void> {
+  private async deliberating(
+    event: SwitchboardEvent,
+    rule: InboxRule | undefined,
+    startedAt: number,
+  ): Promise<void> {
     const { logger } = this.options;
     const nowFn = this.options.now ?? Date.now;
     const dnd = this.options.doNotDisturb?.() === true;
@@ -211,7 +265,9 @@ export class AvatarInbox {
       try {
         decision = (await this.options.deliberate?.(event)) ?? null;
       } catch (error) {
-        logger?.warn('Inbox: deliberate threw', { message: error instanceof Error ? error.message : String(error) });
+        logger?.warn('Inbox: deliberate threw', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
       if (decision) {
         action = decision.action;
@@ -231,7 +287,10 @@ export class AvatarInbox {
     const ms = Math.max(0, nowFn() - startedAt);
     this.journal(event, action, reason, ms, fallback, dnd, engine);
     if (event.expires && Date.parse(event.expires) < nowFn()) {
-      logger?.debug?.('Inbox: event expired while deliberating', { type: event.type, id: event.id });
+      logger?.debug?.('Inbox: event expired while deliberating', {
+        type: event.type,
+        id: event.id,
+      });
       return;
     }
     logger?.debug?.(`Inbox: deliberated ${action}`, { type: event.type, id: event.id, reason });
@@ -256,7 +315,15 @@ export class AvatarInbox {
     }
   }
 
-  private journal(event: SwitchboardEvent, action: string, reason: string, ms: number, fallback: boolean, doNotDisturb: boolean, engine?: string): void {
+  private journal(
+    event: SwitchboardEvent,
+    action: string,
+    reason: string,
+    ms: number,
+    fallback: boolean,
+    doNotDisturb: boolean,
+    engine?: string,
+  ): void {
     try {
       this.options.onDecision?.({
         at: new Date((this.options.now ?? Date.now)()).toISOString(),
@@ -280,8 +347,25 @@ export class AvatarInbox {
         producer: { kind: 'avatar', id: this.options.avatarId },
         to: [],
         audience: 'private',
-        txn: event.txn ? { id: txnId, state: 'done' } : { id: txnId, parent: undefined, cause: event.id, state: 'done', title: `Decision on ${event.type}` },
-        payload: { event: event.id, type: event.type, action, reason, ms, fallback, doNotDisturb, ...(engine ? { engine } : {}) },
+        txn: event.txn
+          ? { id: txnId, state: 'done' }
+          : {
+              id: txnId,
+              parent: undefined,
+              cause: event.id,
+              state: 'done',
+              title: `Decision on ${event.type}`,
+            },
+        payload: {
+          event: event.id,
+          type: event.type,
+          action,
+          reason,
+          ms,
+          fallback,
+          doNotDisturb,
+          ...(engine ? { engine } : {}),
+        },
       });
     } catch {
       // Journaling must never disturb the inbox.

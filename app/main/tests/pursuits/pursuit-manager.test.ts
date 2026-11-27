@@ -2,8 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { PursuitManager, type PursuitManagerOptions } from '../../src/pursuits/pursuit-manager.js';
 import { LlmGate } from '../../src/pursuits/pursuit-llm.js';
 import type { StationVisit } from '../../src/stations/station-trips.js';
-import type { Station } from '../../src/stations/types.js';
-import { FakeChat, MemoryNotes, executorFor, libraryTool, type Reply, type SeenCall } from './fakes.js';
+import type { Station } from '../../src/shared/stations/types.js';
+import {
+  FakeChat,
+  MemoryNotes,
+  executorFor,
+  libraryTool,
+  type Reply,
+  type SeenCall,
+} from './fakes.js';
 
 const station: Station = {
   id: 'station-1',
@@ -27,14 +34,27 @@ function reader(call: SeenCall): Reply {
   const text = lastUser(call);
   const afterTool = last?.role === 'tool';
   if (text.includes('What do you feel like')) return { text: 'I want to read about gardens.' };
-  if (text.includes('Look in the library now')) return afterTool ? { text: 'ok' } : { calls: [{ name: 'search', arguments: { q: 'gardens' } }] };
+  if (text.includes('Look in the library now'))
+    return afterTool
+      ? { text: 'ok' }
+      : { calls: [{ name: 'search', arguments: { q: 'gardens' } }] };
   if (text.includes('Choose ONE')) return { text: 'PICK: Gardens | https://x.y/g | pretty' };
-  if (text.includes('Fetch its full text')) return afterTool ? { text: 'ok' } : { calls: [{ name: 'fetch', arguments: {} }] };
-  if (text.includes('Write your notes')) return { text: 'TAKEAWAY: Plants are patient.\nOPINION: Nice.\nKEVIN: no link\nQUESTIONS: none' };
+  if (text.includes('Fetch its full text'))
+    return afterTool ? { text: 'ok' } : { calls: [{ name: 'fetch', arguments: {} }] };
+  if (text.includes('Write your notes'))
+    return {
+      text: 'TAKEAWAY: Plants are patient.\nOPINION: Nice.\nKEVIN: no link\nQUESTIONS: none',
+    };
   return { text: 'NEXT: stop\nTELL: none' };
 }
 
-function setup(options: { respond?: (call: SeenCall, index: number) => Reply; known?: Partial<PursuitManagerOptions>; visit?: StationVisit | null } = {}) {
+function setup(
+  options: {
+    respond?: (call: SeenCall, index: number) => Reply;
+    known?: Partial<PursuitManagerOptions>;
+    visit?: StationVisit | null;
+  } = {},
+) {
   const chats = new Map<string, FakeChat>();
   const chatFor = (id: string) => {
     let chat = chats.get(id);
@@ -44,21 +64,30 @@ function setup(options: { respond?: (call: SeenCall, index: number) => Reply; kn
     }
     return chat;
   };
-  const tools = [libraryTool('search', () => '1. Gardens https://x.y/g'), libraryTool('fetch', () => 'All about gardens.'), libraryTool('delete_all', () => 'x', { confirmationLevel: 'confirm' })];
+  const tools = [
+    libraryTool('search', () => '1. Gardens https://x.y/g'),
+    libraryTool('fetch', () => 'All about gardens.'),
+    libraryTool('delete_all', () => 'x', { confirmationLevel: 'confirm' }),
+  ];
   const notes = new MemoryNotes();
   const changes: string[][] = [];
   const told: Array<[string, string]> = [];
   const activities: string[] = [];
   const visit: StationVisit | null =
     options.visit === undefined
-      ? { arrived: async () => undefined, activity: (text) => void activities.push(text), settle: vi.fn(async () => undefined) }
+      ? {
+          arrived: async () => undefined,
+          activity: (text) => void activities.push(text),
+          settle: vi.fn(async () => undefined),
+        }
       : options.visit;
   const manager = new PursuitManager({
     stations: {
       get: (id) => (id === station.id ? station : null),
       list: () => [station],
       appliesTo: (s, avatarId) => s.characters === 'all' || s.characters.includes(avatarId),
-      stationForTool: (tool) => (typeof tool !== 'string' && tool.serverId === 'srv-1' ? station : null),
+      stationForTool: (tool) =>
+        typeof tool !== 'string' && tool.serverId === 'srv-1' ? station : null,
       labelsFor: () => ({ roomName: 'Reading room', objectName: 'bookshelf' }),
       loadLabels: async () => undefined,
       resolveServerId: () => 'srv-1',
@@ -90,9 +119,20 @@ describe('PursuitManager', () => {
     await idle(manager);
     expect(changes.at(-1)).toEqual([]);
     expect(notes.notes).toHaveLength(1);
-    expect(notes.notes[0]).toMatchObject({ avatarId: 'sage', title: 'Gardens', takeaway: 'Plants are patient.' });
+    expect(notes.notes[0]).toMatchObject({
+      avatarId: 'sage',
+      title: 'Gardens',
+      takeaway: 'Plants are patient.',
+    });
     // The body followed the steps.
-    expect(activities).toEqual(['stands at the bookshelf, thinking about what to read', 'browses the bookshelf', 'looks over the titles on the bookshelf', 'reads', 'jots down notes', 'closes the book and thinks']);
+    expect(activities).toEqual([
+      'stands at the bookshelf, thinking about what to read',
+      'browses the bookshelf',
+      'looks over the titles on the bookshelf',
+      'reads',
+      'jots down notes',
+      'closes the book and thinks',
+    ]);
     expect(visit?.settle).toHaveBeenCalledWith(true);
   });
 
@@ -108,12 +148,24 @@ describe('PursuitManager', () => {
     const { manager } = setup({ known: { logger } });
     manager.start('sage', 'station-1');
     await idle(manager);
-    const steps = logger.info.mock.calls.filter(([message]) => message === 'Reading: step').map(([, meta]) => (meta as { step: string }).step);
+    const steps = logger.info.mock.calls
+      .filter(([message]) => message === 'Reading: step')
+      .map(([, meta]) => (meta as { step: string }).step);
     expect(steps).toEqual(['want', 'act', 'choose', 'consume', 'note', 'next']);
-    expect(logger.info).toHaveBeenCalledWith('Reading: tool call', expect.objectContaining({ avatarId: 'sage', tool: 'search', args: '{"q":"gardens"}', ok: true, durationMs: expect.any(Number), resultLength: expect.any(Number) }));
+    expect(logger.info).toHaveBeenCalledWith(
+      'Reading: tool call',
+      expect.objectContaining({
+        avatarId: 'sage',
+        tool: 'search',
+        args: '{"q":"gardens"}',
+        ok: true,
+        durationMs: expect.any(Number),
+        resultLength: expect.any(Number),
+      }),
+    );
   });
 
-  it('uses the avatar\'s own model, its persona, and only the station tools without approvals', async () => {
+  it("uses the avatar's own model, its persona, and only the station tools without approvals", async () => {
     const { manager, chatFor } = setup();
     manager.start('sage', 'station-1');
     await idle(manager);
@@ -124,7 +176,12 @@ describe('PursuitManager', () => {
   });
 
   it('allows one session per avatar, and refuses what cannot run', () => {
-    const { manager } = setup({ known: { voiceFor: (id) => (id === 'mute' ? null : { chat: () => new FakeChat(reader), recentLines: () => [] }) } });
+    const { manager } = setup({
+      known: {
+        voiceFor: (id) =>
+          id === 'mute' ? null : { chat: () => new FakeChat(reader), recentLines: () => [] },
+      },
+    });
     expect(manager.start('sage', 'station-1')).toEqual({ ok: true });
     expect(manager.start('sage', 'station-1')).toEqual({ ok: false, reason: 'already reading' });
     expect(manager.start('echo', 'nope')).toEqual({ ok: false, reason: 'no such station' });
@@ -147,8 +204,20 @@ describe('PursuitManager', () => {
 
   it('offers the stations that have tools to read with', () => {
     const { manager } = setup();
-    expect(manager.offers()).toEqual([{ stationId: 'station-1', roomId: station.roomId, objectId: 'bookshelf', objectName: 'bookshelf', characters: 'all' }]);
-    const none = setup({ known: { tools: { list: () => [], execute: async () => ({ success: false, durationMs: 0 }) } } });
+    expect(manager.offers()).toEqual([
+      {
+        stationId: 'station-1',
+        roomId: station.roomId,
+        objectId: 'bookshelf',
+        objectName: 'bookshelf',
+        characters: 'all',
+      },
+    ]);
+    const none = setup({
+      known: {
+        tools: { list: () => [], execute: async () => ({ success: false, durationMs: 0 }) },
+      },
+    });
     expect(none.manager.offers()).toEqual([]);
     expect(none.manager.start('sage', 'station-1')).toMatchObject({ ok: false });
   });
@@ -179,7 +248,10 @@ describe('PursuitManager', () => {
   });
 
   it('does not tell anyone after being interrupted, and tells through the inbox path otherwise', async () => {
-    const tell = (call: SeenCall): Reply => (lastUser(call).includes('Do you want to read more') ? { text: 'NEXT: stop\nTELL: Kevin, gardens are patient.' } : reader(call));
+    const tell = (call: SeenCall): Reply =>
+      lastUser(call).includes('Do you want to read more')
+        ? { text: 'NEXT: stop\nTELL: Kevin, gardens are patient.' }
+        : reader(call);
     const { manager, told } = setup({ respond: tell });
     manager.start('sage', 'station-1');
     await idle(manager);

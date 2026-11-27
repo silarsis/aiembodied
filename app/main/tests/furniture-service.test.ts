@@ -3,20 +3,40 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FURNITURE_KEY, FurnitureService, type FurnitureServiceOptions } from '../src/furniture/furniture-service.js';
+import {
+  FURNITURE_KEY,
+  FurnitureService,
+  type FurnitureServiceOptions,
+} from '../src/furniture/furniture-service.js';
 import { glbBounds } from '../src/rooms/asset-library/gltf-bounds.js';
-import type { FurnitureItem } from '../src/furniture/types.js';
+import type { FurnitureItem } from '../src/shared/furniture/types.js';
 import { boxGlb } from './fixtures/box-glb.js';
 
 const directories: string[] = [];
 afterEach(async () => {
-  for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0))
+    await rm(directory, { recursive: true, force: true });
 });
 
 const png = PNG.sync.write(new PNG({ width: 64, height: 48 }));
-const geometry = { kind: 'trellis2', id: 't', name: 'T', unet: 'u', shapeVae: 's', textureVae: 'x' } as const;
-const imageModel = { id: 'q', name: 'Q', family: 'qwen-image-2.1', model: 'q.safetensors', clip: 'c', vae: 'v' } as const;
-const sized = '{"name":"Club Chair","category":"seating","width_m":0.9,"depth_m":0.8,"height_m":0.9}';
+const geometry = {
+  kind: 'trellis2',
+  id: 't',
+  name: 'T',
+  unet: 'u',
+  shapeVae: 's',
+  textureVae: 'x',
+} as const;
+const imageModel = {
+  id: 'q',
+  name: 'Q',
+  family: 'qwen-image-2.1',
+  model: 'q.safetensors',
+  clip: 'c',
+  vae: 'v',
+} as const;
+const sized =
+  '{"name":"Club Chair","category":"seating","width_m":0.9,"depth_m":0.8,"height_m":0.9}';
 
 /** A promise to settle by hand, so a test can hold a ComfyUI run open. */
 function gate<T = void>() {
@@ -34,13 +54,22 @@ async function setup(overrides: Partial<FurnitureServiceOptions> = {}) {
   directories.push(directory);
   const values = new Map<string, string>();
   const events: FurnitureItem[] = [];
-  const runs = { image: vi.fn(async () => png), mesh: vi.fn(async () => boxGlb([-1, 0, -1], [1, 2, 1])) };
+  const runs = {
+    image: vi.fn(async () => png),
+    mesh: vi.fn(async () => boxGlb([-1, 0, -1], [1, 2, 1])),
+  };
   const comfy = {
     uploadImage: vi.fn(async (name: string) => name),
-    run: vi.fn(async (_graph: unknown, options?: { signal?: AbortSignal; output?: 'image' | 'mesh' }) => (options?.output === 'mesh' ? runs.mesh() : runs.image())),
+    run: vi.fn(
+      async (_graph: unknown, options?: { signal?: AbortSignal; output?: 'image' | 'mesh' }) =>
+        options?.output === 'mesh' ? runs.mesh() : runs.image(),
+    ),
   };
   const options: FurnitureServiceOptions = {
-    store: { getValue: (key) => values.get(key) ?? null, setValue: (key, value) => void values.set(key, value) },
+    store: {
+      getValue: (key) => values.get(key) ?? null,
+      setValue: (key, value) => void values.set(key, value),
+    },
     directory,
     pickComfy: async () => comfy,
     imageModel: async () => imageModel,
@@ -58,16 +87,29 @@ async function setup(overrides: Partial<FurnitureServiceOptions> = {}) {
   return { service, options, values, events, runs, comfy, directory, settled };
 }
 
-const exists = (file: string) => access(file).then(() => true, () => false);
+const exists = (file: string) =>
+  access(file).then(
+    () => true,
+    () => false,
+  );
 
 describe('furniture generation', () => {
   it('returns at once as generating, then makes a model of the real size', async () => {
     const { service, directory, settled, events, comfy } = await setup();
     const started = await service.generate('  a leather club chair ');
-    expect(started).toMatchObject({ status: 'generating', prompt: 'a leather club chair', hasModel: false });
+    expect(started).toMatchObject({
+      status: 'generating',
+      prompt: 'a leather club chair',
+      hasModel: false,
+    });
 
     const item = await settled(started.id);
-    expect(item).toMatchObject({ status: 'ready', name: 'Club Chair', category: 'seating', hasModel: true });
+    expect(item).toMatchObject({
+      status: 'ready',
+      name: 'Club Chair',
+      category: 'seating',
+      hasModel: true,
+    });
     expect(item.error).toBeUndefined();
     expect(item.dimensions).toEqual([0.9, 0.9, 0.9]);
     expect(item.fit?.scale).toBeCloseTo(0.45);
@@ -82,7 +124,10 @@ describe('furniture generation', () => {
     expect(events.at(-1)?.status).toBe('ready');
     // The mesh step is told to return a mesh; the picture is uploaded to it.
     expect(comfy.uploadImage).toHaveBeenCalledOnce();
-    expect(comfy.run).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ output: 'mesh' }));
+    expect(comfy.run).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ output: 'mesh' }),
+    );
   });
 
   it('sizes from the keyword table without a helper', async () => {
@@ -99,7 +144,12 @@ describe('furniture generation', () => {
     });
     const { service, settled } = await setup({
       paint,
-      geometryModel: async () => ({ kind: 'hunyuan3d-2mv', id: 'h', name: 'H', checkpoint: 'h.safetensors' }),
+      geometryModel: async () => ({
+        kind: 'hunyuan3d-2mv',
+        id: 'h',
+        name: 'H',
+        checkpoint: 'h.safetensors',
+      }),
     });
     expect((await settled((await service.generate('a chair')).id)).status).toBe('ready');
     expect(paint).toHaveBeenCalledOnce();
@@ -114,7 +164,11 @@ describe('furniture generation', () => {
     });
     const started = await service.generate('a chair');
     const item = await settled(started.id);
-    expect(item).toMatchObject({ status: 'failed', error: 'Install TRELLIS.2 or Hunyuan3D 2mv in ComfyUI.', hasModel: false });
+    expect(item).toMatchObject({
+      status: 'failed',
+      error: 'Install TRELLIS.2 or Hunyuan3D 2mv in ComfyUI.',
+      hasModel: false,
+    });
     expect(await exists(path.join(directory, started.id, 'next'))).toBe(false);
     await expect(service.model(started.id)).rejects.toThrow('no 3D model');
   });
@@ -177,7 +231,9 @@ describe('editing', () => {
     runs.image.mockImplementationOnce(() => hold.promise);
     const { id } = await service.generate('a chair');
     await expect(service.edit(id, 'a stool')).rejects.toThrow('already being made');
-    await expect(service.edit('00000000-0000-0000-0000-000000000000', 'x')).rejects.toThrow('not available');
+    await expect(service.edit('00000000-0000-0000-0000-000000000000', 'x')).rejects.toThrow(
+      'not available',
+    );
     hold.release(png);
     await settled(id);
   });
@@ -199,7 +255,11 @@ describe('deleting', () => {
     const hold = gate<Buffer>();
     const { service, runs, directory, comfy } = await setup();
     comfy.run.mockImplementationOnce(async (_graph, options) => {
-      await new Promise<void>((_, reject) => options?.signal?.addEventListener('abort', () => reject(new Error('ComfyUI job cancelled.'))));
+      await new Promise<void>((_, reject) =>
+        options?.signal?.addEventListener('abort', () =>
+          reject(new Error('ComfyUI job cancelled.')),
+        ),
+      );
       return hold.promise;
     });
     const { id } = await service.generate('a chair');
@@ -229,13 +289,22 @@ describe('restart', () => {
     const { id } = await service.generate('a chair');
     await settled(id);
     const records = JSON.parse(values.get(FURNITURE_KEY) ?? '[]');
-    const orphan = { ...records[0], id: '11111111-1111-1111-1111-111111111111', status: 'generating' };
+    const orphan = {
+      ...records[0],
+      id: '11111111-1111-1111-1111-111111111111',
+      status: 'generating',
+    };
     values.set(FURNITURE_KEY, JSON.stringify([{ ...records[0], status: 'generating' }, orphan]));
     const restarted = new FurnitureService(options);
     await restarted.initialize();
     expect(await restarted.load(id)).toMatchObject({ status: 'ready', error: 'Interrupted.' });
-    expect(await restarted.load(orphan.id)).toMatchObject({ status: 'failed', error: 'Interrupted.' });
-    expect((await readFile(path.join(options.directory, id, 'model.glb'))).length).toBeGreaterThan(0);
+    expect(await restarted.load(orphan.id)).toMatchObject({
+      status: 'failed',
+      error: 'Interrupted.',
+    });
+    expect((await readFile(path.join(options.directory, id, 'model.glb'))).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('ignores a damaged library', async () => {

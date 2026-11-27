@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { BackgroundControls } from '../../src/backgrounds/background-controls.js';
 import { useBackgrounds } from '../../src/backgrounds/use-backgrounds.js';
 import type { IdleSettings } from '../../../main/src/shared/rooms/idle-settings.js';
-import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
+import type {
+  BackgroundBridge,
+  BackgroundSummary,
+} from '../../../main/src/shared/backgrounds/types.js';
 import { builtInRoom } from '../rooms/fixtures.js';
 
 const picture = (id: string): BackgroundSummary => ({
@@ -39,11 +42,23 @@ function bridge(active: string | null = 'Garden'): BackgroundBridge {
     generate: vi.fn(),
     delete: vi.fn().mockResolvedValue(undefined),
     listRooms: vi.fn().mockResolvedValue([
-      { id: 'room:builtin:reading-room', name: 'Reading room', builtIn: true, description: reading.description },
-      { id: 'room:builtin:studio-flat', name: 'Studio flat', builtIn: true, description: 'A studio.' },
+      {
+        id: 'room:builtin:reading-room',
+        name: 'Reading room',
+        builtIn: true,
+        description: reading.description,
+      },
+      {
+        id: 'room:builtin:studio-flat',
+        name: 'Studio flat',
+        builtIn: true,
+        description: 'A studio.',
+      },
     ]),
     loadRoom: vi.fn().mockResolvedValue(reading),
-    getIdleSettings: vi.fn().mockResolvedValue({ enabled: true, restlessness: 'normal', onTalk: 'turn' }),
+    getIdleSettings: vi
+      .fn()
+      .mockResolvedValue({ enabled: true, restlessness: 'normal', onTalk: 'turn' }),
     setIdleSettings: vi.fn().mockImplementation(async (settings: IdleSettings) => settings),
   };
 }
@@ -54,7 +69,10 @@ describe('3D rooms in the background controls', () => {
     render(<Harness api={api} />);
     await screen.findByRole('button', { name: 'Garden' });
     expect(screen.getByLabelText('Background description')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2D pictures' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '2D pictures' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
 
     fireEvent.click(screen.getByRole('button', { name: '3D rooms' }));
     expect(screen.queryByLabelText('Background description')).not.toBeInTheDocument();
@@ -74,8 +92,14 @@ describe('3D rooms in the background controls', () => {
 
   it('opens on the rooms tab when a room is the active stage', async () => {
     render(<Harness api={bridge('room:builtin:reading-room')} />);
-    expect(await screen.findByRole('button', { name: 'Reading room' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: '3D rooms' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByRole('button', { name: 'Reading room' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: '3D rooms' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.queryByLabelText('Background description')).not.toBeInTheDocument();
   });
 
@@ -98,7 +122,11 @@ describe('When idle settings', () => {
     expect(screen.getByLabelText('Wander when nobody is talking')).toBeChecked();
     expect(screen.getByLabelText('Restlessness')).toHaveValue('normal');
     expect(screen.getByLabelText('When I start talking')).toHaveValue('turn');
-    expect(screen.getAllByRole('option', { name: /Calm|Normal|Restless/ }).map((option) => option.textContent)).toEqual(['Calm', 'Normal', 'Restless']);
+    expect(
+      screen
+        .getAllByRole('option', { name: /Calm|Normal|Restless/ })
+        .map((option) => option.textContent),
+    ).toEqual(['Calm', 'Normal', 'Restless']);
     expect(screen.getByRole('option', { name: 'Come back to me' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Turn to me where it is' })).toBeInTheDocument();
   });
@@ -111,48 +139,107 @@ describe('When idle settings', () => {
 
   it('loads what was saved and saves every change under rooms.idle', async () => {
     const api = bridge('room:builtin:reading-room');
-    (api.getIdleSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ enabled: false, restlessness: 'calm', onTalk: 'come-back' });
+    (api.getIdleSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      enabled: false,
+      restlessness: 'calm',
+      onTalk: 'come-back',
+    });
     render(<Harness api={api} />);
-    await waitFor(() => expect(screen.getByLabelText('Wander when nobody is talking')).not.toBeChecked());
+    await waitFor(() =>
+      expect(screen.getByLabelText('Wander when nobody is talking')).not.toBeChecked(),
+    );
     expect(screen.getByLabelText('Restlessness')).toHaveValue('calm');
     expect(screen.getByLabelText('When I start talking')).toHaveValue('come-back');
     expect(screen.getByLabelText('Restlessness')).toBeDisabled();
 
     fireEvent.click(screen.getByLabelText('Wander when nobody is talking'));
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'calm', onTalk: 'come-back', avatarHeight: 1.6 }));
+    await waitFor(() =>
+      expect(api.setIdleSettings).toHaveBeenLastCalledWith({
+        enabled: true,
+        restlessness: 'calm',
+        onTalk: 'come-back',
+        avatarHeight: 1.6,
+      }),
+    );
     fireEvent.change(screen.getByLabelText('Restlessness'), { target: { value: 'restless' } });
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'come-back', avatarHeight: 1.6 }));
+    await waitFor(() =>
+      expect(api.setIdleSettings).toHaveBeenLastCalledWith({
+        enabled: true,
+        restlessness: 'restless',
+        onTalk: 'come-back',
+        avatarHeight: 1.6,
+      }),
+    );
     fireEvent.change(screen.getByLabelText('When I start talking'), { target: { value: 'turn' } });
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'turn', avatarHeight: 1.6 }));
+    await waitFor(() =>
+      expect(api.setIdleSettings).toHaveBeenLastCalledWith({
+        enabled: true,
+        restlessness: 'restless',
+        onTalk: 'turn',
+        avatarHeight: 1.6,
+      }),
+    );
     expect(screen.getByLabelText('Restlessness')).toHaveValue('restless');
-    fireEvent.change(screen.getByLabelText(/Avatar height in rooms/), { target: { value: '1.45' } });
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'turn', avatarHeight: 1.45 }));
+    fireEvent.change(screen.getByLabelText(/Avatar height in rooms/), {
+      target: { value: '1.45' },
+    });
+    await waitFor(() =>
+      expect(api.setIdleSettings).toHaveBeenLastCalledWith({
+        enabled: true,
+        restlessness: 'restless',
+        onTalk: 'turn',
+        avatarHeight: 1.45,
+      }),
+    );
     expect(screen.getByText(/Avatar height in rooms: 1.45 m/)).toBeInTheDocument();
   });
 });
 
 describe('Describe a room', () => {
-  const saved = { id: 'room:11111111-2222-3333-4444-555555555555', name: 'My study', builtIn: false, description: 'A study with a desk.' };
+  const saved = {
+    id: 'room:11111111-2222-3333-4444-555555555555',
+    name: 'My study',
+    builtIn: false,
+    description: 'A study with a desk.',
+  };
   function roomBridge() {
     const api = bridge('room:builtin:reading-room');
     let listener: ((p: { phase: string; message: string }) => void) | undefined;
     const base = [
-      { id: 'room:builtin:reading-room', name: 'Reading room', builtIn: true, description: reading.description },
+      {
+        id: 'room:builtin:reading-room',
+        name: 'Reading room',
+        builtIn: true,
+        description: reading.description,
+      },
     ];
     let current = [...base];
     api.listRooms = vi.fn().mockImplementation(async () => current);
     let finish!: (value: { room: typeof saved; warnings: string[] }) => void;
     api.generateRoom = vi.fn().mockImplementation(
-      () => new Promise((resolve) => { finish = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
     );
     api.cancelRoomGeneration = vi.fn().mockResolvedValue(true);
-    api.deleteRoom = vi.fn().mockImplementation(async () => { current = [...base]; });
-    api.onRoomProgress = vi.fn().mockImplementation((l) => { listener = l; return () => undefined; });
+    api.deleteRoom = vi.fn().mockImplementation(async () => {
+      current = [...base];
+    });
+    api.onRoomProgress = vi.fn().mockImplementation((l) => {
+      listener = l;
+      return () => undefined;
+    });
     return {
       api,
       emit: (message: string) => listener?.({ phase: 'finding', message }),
-      done: () => { current = [...base, saved]; finish({ room: saved, warnings: ["Couldn't find a rocking chair, used a simple shape."] }); },
-      addSaved: () => { current = [...base, saved]; },
+      done: () => {
+        current = [...base, saved];
+        finish({ room: saved, warnings: ["Couldn't find a rocking chair, used a simple shape."] });
+      },
+      addSaved: () => {
+        current = [...base, saved];
+      },
     };
   }
 
@@ -170,9 +257,14 @@ describe('Describe a room', () => {
     act(() => emit('Finding furniture (3/9)'));
     expect(await screen.findByText('Finding furniture (3/9)')).toBeInTheDocument();
     done();
-    expect(await screen.findByText("Couldn't find a rocking chair, used a simple shape.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Couldn't find a rocking chair, used a simple shape."),
+    ).toBeInTheDocument();
     await waitFor(() => expect(api.setActive).toHaveBeenCalledWith(saved.id));
-    expect(await screen.findByRole('button', { name: 'My study' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByRole('button', { name: 'My study' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.getByRole('button', { name: 'Build room' })).toBeEnabled();
   });
 
@@ -195,6 +287,8 @@ describe('Describe a room', () => {
     expect(screen.getByLabelText('Room description')).toHaveValue('A study with a desk.');
     fireEvent.click(screen.getByRole('button', { name: 'Delete My study' }));
     await waitFor(() => expect(api.deleteRoom).toHaveBeenCalledWith(saved.id));
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'My study' })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'My study' })).not.toBeInTheDocument(),
+    );
   });
 });

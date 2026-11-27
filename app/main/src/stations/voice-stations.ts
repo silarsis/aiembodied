@@ -28,11 +28,20 @@ export interface VoiceStations {
    * Runs a lookup tool made by `offer` (the focused tool loop at the station); null when `tool` is not one.
    * The station trip around it is made by `begin`, as for any station tool.
    */
-  runLookup?(avatarId: string, tool: RegisteredTool, params: unknown, context: { chat: ChatClient; signal: AbortSignal }): Promise<string> | null;
+  runLookup?(
+    avatarId: string,
+    tool: RegisteredTool,
+    params: unknown,
+    context: { chat: ChatClient; signal: AbortSignal },
+  ): Promise<string> | null;
 }
 
 /** `lookup`: offer reading stations as one tool each. Without it every station tool is offered on its own. */
-export function createVoiceStations(registry: StationRegistry, trips: StationTrips, lookup?: StationLookup): VoiceStations {
+export function createVoiceStations(
+  registry: StationRegistry,
+  trips: StationTrips,
+  lookup?: StationLookup,
+): VoiceStations {
   return {
     prepare: () => registry.loadLabels(),
     descriptionNote: (tool) => {
@@ -46,8 +55,12 @@ export function createVoiceStations(registry: StationRegistry, trips: StationTri
     ...(lookup
       ? {
           offer: (tools: RegisteredTool[]) => lookup.offer(tools),
-          runLookup: (avatarId: string, tool: RegisteredTool, params: unknown, context: { chat: ChatClient; signal: AbortSignal }) =>
-            lookup.isLookup(tool) ? lookup.run(avatarId, tool, params, context) : null,
+          runLookup: (
+            avatarId: string,
+            tool: RegisteredTool,
+            params: unknown,
+            context: { chat: ChatClient; signal: AbortSignal },
+          ) => (lookup.isLookup(tool) ? lookup.run(avatarId, tool, params, context) : null),
         }
       : {}),
   };

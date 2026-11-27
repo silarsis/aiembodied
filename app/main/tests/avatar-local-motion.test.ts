@@ -11,7 +11,7 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarMotionChunkEvent,
   AvatarRestSkeleton,
-} from '../src/avatar/types.js';
+} from '../src/shared/avatar/types.js';
 
 function sampleVrma(name: string): VrmaSchema {
   return {
@@ -31,7 +31,10 @@ function sampleVrma(name: string): VrmaSchema {
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /** An NDJSON response whose bytes arrive in awkward pieces, splitting lines mid-way. */
@@ -51,10 +54,17 @@ function ndjsonResponse(lines: unknown[], pieceSize = 17): Response {
 
 describe('LocalMotionClient', () => {
   it('reports health from the service', async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ status: 'ok', backend: 'ardy', device: 'cuda:0', ready: true }));
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ status: 'ok', backend: 'ardy', device: 'cuda:0', ready: true }),
+    );
     const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190/', fetchFn });
 
-    await expect(client.health()).resolves.toEqual({ status: 'ok', backend: 'ardy', device: 'cuda:0', ready: true });
+    await expect(client.health()).resolves.toEqual({
+      status: 'ok',
+      backend: 'ardy',
+      device: 'cuda:0',
+      ready: true,
+    });
     expect(fetchFn.mock.calls[0]?.[0]).toBe('http://127.0.0.1:8190/health');
   });
 
@@ -68,7 +78,9 @@ describe('LocalMotionClient', () => {
   });
 
   it('posts clip requests and validates the returned VRMA', async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ vrma: sampleVrma('wave-hello'), timings: { totalMs: 1900, bogus: 'x' } }));
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ vrma: sampleVrma('wave-hello'), timings: { totalMs: 1900, bogus: 'x' } }),
+    );
     const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn });
 
     const clip = await client.generateClip({ prompt: 'wave hello', duration: 3 });
@@ -91,14 +103,28 @@ describe('LocalMotionClient', () => {
     const fetchFn = vi.fn(async () => jsonResponse({ error: 'model is still loading' }, 503));
     const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn });
 
-    await expect(client.generateClip({ prompt: 'wave' })).rejects.toThrow('HTTP 503 model is still loading');
+    await expect(client.generateClip({ prompt: 'wave' })).rejects.toThrow(
+      'HTTP 503 model is still loading',
+    );
   });
 
   it('yields streamed chunks in order and returns the summary', async () => {
     const fetchFn = vi.fn(async () =>
       ndjsonResponse([
-        { type: 'chunk', index: 0, start: 0, vrma: sampleVrma('wave-0'), timings: { totalMs: 750 } },
-        { type: 'chunk', index: 1, start: 2, vrma: sampleVrma('wave-1'), timings: { totalMs: 360 } },
+        {
+          type: 'chunk',
+          index: 0,
+          start: 0,
+          vrma: sampleVrma('wave-0'),
+          timings: { totalMs: 750 },
+        },
+        {
+          type: 'chunk',
+          index: 1,
+          start: 2,
+          vrma: sampleVrma('wave-1'),
+          timings: { totalMs: 360 },
+        },
         { type: 'done', chunks: 2, timings: { totalMs: 1110 } },
       ]),
     );
@@ -144,7 +170,10 @@ describe('LocalMotionClient', () => {
         { type: 'done', chunks: 1, timings: {}, session: 'new' },
       ]);
     });
-    const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn: fetchFn as unknown as typeof fetch });
+    const client = new LocalMotionClient({
+      baseUrl: 'http://127.0.0.1:8190',
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
 
     const stream = client.stream({ prompt: 'stand up', continueFrom: 'old-session' });
     const first = await stream.next();
@@ -162,7 +191,9 @@ describe('LocalMotionClient', () => {
   });
 
   it('throws when the stream ends without a done line', async () => {
-    const fetchFn = vi.fn(async () => ndjsonResponse([{ type: 'chunk', index: 0, start: 0, vrma: sampleVrma('wave-0') }]));
+    const fetchFn = vi.fn(async () =>
+      ndjsonResponse([{ type: 'chunk', index: 0, start: 0, vrma: sampleVrma('wave-0') }]),
+    );
     const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn });
 
     const stream = client.stream({ prompt: 'wave' });
@@ -178,7 +209,14 @@ describe('LocalMotionGenerationService', () => {
       uploadAnimation: vi.fn(async (request: AvatarAnimationUploadRequest) => {
         uploads.push(request);
         return {
-          animation: { id: 'anim-1', name: request.name ?? 'x', createdAt: 0, fileSha: 'sha', duration: 1, fps: 30 },
+          animation: {
+            id: 'anim-1',
+            name: request.name ?? 'x',
+            createdAt: 0,
+            fileSha: 'sha',
+            duration: 1,
+            fps: 30,
+          },
         };
       }),
     };
@@ -190,7 +228,9 @@ describe('LocalMotionGenerationService', () => {
   }
 
   it('saves a generated clip to the animation library as a .vrma', async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ vrma: sampleVrma('wave-hello'), timings: {} }));
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ vrma: sampleVrma('wave-hello'), timings: {} }),
+    );
     const { service, uploads } = createService(fetchFn);
 
     const result = await service.generateAnimation({ prompt: '  Wave hello!  ', duration: 60 });
@@ -198,15 +238,25 @@ describe('LocalMotionGenerationService', () => {
     expect(result.animation.id).toBe('anim-1');
     expect(uploads).toHaveLength(1);
     expect(uploads[0]?.fileName).toBe('wave-hello.vrma');
-    expect(Buffer.from(uploads[0]?.data ?? '', 'base64').subarray(0, 4).toString('ascii')).toBe('glTF');
+    expect(
+      Buffer.from(uploads[0]?.data ?? '', 'base64')
+        .subarray(0, 4)
+        .toString('ascii'),
+    ).toBe('glTF');
     const init = fetchFn.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(init.body as string)).toEqual({ prompt: 'Wave hello!', duration: 10, name: 'wave-hello' });
+    expect(JSON.parse(init.body as string)).toEqual({
+      prompt: 'Wave hello!',
+      duration: 10,
+      name: 'wave-hello',
+    });
   });
 
   it('rejects an empty prompt', async () => {
     const { service } = createService(vi.fn());
 
-    await expect(service.generateAnimation({ prompt: '   ' })).rejects.toThrow('Motion prompt is required.');
+    await expect(service.generateAnimation({ prompt: '   ' })).rejects.toThrow(
+      'Motion prompt is required.',
+    );
   });
 
   it('forwards each streamed chunk as an encoded .vrma', async () => {
@@ -220,13 +270,19 @@ describe('LocalMotionGenerationService', () => {
     const { service, uploads } = createService(fetchFn);
     const chunks: AvatarMotionChunkEvent[] = [];
 
-    const result = await service.streamMotion({ streamId: 's1', prompt: 'shrug' }, (chunk) => chunks.push(chunk));
+    const result = await service.streamMotion({ streamId: 's1', prompt: 'shrug' }, (chunk) =>
+      chunks.push(chunk),
+    );
 
     expect(chunks.map((chunk) => [chunk.streamId, chunk.index, chunk.start, chunk.name])).toEqual([
       ['s1', 0, 0, 'shrug-0'],
       ['s1', 1, 2, 'shrug-1'],
     ]);
-    expect(Buffer.from(chunks[0]?.data ?? '', 'base64').subarray(0, 4).toString('ascii')).toBe('glTF');
+    expect(
+      Buffer.from(chunks[0]?.data ?? '', 'base64')
+        .subarray(0, 4)
+        .toString('ascii'),
+    ).toBe('glTF');
     expect(result).toMatchObject({ streamId: 's1', chunks: 2 });
     expect(result.firstChunkMs).not.toBeNull();
     expect(uploads).toHaveLength(0);
@@ -237,17 +293,27 @@ describe('LocalMotionGenerationService', () => {
     const fetchFn = vi.fn(async () => done());
     const { service } = createService(fetchFn);
     const bones = ['hips', 'spine', 'chest', 'upperChest'].concat(
-      ...['left', 'right'].map((side) => ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'].map((b) => `${side}${b}`)),
+      ...['left', 'right'].map((side) =>
+        ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'].map((b) => `${side}${b}`),
+      ),
     );
-    const avatarRest = Object.fromEntries(bones.map((bone, i) => [bone, [0, 1 + i / 100, 0]])) as AvatarRestSkeleton;
+    const avatarRest = Object.fromEntries(
+      bones.map((bone, i) => [bone, [0, 1 + i / 100, 0]]),
+    ) as AvatarRestSkeleton;
 
     await service.streamMotion({ streamId: 's1', prompt: 'shrug', avatarRest }, () => undefined);
     await service.streamMotion(
-      { streamId: 's2', prompt: 'shrug', avatarRest: { ...avatarRest, leftHand: [0, Number.NaN, 0] } },
+      {
+        streamId: 's2',
+        prompt: 'shrug',
+        avatarRest: { ...avatarRest, leftHand: [0, Number.NaN, 0] },
+      },
       () => undefined,
     );
 
-    const bodies = fetchFn.mock.calls.map((call) => JSON.parse((call[1] as RequestInit).body as string));
+    const bodies = fetchFn.mock.calls.map((call) =>
+      JSON.parse((call[1] as RequestInit).body as string),
+    );
     expect(bodies[0].avatar_rest).toEqual(avatarRest);
     expect(bodies[1]).not.toHaveProperty('avatar_rest');
     expect(sanitizeRestSkeleton({ hips: [0, 1, 0] })).toBeUndefined();
@@ -267,10 +333,26 @@ describe('motion steering fields', () => {
       prompt: 'a person walks calmly',
       duration: 6,
       phases: [{ prompt: 'a person sits down', startS: 4 }],
-      path: { points: [[0, 0], [0, 2]], cornerRadius: 0.6, speed: 1, startS: 0.3, mode: 'dense' },
+      path: {
+        points: [
+          [0, 0],
+          [0, 2],
+        ],
+        cornerRadius: 0.6,
+        speed: 1,
+        startS: 0.3,
+        mode: 'dense',
+      },
       targets: [
         { t: 5.5, until: 7, root: [0, 2.65], height: 0.5, heading: 3.14, revealS: 4 },
-        { t: 2, hand: 'right', position: [-0.18, 0.75, 0.5], root: [0, 0], height: 0.9, heading: 0 },
+        {
+          t: 2,
+          hand: 'right',
+          position: [-0.18, 0.75, 0.5],
+          root: [0, 0],
+          height: 0.9,
+          heading: 0,
+        },
       ],
       constraintWeight: 2,
       continueFrom: 's-1a2b',
@@ -280,10 +362,26 @@ describe('motion steering fields', () => {
       prompt: 'a person walks calmly',
       duration: 6,
       phases: [{ prompt: 'a person sits down', start_s: 4 }],
-      path: { points: [[0, 0], [0, 2]], corner_radius: 0.6, speed: 1, start_s: 0.3, mode: 'dense' },
+      path: {
+        points: [
+          [0, 0],
+          [0, 2],
+        ],
+        corner_radius: 0.6,
+        speed: 1,
+        start_s: 0.3,
+        mode: 'dense',
+      },
       targets: [
         { t: 5.5, until: 7, root: [0, 2.65], height: 0.5, heading: 3.14, reveal_s: 4 },
-        { t: 2, root: [0, 0], height: 0.9, heading: 0, hand: 'right', position: [-0.18, 0.75, 0.5] },
+        {
+          t: 2,
+          root: [0, 0],
+          height: 0.9,
+          heading: 0,
+          hand: 'right',
+          position: [-0.18, 0.75, 0.5],
+        },
       ],
       constraint_weight: 2,
       continue_from: 's-1a2b',
@@ -292,7 +390,11 @@ describe('motion steering fields', () => {
   });
 
   it('sends joint targets and the observed pose (only with continueFrom)', () => {
-    const observed = { joints: { left_knee: [0.1, 0.5, 0.3] as [number, number, number] }, root: [0, 0.2] as [number, number], height: 0.55 };
+    const observed = {
+      joints: { left_knee: [0.1, 0.5, 0.3] as [number, number, number] },
+      root: [0, 0.2] as [number, number],
+      height: 0.55,
+    };
     const wire = toWireRequest({
       prompt: 'sit',
       targets: [{ t: 1, until: 1.5, joint: 'left_ankle', position: [0.1, 0.08, 0.4], revealS: 2 }],
@@ -318,7 +420,10 @@ describe('motion steering fields', () => {
       ],
       continueFrom: 's-1',
       observed: {
-        joints: { left_knee: [0, 0.5, 0.3], right_knee: [0, 0] as unknown as [number, number, number] },
+        joints: {
+          left_knee: [0, 0.5, 0.3],
+          right_knee: [0, 0] as unknown as [number, number, number],
+        },
         root: [0, 1],
         height: -1,
       },
@@ -331,19 +436,34 @@ describe('motion steering fields', () => {
 
   it('drops malformed steering fields instead of failing the movement', () => {
     const controls = sanitizeMotionControls({
-      path: { points: [[0, 0], [Number.NaN, 1], [0, 2]], speed: -1 },
+      path: {
+        points: [
+          [0, 0],
+          [Number.NaN, 1],
+          [0, 2],
+        ],
+        speed: -1,
+      },
       targets: [
         { t: 1, root: [0, 1], height: 0.9, heading: 0 },
         { t: Number.NaN, root: [0, 1] },
         { t: 2, hand: 'middle' as 'left', position: [0, 0, 0] },
         { t: 2, hand: 'left', position: [0, 0, 0] },
       ],
-      phases: [{ prompt: '  ', startS: 2 }, { prompt: 'sit', startS: 2 }],
+      phases: [
+        { prompt: '  ', startS: 2 },
+        { prompt: 'sit', startS: 2 },
+      ],
       continueFrom: 'bad id!',
       constraintWeight: 0,
       snapS: 0,
     });
-    expect(controls.path).toEqual({ points: [[0, 0], [0, 2]] });
+    expect(controls.path).toEqual({
+      points: [
+        [0, 0],
+        [0, 2],
+      ],
+    });
     expect(controls.targets).toEqual([{ t: 1, root: [0, 1], height: 0.9, heading: 0 }]);
     expect(controls.phases).toEqual([{ prompt: 'sit', startS: 2 }]);
     expect(controls.continueFrom).toBeUndefined();
@@ -361,7 +481,13 @@ describe('motion steering fields', () => {
           vrma: sampleVrma('walk-0'),
           end_pose: { root: [0, 1.5], height: 0.95, heading: 0.2, right_hand: [0, 1, 0.2] },
         },
-        { type: 'chunk', index: 1, start: 2, vrma: sampleVrma('walk-1'), end_pose: { root: ['x'] } },
+        {
+          type: 'chunk',
+          index: 1,
+          start: 2,
+          vrma: sampleVrma('walk-1'),
+          end_pose: { root: ['x'] },
+        },
         { type: 'done', chunks: 2, timings: {}, session: 's-42' },
       ]),
     );
@@ -376,15 +502,34 @@ describe('motion steering fields', () => {
         streamId: 's1',
         prompt: 'walk',
         duration: 25,
-        path: { points: [[0, 0], [0, 3]] },
+        path: {
+          points: [
+            [0, 0],
+            [0, 3],
+          ],
+        },
         continueFrom: 's-41',
       },
       (chunk) => chunks.push(chunk),
     );
 
     const body = JSON.parse((fetchFn.mock.calls[0]?.[1] as RequestInit).body as string);
-    expect(body).toMatchObject({ duration: 25, path: { points: [[0, 0], [0, 3]] }, continue_from: 's-41' });
-    expect(chunks[0]?.endPose).toEqual({ root: [0, 1.5], height: 0.95, heading: 0.2, rightHand: [0, 1, 0.2] });
+    expect(body).toMatchObject({
+      duration: 25,
+      path: {
+        points: [
+          [0, 0],
+          [0, 3],
+        ],
+      },
+      continue_from: 's-41',
+    });
+    expect(chunks[0]?.endPose).toEqual({
+      root: [0, 1.5],
+      height: 0.95,
+      heading: 0.2,
+      rightHand: [0, 1, 0.2],
+    });
     expect(chunks[1]?.endPose).toBeUndefined();
     expect(result.session).toBe('s-42');
   });

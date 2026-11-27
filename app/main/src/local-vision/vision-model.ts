@@ -12,42 +12,34 @@ import {
   lookupHuggingFace,
   parseHuggingFaceRef,
   pickDefaultQuant,
-  type HfFile,
-  type HfLookup,
-  type HfQuant,
 } from '../local-llm/huggingface.js';
-import { LlmLibrary, type LlmDownload } from '../local-llm/llm-library.js';
+import type { HfFile, HfLookup, HfQuant } from '../shared/local-llm/huggingface-types.js';
+import { LlmLibrary } from '../local-llm/llm-library.js';
+import type { VisionStatus, VisionPick } from '../shared/local-vision/vision-model-types.js';
 
 /** Tried in order when no repo is named. */
-export const DEFAULT_VISION_REPOS = ['ggml-org/Qwen3-VL-8B-Instruct-GGUF', 'unsloth/Qwen3-VL-8B-Instruct-GGUF'] as const;
+export const DEFAULT_VISION_REPOS = [
+  'ggml-org/Qwen3-VL-8B-Instruct-GGUF',
+  'unsloth/Qwen3-VL-8B-Instruct-GGUF',
+] as const;
 export const VISION_ALIAS = 'qwen3-vl';
 /** Shown on the download button. */
 export const VISION_SIZE_HINT = '~6 GB';
 
-/** What local-vision.json keeps. model and mmproj are absolute paths. */
-export interface VisionPick {
-  repo: string;
-  model: string;
-  mmproj: string;
-  alias: string;
-}
-
-/** What the Describe the avatar row shows. */
-export interface VisionStatus {
-  pick: VisionPick | null;
-  /** Both files are on disk. */
-  ready: boolean;
-  sizeBytes: number;
-  /** The newest download that is running or failed, if any. */
-  download: LlmDownload | null;
-  folder: string;
-}
-
 export async function readVisionPick(file: string): Promise<VisionPick | null> {
   try {
     const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as Partial<VisionPick>;
-    if (typeof parsed.repo === 'string' && typeof parsed.model === 'string' && typeof parsed.mmproj === 'string') {
-      return { repo: parsed.repo, model: parsed.model, mmproj: parsed.mmproj, alias: typeof parsed.alias === 'string' && parsed.alias ? parsed.alias : VISION_ALIAS };
+    if (
+      typeof parsed.repo === 'string' &&
+      typeof parsed.model === 'string' &&
+      typeof parsed.mmproj === 'string'
+    ) {
+      return {
+        repo: parsed.repo,
+        model: parsed.model,
+        mmproj: parsed.mmproj,
+        alias: typeof parsed.alias === 'string' && parsed.alias ? parsed.alias : VISION_ALIAS,
+      };
     }
   } catch {
     // Missing or unreadable: nothing downloaded yet.
@@ -72,7 +64,9 @@ export function pickMmproj(files: HfFile[]): HfFile | null {
     if (/q8_0/i.test(name)) return 2;
     return 3;
   };
-  return [...files].sort((a, b) => rank(a) - rank(b) || a.size - b.size || a.path.localeCompare(b.path))[0];
+  return [...files].sort(
+    (a, b) => rank(a) - rank(b) || a.size - b.size || a.path.localeCompare(b.path),
+  )[0];
 }
 
 export interface VisionFiles {
@@ -82,13 +76,18 @@ export interface VisionFiles {
 }
 
 /** Choose the model GGUF (Q4_K_M unless the reference names another size) and the mmproj from a repo lookup. */
-export function chooseVisionFiles(lookup: HfLookup, ref: { quant?: string; file?: string } = {}): VisionFiles {
+export function chooseVisionFiles(
+  lookup: HfLookup,
+  ref: { quant?: string; file?: string } = {},
+): VisionFiles {
   if (!lookup.repo || !lookup.quants.length) {
     throw new Error(lookup.note ?? 'That repo has no GGUF files, which is what llama-server runs.');
   }
   const mmproj = pickMmproj(lookup.mmproj ?? []);
   if (!mmproj) {
-    throw new Error(`${lookup.repo} has no mmproj file, so it can't read images. Pick a vision GGUF repo such as ${DEFAULT_VISION_REPOS[0]}.`);
+    throw new Error(
+      `${lookup.repo} has no mmproj file, so it can't read images. Pick a vision GGUF repo such as ${DEFAULT_VISION_REPOS[0]}.`,
+    );
   }
   const id = pickDefaultQuant(lookup.quants, ref.quant, ref.file);
   const quant = lookup.quants.find((entry) => entry.id === id) ?? lookup.quants[0];
@@ -107,7 +106,10 @@ export interface VisionModelOptions {
   token: () => string | undefined;
   fetchFn?: typeof fetch;
   freeSpace?: (directory: string) => Promise<number | null>;
-  logger?: { info(message: string, meta?: unknown): void; warn(message: string, meta?: unknown): void };
+  logger?: {
+    info(message: string, meta?: unknown): void;
+    warn(message: string, meta?: unknown): void;
+  };
 }
 
 export class VisionModel {
@@ -123,7 +125,12 @@ export class VisionModel {
       logger: options.logger,
       persist: async (model) => {
         const [modelPath, mmprojPath] = model.files;
-        await writeVisionPick(options.file, { repo: model.repo, model: modelPath, mmproj: mmprojPath, alias: VISION_ALIAS });
+        await writeVisionPick(options.file, {
+          repo: model.repo,
+          model: modelPath,
+          mmproj: mmprojPath,
+          alias: VISION_ALIAS,
+        });
       },
     });
   }
@@ -139,10 +146,19 @@ export class VisionModel {
     const ready = Boolean(saved && existsSync(saved.model) && existsSync(saved.mmproj));
     let sizeBytes = 0;
     if (saved && ready) {
-      for (const file of [saved.model, saved.mmproj]) sizeBytes += (await fs.stat(file).catch(() => null))?.size ?? 0;
+      for (const file of [saved.model, saved.mmproj])
+        sizeBytes += (await fs.stat(file).catch(() => null))?.size ?? 0;
     }
-    const download = this.library.list().find((entry) => entry.state !== 'done' && entry.state !== 'cancelled') ?? null;
-    return { pick: saved, ready, sizeBytes, download, folder: path.join(this.options.modelsDirectory, 'vision') };
+    const download =
+      this.library.list().find((entry) => entry.state !== 'done' && entry.state !== 'cancelled') ??
+      null;
+    return {
+      pick: saved,
+      ready,
+      sizeBytes,
+      download,
+      folder: path.join(this.options.modelsDirectory, 'vision'),
+    };
   }
 
   cancel(): void {
@@ -159,7 +175,9 @@ export class VisionModel {
     if (ref?.trim()) {
       const parsed = parseHuggingFaceRef(ref);
       if (!parsed || 'search' in parsed) {
-        throw new Error('Paste a Hugging Face link or repo name of a vision model (such as ggml-org/Qwen3-VL-8B-Instruct-GGUF).');
+        throw new Error(
+          'Paste a Hugging Face link or repo name of a vision model (such as ggml-org/Qwen3-VL-8B-Instruct-GGUF).',
+        );
       }
       attempts.push(parsed);
     } else {
@@ -171,7 +189,10 @@ export class VisionModel {
         const lookup = await lookupHuggingFace(attempt, token, this.options.fetchFn);
         const chosen = chooseVisionFiles(lookup, attempt);
         const files = [chosen.quant.files[0], chosen.mmproj];
-        if (chosen.quant.files.length > 1) throw new Error(`${chosen.repo}'s ${chosen.quant.label} comes in several parts; pick a smaller size such as Q4_K_M.`);
+        if (chosen.quant.files.length > 1)
+          throw new Error(
+            `${chosen.repo}'s ${chosen.quant.label} comes in several parts; pick a smaller size such as Q4_K_M.`,
+          );
         const combined: HfQuant = {
           id: `vision:${chosen.quant.id}`,
           label: `${chosen.quant.label} + mmproj`,
@@ -182,9 +203,14 @@ export class VisionModel {
         return;
       } catch (error) {
         lastError = error;
-        this.options.logger?.warn('Vision model lookup failed.', { repo: attempt.repo, message: error instanceof Error ? error.message : String(error) });
+        this.options.logger?.warn('Vision model lookup failed.', {
+          repo: attempt.repo,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
-    throw lastError instanceof Error ? lastError : new Error('Could not find the vision model on Hugging Face.');
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Could not find the vision model on Hugging Face.');
   }
 }

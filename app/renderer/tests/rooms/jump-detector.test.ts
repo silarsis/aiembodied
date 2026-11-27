@@ -41,7 +41,10 @@ describe('JumpDetector', () => {
     expect(detector.check({})).toBe(true);
     expect(warn).toHaveBeenCalledTimes(1);
     const message = String(warn.mock.calls[0][0]);
-    const detail = JSON.parse(message.slice(message.indexOf('{'))) as { hipsMove: number; before: { clip?: string } };
+    const detail = JSON.parse(message.slice(message.indexOf('{'))) as {
+      hipsMove: number;
+      before: { clip?: string };
+    };
     expect(detail.hipsMove).toBeCloseTo(0.8, 3);
     expect(detail.before.clip).toBe('live-a-0');
   });

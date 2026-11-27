@@ -10,7 +10,8 @@
  *
  * The satellite switches its own devices off first. Nothing here can turn a device on.
  */
-import type { PlacePresence, PlaceDeviceState } from '../presence/place-presence.js';
+import type { PlacePresence } from '../presence/place-presence.js';
+import type { PlaceDeviceState } from '../shared/presence/place-presence-types.js';
 import type { PlaceManager } from '../places/place-manager.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { Op } from '../shared/room-hub/frames.js';
@@ -50,7 +51,10 @@ export class PlaceDevices {
 
   private setClosed(placeId: string, closed: boolean): void {
     this.options.places.setClosed(placeId, closed);
-    this.options.logger?.info(closed ? 'A desktop room was closed from its PC' : 'A desktop room was opened from its PC', { placeId });
+    this.options.logger?.info(
+      closed ? 'A desktop room was closed from its PC' : 'A desktop room was opened from its PC',
+      { placeId },
+    );
     this.options.onChanged?.(placeId);
   }
 
@@ -60,10 +64,25 @@ export class PlaceDevices {
     const after = this.options.presence.deviceState(placeId);
     if (!after) return;
     // The PC is the authority on whether Kevin closed the room, including after a restart of either side.
-    if (this.options.places.isClosed(placeId) !== after.closed) this.setClosed(placeId, after.closed);
+    if (this.options.places.isClosed(placeId) !== after.closed)
+      this.setClosed(placeId, after.closed);
     const phone = this.options.places.get(placeId)?.kind === 'phone';
-    this.watch(this.lockTimers, placeId, after.locked, phone ? (this.options.phoneAwayMs ?? PHONE_AWAY_HOME_MS) : (this.options.lockedMs ?? LOCKED_HOME_MS), phone ? 'phone not in use' : 'screen locked');
-    this.watch(this.fullscreenTimers, placeId, after.fullscreen, this.options.fullscreenMs ?? FULLSCREEN_HOME_MS, 'full screen app');
+    this.watch(
+      this.lockTimers,
+      placeId,
+      after.locked,
+      phone
+        ? (this.options.phoneAwayMs ?? PHONE_AWAY_HOME_MS)
+        : (this.options.lockedMs ?? LOCKED_HOME_MS),
+      phone ? 'phone not in use' : 'screen locked',
+    );
+    this.watch(
+      this.fullscreenTimers,
+      placeId,
+      after.fullscreen,
+      this.options.fullscreenMs ?? FULLSCREEN_HOME_MS,
+      'full screen app',
+    );
     const changed = FIELDS.filter((field) => !before || before[field] !== after[field]);
     if (changed.length > 0) {
       this.journal(placeId, before, after, changed);
@@ -72,7 +91,13 @@ export class PlaceDevices {
   }
 
   /** Starts the clock when the condition begins and stops it when it ends. */
-  private watch(timers: Map<string, ReturnType<typeof setTimeout>>, placeId: string, on: boolean, ms: number, reason: string): void {
+  private watch(
+    timers: Map<string, ReturnType<typeof setTimeout>>,
+    placeId: string,
+    on: boolean,
+    ms: number,
+    reason: string,
+  ): void {
     if (!on) {
       const handle = timers.get(placeId);
       if (handle) clearTimeout(handle);
@@ -99,11 +124,17 @@ export class PlaceDevices {
   }
 
   dispose(): void {
-    for (const placeId of [...this.lockTimers.keys(), ...this.fullscreenTimers.keys()]) this.forget(placeId);
+    for (const placeId of [...this.lockTimers.keys(), ...this.fullscreenTimers.keys()])
+      this.forget(placeId);
   }
 
   /** Fire-and-forget, like the hub's journal. */
-  private journal(placeId: string, before: PlaceDeviceState | null, after: PlaceDeviceState, changed: string[]): void {
+  private journal(
+    placeId: string,
+    before: PlaceDeviceState | null,
+    after: PlaceDeviceState,
+    changed: string[],
+  ): void {
     try {
       const bus = this.options.bus?.();
       if (!bus) return;
@@ -116,7 +147,9 @@ export class PlaceDevices {
         payload: { placeId, state: after, previous: before, changed },
       });
     } catch (error) {
-      this.options.logger?.warn('Could not journal a device change', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Could not journal a device change', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

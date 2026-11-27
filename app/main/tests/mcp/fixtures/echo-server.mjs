@@ -25,9 +25,13 @@ server.registerTool('fail', { description: 'Always fails', inputSchema: {} }, as
   content: [{ type: 'text', text: 'it broke' }],
 }));
 
-server.registerTool('env', { description: 'Read an environment variable', inputSchema: { name: z.string() } }, async ({ name }) => ({
-  content: [{ type: 'text', text: process.env[name] ?? '(unset)' }],
-}));
+server.registerTool(
+  'env',
+  { description: 'Read an environment variable', inputSchema: { name: z.string() } },
+  async ({ name }) => ({
+    content: [{ type: 'text', text: process.env[name] ?? '(unset)' }],
+  }),
+);
 
 server.registerTool('die', { description: 'Exit the process', inputSchema: {} }, async () => {
   setTimeout(() => process.exit(1), 10);

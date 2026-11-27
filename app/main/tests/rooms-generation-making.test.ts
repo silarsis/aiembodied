@@ -2,14 +2,19 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeOrder, RoomGenerationService, type ObjectGenerator, type RoomGenerationProgress } from '../src/rooms/room-generation.js';
+import {
+  makeOrder,
+  RoomGenerationService,
+  type ObjectGenerator,
+} from '../src/rooms/room-generation.js';
+import type { RoomGenerationProgress } from '../src/shared/rooms/room-generation-types.js';
 import { RoomService } from '../src/rooms/room-service.js';
 import { validateLayout, type LayoutObject } from '../src/rooms/room-layout.js';
 import type { ResolvedModel } from '../src/rooms/room-placer.js';
 import { GeneratedLibrary } from '../src/rooms/asset-library/generated-library.js';
 import { GeneratedSource } from '../src/rooms/asset-library/generated-source.js';
 import { makeGlb } from './rooms-glb-fixture.js';
-import type { RoomFile } from '../src/rooms/types.js';
+import type { RoomFile } from '../src/shared/rooms/types.js';
 import { validateRoomFile } from '../src/shared/rooms/validate.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
@@ -17,11 +22,36 @@ const ROOM_ID = `room:${UUID}`;
 const layout = () =>
   validateLayout({
     name: 'Cosy study',
-    shell: { width: 6, depth: 6, height: 2.7, windows: [{ wall: 'north', width: 1.4 }], door: { wall: 'east' } },
+    shell: {
+      width: 6,
+      depth: 6,
+      height: 2.7,
+      windows: [{ wall: 'north', width: 1.4 }],
+      door: { wall: 'east' },
+    },
     objects: [
-      { id: 'lamp', name: 'floor lamp', category: 'lamp', size: [0.3, 1.5, 0.3], place: { against: 'west' } },
-      { id: 'chair', name: 'rocking chair', category: 'seat', size: [0.6, 0.9, 0.6], seat_height: 0.45, place: { against: 'south' } },
-      { id: 'desk', name: 'desk', category: 'table', size: [1.4, 0.75, 0.7], place: { against: 'north' } },
+      {
+        id: 'lamp',
+        name: 'floor lamp',
+        category: 'lamp',
+        size: [0.3, 1.5, 0.3],
+        place: { against: 'west' },
+      },
+      {
+        id: 'chair',
+        name: 'rocking chair',
+        category: 'seat',
+        size: [0.6, 0.9, 0.6],
+        seat_height: 0.45,
+        place: { against: 'south' },
+      },
+      {
+        id: 'desk',
+        name: 'desk',
+        category: 'table',
+        size: [1.4, 0.75, 0.7],
+        place: { against: 'north' },
+      },
       { id: 'rug', name: 'rug', category: 'decor', size: [2, 0.02, 1.5], place: {} },
     ],
   });
@@ -34,7 +64,10 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const modelFor = (id: string, size: [number, number, number]): ResolvedModel => ({ model: { asset: `generated/${id}-aaaaaaaa`, file: 'model.glb', scale: 1 }, size });
+const modelFor = (id: string, size: [number, number, number]): ResolvedModel => ({
+  model: { asset: `generated/${id}-aaaaaaaa`, file: 'model.glb', scale: 1 },
+  size,
+});
 
 /** A generator that makes whatever it is told to, one object at a time, and can be held up. */
 class FakeGenerator implements ObjectGenerator {
@@ -63,7 +96,10 @@ class FakeGenerator implements ObjectGenerator {
   async remove() {}
 }
 
-function service(generator: FakeGenerator, settings: { enabled?: boolean; maxPerRoom?: number; available?: boolean } = {}) {
+function service(
+  generator: FakeGenerator,
+  settings: { enabled?: boolean; maxPerRoom?: number; available?: boolean } = {},
+) {
   const events: RoomGenerationProgress[] = [];
   const updated: string[] = [];
   const instance = new RoomGenerationService({
@@ -79,8 +115,10 @@ function service(generator: FakeGenerator, settings: { enabled?: boolean; maxPer
   return { instance, events, updated, onProgress: (e: RoomGenerationProgress) => events.push(e) };
 }
 
-const readRoom = async (): Promise<RoomFile> => validateRoomFile(JSON.parse(await readFile(path.join(dir, UUID, 'room.json'), 'utf8')));
-const finished = (events: RoomGenerationProgress[]) => vi.waitFor(() => expect(events.at(-1)?.phase).toBe('done'));
+const readRoom = async (): Promise<RoomFile> =>
+  validateRoomFile(JSON.parse(await readFile(path.join(dir, UUID, 'room.json'), 'utf8')));
+const finished = (events: RoomGenerationProgress[]) =>
+  vi.waitFor(() => expect(events.at(-1)?.phase).toBe('done'));
 
 describe('making missing objects in the background', () => {
   it('saves the room with simple shapes at once, then swaps in each model and says so', async () => {
@@ -102,7 +140,11 @@ describe('making missing objects in the background', () => {
     expect(before.objects.find((o) => o.id === 'chair')?.model).toBeUndefined();
 
     await vi.waitFor(() => expect(generator.started).toEqual(['chair']));
-    expect(events.at(-1)).toMatchObject({ phase: 'making', roomId: ROOM_ID, message: 'Making the rocking chair (1/3)…' });
+    expect(events.at(-1)).toMatchObject({
+      phase: 'making',
+      roomId: ROOM_ID,
+      message: 'Making the rocking chair (1/3)…',
+    });
     release();
     generator.gate = null;
     await finished(events);
@@ -119,7 +161,11 @@ describe('making missing objects in the background', () => {
       phase: 'done',
       roomId: ROOM_ID,
       message: 'Done, with notes',
-      warnings: ['Made a new model for the rocking chair.', 'Made a new model for the desk.', 'Made a new model for the floor lamp.'],
+      warnings: [
+        'Made a new model for the rocking chair.',
+        'Made a new model for the desk.',
+        'Made a new model for the floor lamp.',
+      ],
     });
     expect(instance.busy).toBe(false);
     expect(instance.making).toBeNull();
@@ -135,8 +181,19 @@ describe('making missing objects in the background', () => {
     expect(after.objects.find((o) => o.id === 'rug')?.model).toBeUndefined();
 
     const generation = JSON.parse(await readFile(path.join(dir, UUID, 'generation.json'), 'utf8'));
-    expect(generation).toMatchObject({ madeObjects: ['chair', 'desk', 'lamp'], couldNotMake: [], making: ['chair', 'desk', 'lamp'] });
-    expect((await new RoomService({ assetsDirectory: path.join(dir, 'none'), roomsDirectory: dir }).list()).map((r) => r.id)).toEqual([ROOM_ID]);
+    expect(generation).toMatchObject({
+      madeObjects: ['chair', 'desk', 'lamp'],
+      couldNotMake: [],
+      making: ['chair', 'desk', 'lamp'],
+    });
+    expect(
+      (
+        await new RoomService({
+          assetsDirectory: path.join(dir, 'none'),
+          roomsDirectory: dir,
+        }).list()
+      ).map((r) => r.id),
+    ).toEqual([ROOM_ID]);
   });
 
   it('re-fits to the real size around the placed position, sliding in from a wall only as far as needed', async () => {
@@ -154,7 +211,10 @@ describe('making missing objects in the background', () => {
     expect(Math.hypot(chair.position[0] - was[0], chair.position[2] - was[2])).toBeCloseTo(0.05, 2);
     // The spot in front of the chair moved out by half the extra depth.
     const oldStand = before.objects.find((o) => o.id === 'chair')!.tags!.stand!.position;
-    expect(chair.tags!.stand!.position[2]).toBeCloseTo(oldStand[2] + (0.7 - 0.6) / 2 * Math.sign(oldStand[2] || 1), 3);
+    expect(chair.tags!.stand!.position[2]).toBeCloseTo(
+      oldStand[2] + ((0.7 - 0.6) / 2) * Math.sign(oldStand[2] || 1),
+      3,
+    );
   });
 
   it('stops at the limit and says which objects stayed simple shapes', async () => {
@@ -180,8 +240,12 @@ describe('making missing objects in the background', () => {
     await instance.generate('a study', onProgress);
     await finished(events);
     expect(generator.started).toEqual(['chair']);
-    expect(events.at(-1)?.warnings).toContain("Couldn't make a floor lamp (the limit is 1 new object per room), used a simple shape.");
-    expect((await readRoom()).objects.find((o) => o.id === 'desk')?.model?.asset).toBe('generated/desk-aaaaaaaa');
+    expect(events.at(-1)?.warnings).toContain(
+      "Couldn't make a floor lamp (the limit is 1 new object per room), used a simple shape.",
+    );
+    expect((await readRoom()).objects.find((o) => o.id === 'desk')?.model?.asset).toBe(
+      'generated/desk-aaaaaaaa',
+    );
   });
 
   it('falls back to a simple shape with a note when making one fails, and carries on', async () => {
@@ -200,7 +264,9 @@ describe('making missing objects in the background', () => {
     const room = await readRoom();
     expect(room.objects.find((o) => o.id === 'chair')?.model).toBeUndefined();
     expect(room.objects.find((o) => o.id === 'chair')?.parts?.length).toBeGreaterThan(0);
-    expect(JSON.parse(await readFile(path.join(dir, UUID, 'generation.json'), 'utf8')).couldNotMake).toEqual(['chair']);
+    expect(
+      JSON.parse(await readFile(path.join(dir, UUID, 'generation.json'), 'utf8')).couldNotMake,
+    ).toEqual(['chair']);
   });
 
   it('keeps the simple shape and warns when the real footprint would overlap something', async () => {
@@ -210,14 +276,17 @@ describe('making missing objects in the background', () => {
     await instance.generate('a study', onProgress);
     await finished(events);
     const notes = events.at(-1)?.warnings ?? [];
-    expect(notes.find((n) => n.startsWith('Made a new floor lamp but'))).toMatch(/so kept a simple shape\.$/);
+    expect(notes.find((n) => n.startsWith('Made a new floor lamp but'))).toMatch(
+      /so kept a simple shape\.$/,
+    );
     expect(updated).toHaveLength(2);
     expect((await readRoom()).objects.find((o) => o.id === 'lamp')?.model).toBeUndefined();
   });
 
   it('cancel stops the background work too and leaves the room as it is', async () => {
     const generator = new FakeGenerator();
-    generator.gate = (signal) => new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+    generator.gate = (signal) =>
+      new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
     const { instance, events, updated, onProgress } = service(generator);
     await instance.generate('a study', onProgress);
     await vi.waitFor(() => expect(generator.started).toEqual(['chair']));
@@ -233,12 +302,15 @@ describe('making missing objects in the background', () => {
     ]);
     expect(updated).toEqual([]);
     expect(instance.busy).toBe(false);
-    expect((await readRoom()).objects.find((o) => o.id === 'chair')?.parts?.length).toBeGreaterThan(0);
+    expect((await readRoom()).objects.find((o) => o.id === 'chair')?.parts?.length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('deleting the room stops making objects for it', async () => {
     const generator = new FakeGenerator();
-    generator.gate = (signal) => new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+    generator.gate = (signal) =>
+      new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
     const { instance, events, updated, onProgress } = service(generator);
     await instance.generate('a study', onProgress);
     await vi.waitFor(() => expect(generator.started).toEqual(['chair']));
@@ -253,21 +325,24 @@ describe('making missing objects in the background', () => {
     ['switched off', { enabled: false }],
     ['the image and 3D steps are not set up', { available: false }],
     ['the limit is 0', { maxPerRoom: 0 }],
-  ])('makes nothing when %s: every missing object is a simple shape right away', async (_name, settings) => {
-    const generator = new FakeGenerator();
-    const { instance, events, onProgress } = service(generator, settings);
-    const result = await instance.generate('a study', onProgress);
-    expect(result.making).toBeUndefined();
-    expect(result.warnings).toEqual([
-      "Couldn't find a floor lamp, used a simple shape.",
-      "Couldn't find a rocking chair, used a simple shape.",
-      "Couldn't find a desk, used a simple shape.",
-      "Couldn't find a rug, used a simple shape.",
-    ]);
-    expect(events.at(-1)).toMatchObject({ phase: 'done', message: 'Done, with notes' });
-    expect(generator.started).toEqual([]);
-    expect(instance.busy).toBe(false);
-  });
+  ])(
+    'makes nothing when %s: every missing object is a simple shape right away',
+    async (_name, settings) => {
+      const generator = new FakeGenerator();
+      const { instance, events, onProgress } = service(generator, settings);
+      const result = await instance.generate('a study', onProgress);
+      expect(result.making).toBeUndefined();
+      expect(result.warnings).toEqual([
+        "Couldn't find a floor lamp, used a simple shape.",
+        "Couldn't find a rocking chair, used a simple shape.",
+        "Couldn't find a desk, used a simple shape.",
+        "Couldn't find a rug, used a simple shape.",
+      ]);
+      expect(events.at(-1)).toMatchObject({ phase: 'done', message: 'Done, with notes' });
+      expect(generator.started).toEqual([]);
+      expect(instance.busy).toBe(false);
+    },
+  );
 
   it('puts the most important objects first', () => {
     const objects = layout().objects;
@@ -282,14 +357,30 @@ describe('with the real generated source', () => {
       uploadImage: async () => 'aiembodied/x.png',
       run: async (_graph: unknown, options?: { output?: string }) => {
         calls.push(options?.output === 'mesh' ? 'mesh' : 'image');
-        return options?.output === 'mesh' ? makeGlb({ min: [-0.3, 0, -0.3], max: [0.3, 0.9, 0.3] }) : Buffer.from('png');
+        return options?.output === 'mesh'
+          ? makeGlb({ min: [-0.3, 0, -0.3], max: [0.3, 0.9, 0.3] })
+          : Buffer.from('png');
       },
     };
     const generated = new GeneratedSource({
       library: new GeneratedLibrary(path.join(dir, 'assets')),
       pickComfy: async () => comfy,
-      imageModel: async () => ({ id: 'q', name: 'Qwen', family: 'qwen-image-2.1', model: 'q', clip: 'c', vae: 'v' }),
-      geometryModel: async () => ({ kind: 'trellis2', id: 't', name: 'T', unet: 't', shapeVae: 's', textureVae: 'x' }),
+      imageModel: async () => ({
+        id: 'q',
+        name: 'Qwen',
+        family: 'qwen-image-2.1',
+        model: 'q',
+        clip: 'c',
+        vae: 'v',
+      }),
+      geometryModel: async () => ({
+        kind: 'trellis2',
+        id: 't',
+        name: 'T',
+        unet: 't',
+        shapeVae: 's',
+        textureVae: 'x',
+      }),
     });
     const rooms = path.join(dir, 'rooms');
     const ids = ['11111111-2222-3333-4444-555555555555', '11111111-2222-3333-4444-666666666666'];
@@ -311,16 +402,34 @@ describe('with the real generated source', () => {
     expect(calls).toEqual(['image', 'mesh']);
     expect(events.at(-1)?.warnings?.[0]).toBe('Made a new model for the rocking chair.');
     // The cap was 1: the chair came first, the desk and lamp stayed shapes.
-    const firstRoom = validateRoomFile(JSON.parse(await readFile(path.join(rooms, '11111111-2222-3333-4444-555555555555', 'room.json'), 'utf8')));
-    expect(firstRoom.objects.find((o) => o.id === 'chair')?.model?.asset).toMatch(/^generated\/rocking-chair-/);
+    const firstRoom = validateRoomFile(
+      JSON.parse(
+        await readFile(
+          path.join(rooms, '11111111-2222-3333-4444-555555555555', 'room.json'),
+          'utf8',
+        ),
+      ),
+    );
+    expect(firstRoom.objects.find((o) => o.id === 'chair')?.model?.asset).toMatch(
+      /^generated\/rocking-chair-/,
+    );
 
     // The next room asks for the same objects; the chair is found at once, so only one more is made.
     const secondEvents: RoomGenerationProgress[] = [];
     const second = build();
     const result = await second.generate('another study', (e) => secondEvents.push(e));
     expect(result.making).toBe(2);
-    const secondRoom = validateRoomFile(JSON.parse(await readFile(path.join(rooms, '11111111-2222-3333-4444-666666666666', 'room.json'), 'utf8')));
-    expect(secondRoom.objects.find((o) => o.id === 'chair')?.model?.asset).toBe(firstRoom.objects.find((o) => o.id === 'chair')?.model?.asset);
+    const secondRoom = validateRoomFile(
+      JSON.parse(
+        await readFile(
+          path.join(rooms, '11111111-2222-3333-4444-666666666666', 'room.json'),
+          'utf8',
+        ),
+      ),
+    );
+    expect(secondRoom.objects.find((o) => o.id === 'chair')?.model?.asset).toBe(
+      firstRoom.objects.find((o) => o.id === 'chair')?.model?.asset,
+    );
     await vi.waitFor(() => expect(secondEvents.at(-1)?.phase).toBe('done'));
     expect(calls).toEqual(['image', 'mesh', 'image', 'mesh']);
   });

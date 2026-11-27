@@ -12,7 +12,10 @@ import { inJob, type ComfyGraph } from '../../avatar/generation/comfyui-client.j
 import { graphsModelFiles } from '../../avatar/generation/comfyui-needs.js';
 import { characterMeshGraph } from '../../avatar/generation/character/graphs.js';
 import type { GeometryModel } from '../../avatar/generation/character-model-service.js';
-import { buildImageWorkflow, type ImageWorkflowModel } from '../../avatar/generation/image-workflows.js';
+import {
+  buildImageWorkflow,
+  type ImageWorkflowModel,
+} from '../../avatar/generation/image-workflows.js';
 import { ASSET_SCHEME } from '../asset-protocol.js';
 import type { GeneratedObjectSummary } from '../../shared/rooms/object-settings.js';
 import type { LayoutObject } from '../room-layout.js';
@@ -33,7 +36,10 @@ import type { ObjectSource } from './library-source.js';
 /** The part of ComfyUIClient this needs; tests give it a fake. */
 export interface ObjectComfy {
   uploadImage(fileName: string, png: Buffer): Promise<string>;
-  run(graph: ComfyGraph, options?: { signal?: AbortSignal; output?: 'image' | 'mesh' }): Promise<Buffer>;
+  run(
+    graph: ComfyGraph,
+    options?: { signal?: AbortSignal; output?: 'image' | 'mesh' },
+  ): Promise<Buffer>;
   /** One lease for the uploads and runs inside (ComfyUIClient has it; a fake may not). */
   job?: <T>(needs: string[], work: () => Promise<T>) => Promise<T>;
 }
@@ -55,11 +61,18 @@ export interface MadeObject {
   resolved: ResolvedModel;
 }
 
-export function objectImageGraph(model: ImageWorkflowModel, prompt: string, seed: number): ComfyGraph {
+export function objectImageGraph(
+  model: ImageWorkflowModel,
+  prompt: string,
+  seed: number,
+): ComfyGraph {
   const graph = buildImageWorkflow({ ...model, loras: undefined }, prompt, seed);
-  if (graph.encode?.class_type === 'TextEncodeQwenImage21') graph.encode.inputs.negative_prompt = OBJECT_IMAGE_NEGATIVE;
-  if (graph.negative?.class_type === 'CLIPTextEncode') graph.negative.inputs.text = OBJECT_IMAGE_NEGATIVE;
-  if (graph.save?.class_type === 'SaveImage') graph.save.inputs.filename_prefix = 'aiembodied/room-object';
+  if (graph.encode?.class_type === 'TextEncodeQwenImage21')
+    graph.encode.inputs.negative_prompt = OBJECT_IMAGE_NEGATIVE;
+  if (graph.negative?.class_type === 'CLIPTextEncode')
+    graph.negative.inputs.text = OBJECT_IMAGE_NEGATIVE;
+  if (graph.save?.class_type === 'SaveImage')
+    graph.save.inputs.filename_prefix = 'aiembodied/room-object';
   return graph;
 }
 
@@ -78,11 +91,17 @@ export class GeneratedSource implements ObjectSource {
   /** A model made earlier for this sort of object, or null. Never makes anything. */
   async resolve(object: LayoutObject, signal?: AbortSignal): Promise<ResolvedModel | null> {
     try {
-      const entry = await this.options.library.find({ search: object.search, name: object.name, category: object.category });
+      const entry = await this.options.library.find({
+        search: object.search,
+        name: object.name,
+        category: object.category,
+      });
       return entry ? resolvedFrom(entry, object) : null;
     } catch (error) {
       if (signal?.aborted) throw error;
-      this.options.logger?.warn('Could not search the generated objects.', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Could not search the generated objects.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -109,10 +128,17 @@ export class GeneratedSource implements ObjectSource {
     return run;
   }
 
-  private async make(object: LayoutObject, signal: AbortSignal): Promise<MadeObject & { reused: boolean }> {
+  private async make(
+    object: LayoutObject,
+    signal: AbortSignal,
+  ): Promise<MadeObject & { reused: boolean }> {
     const cancelled = () => new Error('Cancelled.');
     if (signal.aborted) throw cancelled();
-    const earlier = await this.options.library.find({ search: object.search, name: object.name, category: object.category });
+    const earlier = await this.options.library.find({
+      search: object.search,
+      name: object.name,
+      category: object.category,
+    });
     if (earlier) return { entry: earlier, resolved: resolvedFrom(earlier, object), reused: true };
 
     const imageModel = await this.options.imageModel();
@@ -129,14 +155,27 @@ export class GeneratedSource implements ObjectSource {
     const dir = directoryFor(object.name, `${object.name}|${prompt}|${created}|${seed}`);
     const meshComfy = await this.options.pickComfy('mesh');
     // The image is uploaded to the machine that builds the mesh: one lease for both.
-    const glb = await inJob(meshComfy, graphsModelFiles(characterMeshGraph({ front: 'front.png' }, seed, geometry)), async () => {
-      const uploaded = await meshComfy.uploadImage(`room-object-${dir}.png`, image);
-      return meshComfy.run(characterMeshGraph({ front: uploaded }, seed, geometry), { signal, output: 'mesh' });
-    });
+    const glb = await inJob(
+      meshComfy,
+      graphsModelFiles(characterMeshGraph({ front: 'front.png' }, seed, geometry)),
+      async () => {
+        const uploaded = await meshComfy.uploadImage(`room-object-${dir}.png`, image);
+        return meshComfy.run(characterMeshGraph({ front: uploaded }, seed, geometry), {
+          signal,
+          output: 'mesh',
+        });
+      },
+    );
     if (signal.aborted) throw cancelled();
 
     const bounds = glbBounds(glb);
-    if (!bounds || !bounds.size.every((n) => Number.isFinite(n)) || bounds.size[1] < 1e-3 || bounds.size[0] < 1e-3 || bounds.size[2] < 1e-3)
+    if (
+      !bounds ||
+      !bounds.size.every((n) => Number.isFinite(n)) ||
+      bounds.size[1] < 1e-3 ||
+      bounds.size[0] < 1e-3 ||
+      bounds.size[2] < 1e-3
+    )
       throw new Error('The 3D step did not produce a usable model.');
 
     const meta: GeneratedMeta = {

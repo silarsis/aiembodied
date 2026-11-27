@@ -1,3 +1,11 @@
+import type {
+  MemoryEngineSearchResult,
+  MemoryEngineTimeline,
+  MemoryEngineMemoryDetail,
+  MemoryEngineStoredFact,
+  MemoryEngineFactPatch,
+  MemoryEngineRecallLogEntry,
+} from '../shared/memory-engine/client-types.js';
 /**
  * HTTP client for the memory engine (services/memory, API.md there). Every call has a time
  * limit: memory must never hold up a conversation.
@@ -44,27 +52,6 @@ export interface MemoryEngineStorage {
   move_error?: string | null;
 }
 
-export interface MemoryEngineSearchResult {
-  id: string;
-  kind: string;
-  source_id: string;
-  session_id: string | null;
-  agent: string | null;
-  period_start: string;
-  period_end: string;
-  text: string;
-  score: number;
-  private: boolean;
-  /** Cosine similarity to the query, when the item and query were embedded. */
-  similarity?: number | null;
-  matched?: string[];
-  /** Where it came from; absent or "conversation" for memory of conversations. */
-  source?: string;
-  /** Home Assistant events only: which home it happened in. */
-  home_id?: string | null;
-  home_name?: string | null;
-}
-
 export interface MemoryEngineSearchOptions {
   from?: string;
   to?: string;
@@ -82,92 +69,15 @@ export interface MemoryEngineSearchOptions {
   sessionId?: string | null;
 }
 
-export interface MemoryEngineTimelineSession {
-  session_id: string;
-  agent: string | null;
-  channel: string | null;
-  title: string | null;
-  started_at: string;
-  last_at: string;
-  message_count: number;
-  /** The background summary of the conversation, once it has one. */
-  summary?: { id: string; title: string | null; text: string; topics: string[] } | null;
-  turns: Array<{ id: string; at: string; text: string }>;
-}
-
-/** A day, week or month summary. */
-export interface MemoryEngineSummary {
-  id: string;
-  kind: string;
-  period_start: string;
-  period_end: string;
-  title: string | null;
-  text: string;
-  topics: string[];
-}
-
-export interface MemoryEngineTimeline {
-  summaries: MemoryEngineSummary[];
-  sessions: MemoryEngineTimelineSession[];
-}
-
-export interface MemoryEngineMemoryDetail {
-  id: string;
-  kind: string;
-  period_start: string;
-  session_id?: string;
-  agent?: string | null;
-  text?: string;
-  subject?: string | null;
-  status?: string;
-  messages?: Array<{ id: string; role: string; speaker: string | null; content: string; tool: { name?: string } | null; created_at: string }>;
-}
-
-/** A stored fact, as the engine lists it. */
-export interface MemoryEngineStoredFact {
-  id: string;
-  text: string;
-  subject: string | null;
-  status: 'active' | 'superseded' | 'retracted';
-  pinned: boolean;
-  author: 'agent' | 'user' | 'extractor';
-  agent: string | null;
-  session_id: string | null;
-  source_message_ids: string[];
-  supersedes: string | null;
-  private: boolean;
-  reviewed_at: string | null;
-  created_at: string;
-  /** The model that wrote it (the conversation or summary model); null for the user's own. */
-  model?: string | null;
-  /** Conversations it was recalled in, and when last. */
-  recall_count?: number;
-  last_recalled_at?: string | null;
-  /** 0-1: how easily it comes up; unused facts fade out of the brief (pinned stay at 1). */
-  accessibility?: number;
-}
-
-export interface MemoryEngineFactPatch {
-  text?: string;
-  subject?: string | null;
-  pinned?: boolean;
-  status?: 'active' | 'superseded' | 'retracted';
-  private?: boolean;
-  reviewed?: boolean;
-}
-
-export interface MemoryEngineRecallLogEntry {
-  id: number;
-  at: string;
-  session_id: string | null;
-  query: string;
-  items: Array<{ id: string; kind: string; score: number; similarity: number | null }>;
-  reason: string | null;
-}
-
 export interface MemoryEngineBrief {
   agent: string | null;
-  facts: Array<{ id: string; text: string; subject: string | null; pinned: boolean; created_at: string }>;
+  facts: Array<{
+    id: string;
+    text: string;
+    subject: string | null;
+    pinned: boolean;
+    created_at: string;
+  }>;
   last_session: {
     session_id: string;
     agent: string | null;
@@ -185,11 +95,30 @@ export interface MemoryEngineBrief {
   /** Up to three coding tasks finished in the last week, newest first. */
   recent_coding?: MemoryEngineCodingBrief[];
   /** Agent time: what this avatar is in the middle of (active, goals first, at most 12). Absent from an older engine. */
-  intentions?: Array<{ id: string; kind: string; text: string; due_at?: string | null; status?: string; workflow_id?: string | null; avatar_id?: string }>;
+  intentions?: Array<{
+    id: string;
+    kind: string;
+    text: string;
+    due_at?: string | null;
+    status?: string;
+    workflow_id?: string | null;
+    avatar_id?: string;
+  }>;
   /** Agent time: the flows this avatar wrote (enabled, at most 12). */
-  flows?: Array<{ name: string; description?: string | null; trigger?: Record<string, unknown> | null; avatar_id?: string }>;
+  flows?: Array<{
+    name: string;
+    description?: string | null;
+    trigger?: Record<string, unknown> | null;
+    avatar_id?: string;
+  }>;
   /** Agent time: whether the avatar is asleep, and when it last slept or woke. */
-  agent_state?: { avatar_id?: string; asleep: boolean; awake_since?: string | null; last_sleep_at?: string | null; last_wake_at?: string | null } | null;
+  agent_state?: {
+    avatar_id?: string;
+    asleep: boolean;
+    awake_since?: string | null;
+    last_sleep_at?: string | null;
+    last_wake_at?: string | null;
+  } | null;
 }
 
 export interface MemoryEngineCodingBrief {
@@ -247,7 +176,8 @@ export interface MemoryEngineCorrection {
 }
 
 export interface MemoryEngineCorrectionResult {
-  status: 'replaced' | 'retracted' | 'not_found' | 'ambiguous' | 'not_a_fact' | 'inactive' | 'pinned';
+  status:
+    'replaced' | 'retracted' | 'not_found' | 'ambiguous' | 'not_a_fact' | 'inactive' | 'pinned';
   fact?: { id: string; text: string };
   replacement?: { id: string; text: string };
   candidates?: Array<{ id: string; text: string }>;
@@ -398,7 +328,10 @@ export class MemoryEngineClient {
     return this.request('POST', '/v1/messages', { messages });
   }
 
-  async search(query: string, options: MemoryEngineSearchOptions = {}): Promise<MemoryEngineSearchResult[]> {
+  async search(
+    query: string,
+    options: MemoryEngineSearchOptions = {},
+  ): Promise<MemoryEngineSearchResult[]> {
     const params = new URLSearchParams({ q: query });
     if (options.from) params.set('from', options.from);
     if (options.to) params.set('to', options.to);
@@ -436,12 +369,21 @@ export class MemoryEngineClient {
 
   /** Replace the app-managed homes the engine watches. Answers with the status of every home. */
   async setHomeServers(servers: MemoryEngineHomeServer[]): Promise<MemoryEngineHomeStatus[]> {
-    const body = await this.request<{ homes: MemoryEngineHomeStatus[] }>('PUT', '/v1/home/servers', { servers });
+    const body = await this.request<{ homes: MemoryEngineHomeStatus[] }>(
+      'PUT',
+      '/v1/home/servers',
+      { servers },
+    );
     return body.homes;
   }
 
   async homeStatus(): Promise<MemoryEngineHomeStatus[]> {
-    const body = await this.request<{ homes: MemoryEngineHomeStatus[] }>('GET', '/v1/home/status', undefined, 5000);
+    const body = await this.request<{ homes: MemoryEngineHomeStatus[] }>(
+      'GET',
+      '/v1/home/status',
+      undefined,
+      5000,
+    );
     return body.homes;
   }
 
@@ -449,7 +391,10 @@ export class MemoryEngineClient {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     const query = params.toString();
-    const body = await this.request<{ entities: MemoryEngineHomeEntity[] }>('GET', `/v1/home/entities${query ? `?${query}` : ''}`);
+    const body = await this.request<{ entities: MemoryEngineHomeEntity[] }>(
+      'GET',
+      `/v1/home/entities${query ? `?${query}` : ''}`,
+    );
     return body.entities;
   }
 
@@ -462,19 +407,29 @@ export class MemoryEngineClient {
     if (options.turns !== undefined) params.set('turns', String(options.turns));
     if (options.limit !== undefined) params.set('limit', String(options.limit));
     if (options.includePrivate === false) params.set('include_private', 'false');
-    const body = await this.request<Partial<MemoryEngineTimeline>>('GET', `/v1/timeline?${params.toString()}`);
+    const body = await this.request<Partial<MemoryEngineTimeline>>(
+      'GET',
+      `/v1/timeline?${params.toString()}`,
+    );
     return { summaries: body.summaries ?? [], sessions: body.sessions ?? [] };
   }
 
   async listFacts(
-    options: { status?: 'active' | 'superseded' | 'retracted' | 'all'; unreviewed?: boolean; limit?: number } = {},
+    options: {
+      status?: 'active' | 'superseded' | 'retracted' | 'all';
+      unreviewed?: boolean;
+      limit?: number;
+    } = {},
   ): Promise<MemoryEngineStoredFact[]> {
     const params = new URLSearchParams();
     if (options.status) params.set('status', options.status);
     if (options.unreviewed) params.set('unreviewed', 'true');
     if (options.limit) params.set('limit', String(options.limit));
     const query = params.toString();
-    const body = await this.request<{ facts: MemoryEngineStoredFact[] }>('GET', `/v1/facts${query ? `?${query}` : ''}`);
+    const body = await this.request<{ facts: MemoryEngineStoredFact[] }>(
+      'GET',
+      `/v1/facts${query ? `?${query}` : ''}`,
+    );
     return body.facts;
   }
 
@@ -490,12 +445,17 @@ export class MemoryEngineClient {
     return this.request('DELETE', `/v1/sessions/${encodeURIComponent(id)}`);
   }
 
-  async recallLog(options: { sessionId?: string; limit?: number } = {}): Promise<MemoryEngineRecallLogEntry[]> {
+  async recallLog(
+    options: { sessionId?: string; limit?: number } = {},
+  ): Promise<MemoryEngineRecallLogEntry[]> {
     const params = new URLSearchParams();
     if (options.sessionId) params.set('session_id', options.sessionId);
     if (options.limit) params.set('limit', String(options.limit));
     const query = params.toString();
-    const body = await this.request<{ entries: MemoryEngineRecallLogEntry[] }>('GET', `/v1/recall-log${query ? `?${query}` : ''}`);
+    const body = await this.request<{ entries: MemoryEngineRecallLogEntry[] }>(
+      'GET',
+      `/v1/recall-log${query ? `?${query}` : ''}`,
+    );
     return body.entries;
   }
 
@@ -513,7 +473,10 @@ export class MemoryEngineClient {
    * Use another database (null: the engine's own on this PC) and mirror (null: none). Moving to
    * an empty database copies everything there first; the engine answers 503 until it is done.
    */
-  setStorage(settings: { database: string | null; mirror: string | null }): Promise<MemoryEngineStorage> {
+  setStorage(settings: {
+    database: string | null;
+    mirror: string | null;
+  }): Promise<MemoryEngineStorage> {
     return this.request('PUT', '/v1/storage', settings);
   }
 
@@ -528,7 +491,11 @@ export class MemoryEngineClient {
   }
 
   /** One memory in full. `touch`: the agent is using it, so a fact is refreshed (not the panel). */
-  memory(id: string, around = 1, options: { touch?: boolean; sessionId?: string | null } = {}): Promise<MemoryEngineMemoryDetail> {
+  memory(
+    id: string,
+    around = 1,
+    options: { touch?: boolean; sessionId?: string | null } = {},
+  ): Promise<MemoryEngineMemoryDetail> {
     const params = new URLSearchParams({ around: String(around) });
     if (options.touch) {
       params.set('touch', 'true');
@@ -543,7 +510,10 @@ export class MemoryEngineClient {
   }
 
   /** The agent's note for its next conversation; replaces this conversation's earlier note. */
-  putHandoff(sessionId: string, handoff: { text: string; agent?: string | null; model?: string | null }): Promise<{ id: string }> {
+  putHandoff(
+    sessionId: string,
+    handoff: { text: string; agent?: string | null; model?: string | null },
+  ): Promise<{ id: string }> {
     return this.request('PUT', `/v1/sessions/${encodeURIComponent(sessionId)}/handoff`, handoff);
   }
 
@@ -556,20 +526,37 @@ export class MemoryEngineClient {
     return this.request('PUT', `/v1/facts/${encodeURIComponent(id)}`, fact);
   }
 
-  brief(options: { sessionId?: string | null; agent?: string; avatarId?: string; timeoutMs?: number } = {}): Promise<MemoryEngineBrief> {
+  brief(
+    options: {
+      sessionId?: string | null;
+      agent?: string;
+      avatarId?: string;
+      timeoutMs?: number;
+    } = {},
+  ): Promise<MemoryEngineBrief> {
     const params = new URLSearchParams();
     if (options.sessionId) params.set('session_id', options.sessionId);
     if (options.agent) params.set('agent', options.agent);
     if (options.avatarId) params.set('avatar_id', options.avatarId);
     const query = params.toString();
-    return this.request('GET', `/v1/brief${query ? `?${query}` : ''}`, undefined, options.timeoutMs);
+    return this.request(
+      'GET',
+      `/v1/brief${query ? `?${query}` : ''}`,
+      undefined,
+      options.timeoutMs,
+    );
   }
 
   recall(body: MemoryEngineRecallRequest, timeoutMs?: number): Promise<MemoryEngineRecall> {
     return this.request('POST', '/v1/recall', body, timeoutMs);
   }
 
-  private async request<T>(method: string, path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs = this.timeoutMs,
+  ): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (this.apiToken) headers.Authorization = `Bearer ${this.apiToken}`;
@@ -583,21 +570,32 @@ export class MemoryEngineClient {
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new MemoryEngineError(`memory engine unreachable at ${this.baseUrl}: ${reason}`, null, true);
+      throw new MemoryEngineError(
+        `memory engine unreachable at ${this.baseUrl}: ${reason}`,
+        null,
+        true,
+      );
     }
     const text = await response.text();
     if (!response.ok) {
       let message = text.slice(0, 300);
       try {
         const parsed = JSON.parse(text) as { error?: unknown; detail?: unknown };
-        message = typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.detail ?? parsed).slice(0, 300);
+        message =
+          typeof parsed.error === 'string'
+            ? parsed.error
+            : JSON.stringify(parsed.detail ?? parsed).slice(0, 300);
       } catch {
         // Not JSON; keep the raw text.
       }
       // 4xx means the request itself was refused, except auth (fixable by settings), timeouts and
       // rate limits; those, and 5xx (the database is down), are worth retrying.
       const retryable = response.status >= 500 || [401, 403, 408, 429].includes(response.status);
-      throw new MemoryEngineError(`memory engine ${method} ${path.split('?')[0]} failed (${response.status}): ${message}`, response.status, retryable);
+      throw new MemoryEngineError(
+        `memory engine ${method} ${path.split('?')[0]} failed (${response.status}): ${message}`,
+        response.status,
+        retryable,
+      );
     }
     return (text ? JSON.parse(text) : {}) as T;
   }

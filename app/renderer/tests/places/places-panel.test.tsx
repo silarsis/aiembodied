@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
-import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
+import type {
+  RoomHubBridge,
+  RoomHubStatus,
+} from '../../../main/src/shared/room-hub/bridge-types.js';
 import { PlacesPanel } from '../../src/places/places-panel.js';
 
 const SNAPSHOT: PlacesSnapshot = {
@@ -20,7 +23,16 @@ const STATUS: RoomHubStatus = {
   port: 8791,
   addresses: ['127.0.0.1', '100.64.0.1'],
   pairing: null,
-  devices: [{ id: 'room-1', name: "Kevin's desk", placeId: 'study', online: true, lastSeen: 1_000, tailscaleNode: 'desk' }],
+  devices: [
+    {
+      id: 'room-1',
+      name: "Kevin's desk",
+      placeId: 'study',
+      online: true,
+      lastSeen: 1_000,
+      tailscaleNode: 'desk',
+    },
+  ],
 };
 
 function bridge(overrides: Partial<RoomHubBridge> = {}) {
@@ -31,7 +43,11 @@ function bridge(overrides: Partial<RoomHubBridge> = {}) {
       listener = next;
       return () => undefined;
     }),
-    startPairing: vi.fn().mockResolvedValue({ code: '123456', expiresAt: Date.now() + 5 * 60_000, urls: ['http://bija:8791', 'http://100.64.0.1:8791'] }),
+    startPairing: vi.fn().mockResolvedValue({
+      code: '123456',
+      expiresAt: Date.now() + 5 * 60_000,
+      urls: ['http://bija:8791', 'http://100.64.0.1:8791'],
+    }),
     cancelPairing: vi.fn().mockResolvedValue(undefined),
     revoke: vi.fn().mockResolvedValue(true),
     rename: vi.fn().mockResolvedValue(null),
@@ -61,24 +77,45 @@ describe('PlacesPanel', () => {
   });
 
   it('names what kind of device each room is: a desktop unless the hub says phone or browser', async () => {
-    const withKinds: RoomHubStatus = { ...STATUS, devices: [{ ...STATUS.devices[0], kind: 'browser' }] };
+    const withKinds: RoomHubStatus = {
+      ...STATUS,
+      devices: [{ ...STATUS.devices[0], kind: 'browser' }],
+    };
     const { api } = bridge({ status: vi.fn().mockResolvedValue(withKinds) });
     render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
     expect(await screen.findByTestId('device-kind-study')).toHaveTextContent('Browser');
     const plain = bridge({ status: vi.fn().mockResolvedValue(STATUS) });
     render(<PlacesPanel roomHub={plain.api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
-    await waitFor(() => expect(screen.getAllByTestId('device-kind-study').some((node) => node.textContent === 'Desktop')).toBe(true));
+    await waitFor(() =>
+      expect(
+        screen.getAllByTestId('device-kind-study').some((node) => node.textContent === 'Desktop'),
+      ).toBe(true),
+    );
   });
 
   it('shows the Windows firewall note when bija says so', async () => {
-    const { api } = bridge({ status: vi.fn().mockResolvedValue({ ...STATUS, firewallNote: 'Allow private networks only.' }) });
+    const { api } = bridge({
+      status: vi
+        .fn()
+        .mockResolvedValue({ ...STATUS, firewallNote: 'Allow private networks only.' }),
+    });
     render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
-    expect(await screen.findByTestId('firewall-note')).toHaveTextContent('Allow private networks only.');
+    expect(await screen.findByTestId('firewall-note')).toHaveTextContent(
+      'Allow private networks only.',
+    );
   });
 
   it('shows an offline room with its last-seen time, and revokes it', async () => {
-    const offline: RoomHubStatus = { ...STATUS, devices: [{ ...STATUS.devices[0], online: false }] };
-    const snapshot: PlacesSnapshot = { ...SNAPSHOT, places: SNAPSHOT.places.map((place) => (place.id === 'study' ? { ...place, online: false } : place)) };
+    const offline: RoomHubStatus = {
+      ...STATUS,
+      devices: [{ ...STATUS.devices[0], online: false }],
+    };
+    const snapshot: PlacesSnapshot = {
+      ...SNAPSHOT,
+      places: SNAPSHOT.places.map((place) =>
+        place.id === 'study' ? { ...place, online: false } : place,
+      ),
+    };
     const { api } = bridge({ status: vi.fn().mockResolvedValue(offline) });
     render(<PlacesPanel roomHub={api} snapshot={snapshot} nameOf={nameOf} active />);
     const study = screen.getByRole('listitem', { name: 'the study' });
@@ -125,7 +162,9 @@ describe('PlacesPanel', () => {
   it('counts down and says when the code has expired', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { api } = bridge({
-      startPairing: vi.fn().mockResolvedValue({ code: '654321', expiresAt: Date.now() + 3000, urls: [] }),
+      startPairing: vi
+        .fn()
+        .mockResolvedValue({ code: '654321', expiresAt: Date.now() + 3000, urls: [] }),
     });
     render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
     fireEvent.click(screen.getByRole('button', { name: 'Add a desktop room' }));
@@ -171,7 +210,13 @@ describe('PlacesPanel room choice', () => {
     ...SNAPSHOT,
     places: [
       { id: 'home', name: 'the lounge', node: 'local' },
-      { id: 'study', name: 'the study', node: 'room-1', online: true, room: 'room:builtin:studio-flat' },
+      {
+        id: 'study',
+        name: 'the study',
+        node: 'room-1',
+        online: true,
+        room: 'room:builtin:studio-flat',
+      },
     ],
   };
 
@@ -201,8 +246,12 @@ describe('PlacesPanel room choice', () => {
     const setCamera = vi.fn().mockResolvedValue(true);
     const { api } = bridge({ setCamera });
     render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
-    const here = screen.getByRole('checkbox', { name: 'Camera presence in the lounge' }) as HTMLInputElement;
-    const study = screen.getByRole('checkbox', { name: 'Camera presence in the study' }) as HTMLInputElement;
+    const here = screen.getByRole('checkbox', {
+      name: 'Camera presence in the lounge',
+    }) as HTMLInputElement;
+    const study = screen.getByRole('checkbox', {
+      name: 'Camera presence in the study',
+    }) as HTMLInputElement;
     expect(here.checked).toBe(false);
     expect(study.checked).toBe(true);
     // Nothing to film next door.
@@ -214,11 +263,26 @@ describe('PlacesPanel room choice', () => {
   });
 
   it('shows what Kevin saved, and cannot change it when the bridge has no setCamera', () => {
-    const saved: PlacesSnapshot = { ...SNAPSHOT, places: SNAPSHOT.places.map((place) => (place.id === 'home' ? { ...place, camera: true } : place.id === 'study' ? { ...place, camera: false } : place)) };
+    const saved: PlacesSnapshot = {
+      ...SNAPSHOT,
+      places: SNAPSHOT.places.map((place) =>
+        place.id === 'home'
+          ? { ...place, camera: true }
+          : place.id === 'study'
+            ? { ...place, camera: false }
+            : place,
+      ),
+    };
     const { api } = bridge();
     render(<PlacesPanel roomHub={api} snapshot={saved} nameOf={nameOf} active />);
-    expect((screen.getByRole('checkbox', { name: 'Camera presence in the lounge' }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Camera presence in the study' }) as HTMLInputElement).checked).toBe(false);
+    expect(
+      (screen.getByRole('checkbox', { name: 'Camera presence in the lounge' }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('checkbox', { name: 'Camera presence in the study' }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
     expect(screen.getByRole('checkbox', { name: 'Camera presence in the lounge' })).toBeDisabled();
   });
 
@@ -226,8 +290,12 @@ describe('PlacesPanel room choice', () => {
     const setDoorbell = vi.fn().mockResolvedValue(true);
     const { api } = bridge({ setDoorbell });
     render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
-    const here = screen.getByRole('checkbox', { name: 'Doorbell in the lounge' }) as HTMLInputElement;
-    const study = screen.getByRole('checkbox', { name: 'Doorbell in the study' }) as HTMLInputElement;
+    const here = screen.getByRole('checkbox', {
+      name: 'Doorbell in the lounge',
+    }) as HTMLInputElement;
+    const study = screen.getByRole('checkbox', {
+      name: 'Doorbell in the study',
+    }) as HTMLInputElement;
     expect(here.checked).toBe(true);
     expect(study.checked).toBe(false);
     // Nobody hears anything next door.
@@ -239,11 +307,25 @@ describe('PlacesPanel room choice', () => {
   });
 
   it('shows what Kevin saved for the Doorbell', () => {
-    const saved: PlacesSnapshot = { ...SNAPSHOT, places: SNAPSHOT.places.map((place) => (place.id === 'home' ? { ...place, doorbell: false } : place.id === 'study' ? { ...place, doorbell: true } : place)) };
+    const saved: PlacesSnapshot = {
+      ...SNAPSHOT,
+      places: SNAPSHOT.places.map((place) =>
+        place.id === 'home'
+          ? { ...place, doorbell: false }
+          : place.id === 'study'
+            ? { ...place, doorbell: true }
+            : place,
+      ),
+    };
     const { api } = bridge();
     render(<PlacesPanel roomHub={api} snapshot={saved} nameOf={nameOf} active />);
-    expect((screen.getByRole('checkbox', { name: 'Doorbell in the lounge' }) as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByRole('checkbox', { name: 'Doorbell in the study' }) as HTMLInputElement).checked).toBe(true);
+    expect(
+      (screen.getByRole('checkbox', { name: 'Doorbell in the lounge' }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(
+      (screen.getByRole('checkbox', { name: 'Doorbell in the study' }) as HTMLInputElement).checked,
+    ).toBe(true);
     expect(screen.getByRole('checkbox', { name: 'Doorbell in the lounge' })).toBeDisabled();
   });
 });

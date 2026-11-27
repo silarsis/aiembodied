@@ -78,18 +78,24 @@ vi.mock('three', async () => {
     });
     public readonly stopAllAction = vi.fn();
     public readonly update = vi.fn();
-    public readonly addEventListener = vi.fn((event: string, listener: (payload: { action: MockAnimationAction }) => void) => {
-      if (event === 'finished') {
-        this.finishListeners.add(listener);
-      }
-    });
-    public readonly removeEventListener = vi.fn((event: string, listener: (payload: { action: MockAnimationAction }) => void) => {
-      if (event === 'finished') {
-        this.finishListeners.delete(listener);
-      }
-    });
+    public readonly addEventListener = vi.fn(
+      (event: string, listener: (payload: { action: MockAnimationAction }) => void) => {
+        if (event === 'finished') {
+          this.finishListeners.add(listener);
+        }
+      },
+    );
+    public readonly removeEventListener = vi.fn(
+      (event: string, listener: (payload: { action: MockAnimationAction }) => void) => {
+        if (event === 'finished') {
+          this.finishListeners.delete(listener);
+        }
+      },
+    );
     public readonly actions: MockAnimationAction[] = [];
-    private readonly finishListeners = new Set<(payload: { action: MockAnimationAction }) => void>();
+    private readonly finishListeners = new Set<
+      (payload: { action: MockAnimationAction }) => void
+    >();
 
     constructor(public readonly root: unknown) {
       threeMockState.mixers.push(this);
@@ -141,7 +147,9 @@ vi.mock('@pixiv/three-vrm', async () => {
 });
 
 vi.mock('@pixiv/three-vrm-animation', async () => {
-  const actual = await vi.importActual<typeof import('@pixiv/three-vrm-animation')>('@pixiv/three-vrm-animation');
+  const actual = await vi.importActual<typeof import('@pixiv/three-vrm-animation')>(
+    '@pixiv/three-vrm-animation',
+  );
   return {
     ...actual,
     VRMAnimationLoaderPlugin: class {},
@@ -242,7 +250,7 @@ describe('VrmAvatarRenderer animation queue', () => {
 
     originalGetContext = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = vi
-      .fn(() => ({} as CanvasRenderingContext2D))
+      .fn(() => ({}) as CanvasRenderingContext2D)
       .mockName('getContextStub') as unknown as typeof HTMLCanvasElement.prototype.getContext;
     originalGetBoundingClientRect = HTMLCanvasElement.prototype.getBoundingClientRect;
     HTMLCanvasElement.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 320, 240);
@@ -473,7 +481,10 @@ describe('VrmAvatarRenderer animation queue', () => {
 
   describe('clip end handling for scene actions', () => {
     async function setup() {
-      type BusLike = { enqueue: (request: AvatarAnimationRequest) => void; signalResponse: () => void };
+      type BusLike = {
+        enqueue: (request: AvatarAnimationRequest) => void;
+        signalResponse: () => void;
+      };
       const holder: { bus: BusLike | null } = { bus: null };
       render(
         <AnimationBusProvider>
@@ -555,8 +566,11 @@ describe('VrmAvatarRenderer animation queue', () => {
 
   it('looks up clips by slug name', async () => {
     let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
-    const avatarBridge = (window as unknown as { aiembodied?: { avatar?: { listAnimations?: ReturnType<typeof vi.fn> } } })
-      .aiembodied?.avatar;
+    const avatarBridge = (
+      window as unknown as {
+        aiembodied?: { avatar?: { listAnimations?: ReturnType<typeof vi.fn> } };
+      }
+    ).aiembodied?.avatar;
     if (avatarBridge?.listAnimations) {
       avatarBridge.listAnimations.mockResolvedValueOnce([
         {

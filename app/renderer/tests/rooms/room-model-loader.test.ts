@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { buildRoom } from '../../src/rooms/room-builder.js';
 import { createModelLoader, modelUrl } from '../../src/rooms/room-model-loader.js';
-import type { RoomObject } from '../../../main/src/rooms/types.js';
+import type { RoomObject } from '../../../main/src/shared/rooms/types.js';
 import { builtInRoom } from './fixtures.js';
 
 const object = (over: Partial<RoomObject> = {}): RoomObject => ({
@@ -27,10 +27,16 @@ describe('model loader', () => {
     expect(modelUrl(object({ model: { file: 'x.glb' } }))).toBeNull();
   });
   it('builds the URL of a generated .glb, which the same loader grounds and centres', async () => {
-    const generated = object({ model: { asset: 'generated/rocking-chair-3fa91c2e', file: 'model.glb', scale: 0.5 } });
-    expect(modelUrl(generated)).toBe('aiembodied-asset://generated/rocking-chair-3fa91c2e/model.glb');
+    const generated = object({
+      model: { asset: 'generated/rocking-chair-3fa91c2e', file: 'model.glb', scale: 0.5 },
+    });
+    expect(modelUrl(generated)).toBe(
+      'aiembodied-asset://generated/rocking-chair-3fa91c2e/model.glb',
+    );
     const urls: string[] = [];
-    const model = await createModelLoader({ load: async (url) => (urls.push(url), { scene: scene() }) })(generated);
+    const model = await createModelLoader({
+      load: async (url) => (urls.push(url), { scene: scene() }),
+    })(generated);
     model.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(model);
     expect(urls).toEqual(['aiembodied-asset://generated/rocking-chair-3fa91c2e/model.glb']);
@@ -51,7 +57,11 @@ describe('model loader', () => {
     expect((box.min.z + box.max.z) / 2).toBeCloseTo(0);
   });
   it('rejects objects without a library model', async () => {
-    await expect(createModelLoader({ load: async () => ({ scene: scene() }) })(object({ model: { file: 'x.glb' } }))).rejects.toThrow();
+    await expect(
+      createModelLoader({ load: async () => ({ scene: scene() }) })(
+        object({ model: { file: 'x.glb' } }),
+      ),
+    ).rejects.toThrow();
   });
 });
 
@@ -72,7 +82,11 @@ describe('buildRoom with library models', () => {
   });
 
   it('keeps the grey box when loading fails', async () => {
-    const built = buildRoom(room(), { loadModel: async () => { throw new Error('404'); } });
+    const built = buildRoom(room(), {
+      loadModel: async () => {
+        throw new Error('404');
+      },
+    });
     await flush();
     expect(built.objectNodes.get('chair')!.getObjectByName('placeholder')).toBeTruthy();
     built.dispose();
@@ -80,7 +94,9 @@ describe('buildRoom with library models', () => {
 
   it('ignores a model that arrives after the room is disposed', async () => {
     let finish!: (group: THREE.Group) => void;
-    const built = buildRoom(room(), { loadModel: () => new Promise<THREE.Group>((resolve) => (finish = resolve)) });
+    const built = buildRoom(room(), {
+      loadModel: () => new Promise<THREE.Group>((resolve) => (finish = resolve)),
+    });
     const node = built.objectNodes.get('chair')!;
     built.dispose();
     const late = new THREE.Group();

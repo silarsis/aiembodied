@@ -7,7 +7,11 @@
 export const WORKFLOWS_TIMEOUT_MS = 10_000;
 
 export class WorkflowsError extends Error {
-  constructor(message: string, readonly status: number | null, readonly errors: string[] = []) {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly errors: string[] = [],
+  ) {
     super(message);
     this.name = 'WorkflowsError';
   }
@@ -23,7 +27,8 @@ export interface WorkflowsHealth {
 }
 
 export type WatchCondition = Record<string, unknown>;
-export type WatchThen = { say: string } | { think: string } | { flow: string; inputs?: Record<string, unknown> };
+export type WatchThen =
+  { say: string } | { think: string } | { flow: string; inputs?: Record<string, unknown> };
 
 export interface WorkflowsClientOptions {
   baseUrl: string;
@@ -35,14 +40,20 @@ export interface WorkflowsClientOptions {
 /** The text of a FastAPI `detail`: a string, `{errors: [...]}`, or a list of validation items. */
 export function describeDetail(detail: unknown): { message: string; errors: string[] } {
   if (typeof detail === 'string') return { message: detail, errors: [] };
-  if (detail && typeof detail === 'object' && Array.isArray((detail as { errors?: unknown }).errors)) {
-    const errors = ((detail as { errors: unknown[] }).errors).map((item) => String(item));
+  if (
+    detail &&
+    typeof detail === 'object' &&
+    Array.isArray((detail as { errors?: unknown }).errors)
+  ) {
+    const errors = (detail as { errors: unknown[] }).errors.map((item) => String(item));
     return { message: errors.join('; '), errors };
   }
   if (Array.isArray(detail)) {
     const errors = detail.map((item) => {
       if (item && typeof item === 'object' && typeof (item as { msg?: unknown }).msg === 'string') {
-        const loc = Array.isArray((item as { loc?: unknown }).loc) ? ((item as { loc: unknown[] }).loc).slice(1).join('.') : '';
+        const loc = Array.isArray((item as { loc?: unknown }).loc)
+          ? (item as { loc: unknown[] }).loc.slice(1).join('.')
+          : '';
         return `${loc ? `${loc}: ` : ''}${(item as { msg: string }).msg}`;
       }
       return JSON.stringify(item);
@@ -69,7 +80,9 @@ export class WorkflowsClient {
     return this.request('GET', '/health');
   }
 
-  putAgents(agents: Array<{ id: string; name: string }>): Promise<{ agents: string[]; started: string[]; stopped: string[] }> {
+  putAgents(
+    agents: Array<{ id: string; name: string }>,
+  ): Promise<{ agents: string[]; started: string[]; stopped: string[] }> {
     return this.request('PUT', '/v1/agents', { agents });
   }
 
@@ -85,15 +98,31 @@ export class WorkflowsClient {
     return this.request('POST', `/v1/agents/${encodeURIComponent(avatarId)}/wake`, {});
   }
 
-  createReminder(body: { avatarId: string; at?: string; inSeconds?: number; text: string; alarm?: boolean }): Promise<{ workflowId: string; intentionId: string; dueAt: string }> {
+  createReminder(body: {
+    avatarId: string;
+    at?: string;
+    inSeconds?: number;
+    text: string;
+    alarm?: boolean;
+  }): Promise<{ workflowId: string; intentionId: string; dueAt: string }> {
     return this.request('POST', '/v1/reminders', body);
   }
 
-  createWakeup(body: { avatarId: string; at?: string; inSeconds?: number; note: string }): Promise<{ workflowId: string; intentionId: string; dueAt: string }> {
+  createWakeup(body: {
+    avatarId: string;
+    at?: string;
+    inSeconds?: number;
+    note: string;
+  }): Promise<{ workflowId: string; intentionId: string; dueAt: string }> {
     return this.request('POST', '/v1/wakeups', body);
   }
 
-  createWatch(body: { avatarId: string; condition: WatchCondition; then: WatchThen; untilHours?: number }): Promise<{ workflowId: string; intentionId: string }> {
+  createWatch(body: {
+    avatarId: string;
+    condition: WatchCondition;
+    then: WatchThen;
+    untilHours?: number;
+  }): Promise<{ workflowId: string; intentionId: string }> {
     return this.request('POST', '/v1/watches', body);
   }
 
@@ -102,31 +131,72 @@ export class WorkflowsClient {
   }
 
   getFlow(avatarId: string, name: string): Promise<Record<string, unknown>> {
-    return this.request('GET', `/v1/flows/${encodeURIComponent(avatarId)}/${encodeURIComponent(name)}`);
+    return this.request(
+      'GET',
+      `/v1/flows/${encodeURIComponent(avatarId)}/${encodeURIComponent(name)}`,
+    );
   }
 
-  putFlow(avatarId: string, name: string, body: { description: string; definition: Record<string, unknown>; trigger: Record<string, unknown>; enabled?: boolean }): Promise<Record<string, unknown>> {
-    return this.request('PUT', `/v1/flows/${encodeURIComponent(avatarId)}/${encodeURIComponent(name)}`, body);
+  putFlow(
+    avatarId: string,
+    name: string,
+    body: {
+      description: string;
+      definition: Record<string, unknown>;
+      trigger: Record<string, unknown>;
+      enabled?: boolean;
+    },
+  ): Promise<Record<string, unknown>> {
+    return this.request(
+      'PUT',
+      `/v1/flows/${encodeURIComponent(avatarId)}/${encodeURIComponent(name)}`,
+      body,
+    );
   }
 
-  runFlow(avatarId: string, name: string, inputs?: Record<string, unknown>): Promise<{ workflowId: string }> {
-    return this.request('POST', `/v1/flows/${encodeURIComponent(avatarId)}/${encodeURIComponent(name)}/run`, inputs ? { inputs } : {});
+  runFlow(
+    avatarId: string,
+    name: string,
+    inputs?: Record<string, unknown>,
+  ): Promise<{ workflowId: string }> {
+    return this.request(
+      'POST',
+      `/v1/flows/${encodeURIComponent(avatarId)}/${encodeURIComponent(name)}/run`,
+      inputs ? { inputs } : {},
+    );
   }
 
-  createIntention(body: { avatarId: string; kind: 'goal' | 'intention' | 'promise'; text: string; why?: string; dueAt?: string; parentId?: string }): Promise<Record<string, unknown>> {
+  createIntention(body: {
+    avatarId: string;
+    kind: 'goal' | 'intention' | 'promise';
+    text: string;
+    why?: string;
+    dueAt?: string;
+    parentId?: string;
+  }): Promise<Record<string, unknown>> {
     return this.request('POST', '/v1/intentions', body);
   }
 
-  plans(avatarId: string): Promise<{ workflows: Array<Record<string, unknown>>; intentions: Array<Record<string, unknown>>; flows: Array<Record<string, unknown>> }> {
+  plans(avatarId: string): Promise<{
+    workflows: Array<Record<string, unknown>>;
+    intentions: Array<Record<string, unknown>>;
+    flows: Array<Record<string, unknown>>;
+  }> {
     return this.request('GET', `/v1/plans?avatarId=${encodeURIComponent(avatarId)}`);
   }
 
   signalPlan(workflowId: string, signal: string, args?: Record<string, unknown>): Promise<unknown> {
-    return this.request('POST', `/v1/plans/${encodeURIComponent(workflowId)}/signal`, { signal, ...(args ? { args } : {}) });
+    return this.request('POST', `/v1/plans/${encodeURIComponent(workflowId)}/signal`, {
+      signal,
+      ...(args ? { args } : {}),
+    });
   }
 
   dropPlan(workflowId: string, why?: string): Promise<unknown> {
-    return this.request('DELETE', `/v1/plans/${encodeURIComponent(workflowId)}${why ? `?why=${encodeURIComponent(why)}` : ''}`);
+    return this.request(
+      'DELETE',
+      `/v1/plans/${encodeURIComponent(workflowId)}${why ? `?why=${encodeURIComponent(why)}` : ''}`,
+    );
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -143,7 +213,10 @@ export class WorkflowsClient {
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new WorkflowsError(`the workflows service is not reachable at ${this.options.baseUrl}: ${reason}`, null);
+      throw new WorkflowsError(
+        `the workflows service is not reachable at ${this.options.baseUrl}: ${reason}`,
+        null,
+      );
     }
     const text = await response.text();
     let parsed: unknown;
@@ -153,9 +226,16 @@ export class WorkflowsClient {
       parsed = undefined;
     }
     if (!response.ok) {
-      const detail = parsed && typeof parsed === 'object' && 'detail' in parsed ? (parsed as { detail: unknown }).detail : text.slice(0, 300);
+      const detail =
+        parsed && typeof parsed === 'object' && 'detail' in parsed
+          ? (parsed as { detail: unknown }).detail
+          : text.slice(0, 300);
       const { message, errors } = describeDetail(detail);
-      throw new WorkflowsError(message || `the workflows service answered ${response.status}`, response.status, errors);
+      throw new WorkflowsError(
+        message || `the workflows service answered ${response.status}`,
+        response.status,
+        errors,
+      );
     }
     return parsed as T;
   }

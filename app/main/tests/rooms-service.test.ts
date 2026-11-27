@@ -8,7 +8,8 @@ import { RoomService } from '../src/rooms/room-service.js';
 const directories: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0))
+    await rm(directory, { recursive: true, force: true });
 });
 
 const SAVED = '3f2b8c1e-0000-4000-8000-000000000001';
@@ -18,13 +19,21 @@ async function setup() {
   const roomsDirectory = await mkdtemp(path.join(tmpdir(), 'rooms-'));
   directories.push(roomsDirectory);
   const builtIn = JSON.parse(
-    await (await import('node:fs/promises')).readFile(path.resolve('assets/rooms/studio-flat.json'), 'utf8'),
+    await (
+      await import('node:fs/promises')
+    ).readFile(path.resolve('assets/rooms/studio-flat.json'), 'utf8'),
   ) as Record<string, unknown>;
   await mkdir(path.join(roomsDirectory, SAVED));
-  await writeFile(path.join(roomsDirectory, SAVED, 'room.json'), JSON.stringify({ ...builtIn, name: 'My room', id: 'ignored' }));
+  await writeFile(
+    path.join(roomsDirectory, SAVED, 'room.json'),
+    JSON.stringify({ ...builtIn, name: 'My room', id: 'ignored' }),
+  );
   await mkdir(path.join(roomsDirectory, BROKEN));
   await writeFile(path.join(roomsDirectory, BROKEN, 'room.json'), '{"version":1}');
-  const service = new RoomService({ assetsDirectory: path.resolve('assets/rooms'), roomsDirectory });
+  const service = new RoomService({
+    assetsDirectory: path.resolve('assets/rooms'),
+    roomsDirectory,
+  });
   return { service, roomsDirectory };
 }
 
@@ -69,7 +78,10 @@ describe('BackgroundService with rooms', () => {
     const { service: rooms } = await setup();
     const values = new Map<string, string>();
     const service = new BackgroundService({
-      store: { getValue: (key) => values.get(key) ?? null, setValue: (key, value) => void values.set(key, value) },
+      store: {
+        getValue: (key) => values.get(key) ?? null,
+        setValue: (key, value) => void values.set(key, value),
+      },
       assetsDirectory: path.resolve('assets/backgrounds'),
       backgroundsDirectory: await mkdtemp(path.join(tmpdir(), 'bg-')),
       comfy: { isAvailable: async () => false, run: async () => Buffer.alloc(0) },
@@ -99,16 +111,53 @@ describe('RoomService with models that are no longer on disk', () => {
   const MADE = '3f2b8c1e-0000-4000-8000-000000000003';
   async function roomWithModels() {
     const { roomsDirectory } = await setup();
-    const builtIn = JSON.parse(await (await import('node:fs/promises')).readFile(path.resolve('assets/rooms/studio-flat.json'), 'utf8')) as { objects: Array<Record<string, any>> };
+    const builtIn = JSON.parse(
+      await (
+        await import('node:fs/promises')
+      ).readFile(path.resolve('assets/rooms/studio-flat.json'), 'utf8'),
+    ) as { objects: Array<Record<string, any>> };
     const objects = [
-      { id: 'chair', name: 'rocking chair', position: [1, 0, 1], size: [0.6, 0.9, 0.6], model: { asset: 'generated/chair-3fa91c2e', file: 'model.glb', scale: 0.8 }, tags: { sit: { position: [0, 0.45, 0.05], facing: 0 } } },
-      { id: 'lamp', name: 'lamp', position: [-1, 0, 1], size: [0.3, 1.5, 0.3], model: { asset: 'polyhaven/Lamp_01', file: 'Lamp_01_1k.gltf', scale: 1 } },
-      { id: 'box', name: 'box', position: [0, 0, -1], size: [1, 1, 1], parts: [{ shape: 'box', size: [1, 1, 1], offset: [0, 0.5, 0], color: '#112233' }] },
+      {
+        id: 'chair',
+        name: 'rocking chair',
+        position: [1, 0, 1],
+        size: [0.6, 0.9, 0.6],
+        model: { asset: 'generated/chair-3fa91c2e', file: 'model.glb', scale: 0.8 },
+        tags: { sit: { position: [0, 0.45, 0.05], facing: 0 } },
+      },
+      {
+        id: 'lamp',
+        name: 'lamp',
+        position: [-1, 0, 1],
+        size: [0.3, 1.5, 0.3],
+        model: { asset: 'polyhaven/Lamp_01', file: 'Lamp_01_1k.gltf', scale: 1 },
+      },
+      {
+        id: 'box',
+        name: 'box',
+        position: [0, 0, -1],
+        size: [1, 1, 1],
+        parts: [{ shape: 'box', size: [1, 1, 1], offset: [0, 0.5, 0], color: '#112233' }],
+      },
     ];
     await mkdir(path.join(roomsDirectory, MADE));
-    await writeFile(path.join(roomsDirectory, MADE, 'room.json'), JSON.stringify({ ...builtIn, name: 'Made room', objects }));
-    await writeFile(path.join(roomsDirectory, MADE, 'layout.json'), JSON.stringify({ objects: [{ id: 'chair', category: 'seat', color: 'red' }, { id: 'lamp', category: 'lamp', color: 'black' }] }));
-    return { roomsDirectory, service: new RoomService({ assetsDirectory: path.resolve('assets/rooms'), roomsDirectory }) };
+    await writeFile(
+      path.join(roomsDirectory, MADE, 'room.json'),
+      JSON.stringify({ ...builtIn, name: 'Made room', objects }),
+    );
+    await writeFile(
+      path.join(roomsDirectory, MADE, 'layout.json'),
+      JSON.stringify({
+        objects: [
+          { id: 'chair', category: 'seat', color: 'red' },
+          { id: 'lamp', category: 'lamp', color: 'black' },
+        ],
+      }),
+    );
+    return {
+      roomsDirectory,
+      service: new RoomService({ assetsDirectory: path.resolve('assets/rooms'), roomsDirectory }),
+    };
   }
 
   it('turns them into simple shapes of the right kind, size and colour', async () => {
@@ -127,10 +176,17 @@ describe('RoomService with models that are no longer on disk', () => {
 
   it('keeps the model while its file is there', async () => {
     const { service, roomsDirectory } = await roomWithModels();
-    await mkdir(path.join(roomsDirectory, 'assets', 'generated', 'chair-3fa91c2e'), { recursive: true });
-    await writeFile(path.join(roomsDirectory, 'assets', 'generated', 'chair-3fa91c2e', 'model.glb'), 'glb');
+    await mkdir(path.join(roomsDirectory, 'assets', 'generated', 'chair-3fa91c2e'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(roomsDirectory, 'assets', 'generated', 'chair-3fa91c2e', 'model.glb'),
+      'glb',
+    );
     const room = await service.load(`room:${MADE}`);
-    expect(room.objects.find((o) => o.id === 'chair')?.model?.asset).toBe('generated/chair-3fa91c2e');
+    expect(room.objects.find((o) => o.id === 'chair')?.model?.asset).toBe(
+      'generated/chair-3fa91c2e',
+    );
     expect(room.objects.find((o) => o.id === 'chair')?.parts).toBeUndefined();
     expect(room.objects.find((o) => o.id === 'lamp')?.model).toBeUndefined();
   });

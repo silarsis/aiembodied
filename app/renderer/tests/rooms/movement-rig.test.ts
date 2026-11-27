@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SceneActionExecutor, type SceneActivity, type SceneBridge } from '../../src/rooms/scene-executor.js';
+import {
+  SceneActionExecutor,
+  type SceneActivity,
+  type SceneBridge,
+} from '../../src/rooms/scene-executor.js';
 import { MAX_TRACKED_STREAMS, MovementRigs } from '../../src/rooms/movement-rig.js';
 
 describe('MovementRigs', () => {
@@ -42,7 +46,7 @@ describe('MovementRigs', () => {
     expect(rigs.filterFor('sage').shouldStart('waves')).toBe(true);
   });
 
-  it('keeps Echo\'s injected executor and makes one per other avatar on first use', () => {
+  it("keeps Echo's injected executor and makes one per other avatar on first use", () => {
     const echo = new SceneActionExecutor();
     const rigs = new MovementRigs(echo);
     expect(rigs.get('echo').executor).toBe(echo);
@@ -57,7 +61,12 @@ describe('MovementRigs', () => {
     const rigs = new MovementRigs();
     const sage = rigs.get('sage').executor;
     const setBridge = vi.spyOn(sage, 'setBridge');
-    const bridgeFor = (id: string): SceneBridge => ({ streamMotion: vi.fn(), playChunk: vi.fn(), avatarRest: () => undefined, ...({ id } as object) });
+    const bridgeFor = (id: string): SceneBridge => ({
+      streamMotion: vi.fn(),
+      playChunk: vi.fn(),
+      avatarRest: () => undefined,
+      ...({ id } as object),
+    });
     rigs.setBridgeFactory(bridgeFor);
     expect(setBridge).toHaveBeenCalledWith(expect.objectContaining({ id: 'sage' }));
     const rex = rigs.get('rex').executor;
@@ -113,13 +122,21 @@ describe('MovementRigs', () => {
     expect(rigs.sceneFilterFor('sage')).not.toBe(rigs.filterFor('sage'));
   });
 
-  it('reports the activity of other avatars\' executors only, and drop removes the executor', () => {
+  it("reports the activity of other avatars' executors only, and drop removes the executor", () => {
     const rigs = new MovementRigs();
     const seen: Array<[string, SceneActivity]> = [];
     rigs.onOtherActivity((id, activity) => seen.push([id, activity]));
     const sage = rigs.get('sage').executor;
-    (sage as unknown as { emit(activity: SceneActivity): void }).emit({ type: 'skipped', label: 'go sofa', reason: 'no room' });
-    (rigs.get('echo').executor as unknown as { emit(activity: SceneActivity): void }).emit({ type: 'skipped', label: 'x', reason: 'y' });
+    (sage as unknown as { emit(activity: SceneActivity): void }).emit({
+      type: 'skipped',
+      label: 'go sofa',
+      reason: 'no room',
+    });
+    (rigs.get('echo').executor as unknown as { emit(activity: SceneActivity): void }).emit({
+      type: 'skipped',
+      label: 'x',
+      reason: 'y',
+    });
     expect(seen).toEqual([['sage', { type: 'skipped', label: 'go sofa', reason: 'no room' }]]);
     rigs.drop('sage');
     expect(rigs.avatarIds()).toEqual(['echo']);

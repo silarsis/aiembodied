@@ -1,6 +1,6 @@
 /** One character's personality prompt, idle habits and voice: the settings inside each scene card's Edit panel. */
 import { useId } from 'react';
-import type { SpeakingVoiceOptions } from '../../../main/src/local-voice/types.js';
+import type { SpeakingVoiceOptions } from '../../../main/src/shared/local-voice/types.js';
 
 export interface TextControl {
   value: string;
@@ -19,8 +19,19 @@ export interface HabitsControl extends TextControl {
  * they are being read). `list` is the OpenAI backend: a fixed list of voice names.
  */
 export type VoiceControl =
-  | { kind: 'engine'; options: SpeakingVoiceOptions | null; onChange(voice: string): void; disabled?: boolean }
-  | { kind: 'list'; voices: string[]; value: string; onChange(voice: string): void; disabled?: boolean };
+  | {
+      kind: 'engine';
+      options: SpeakingVoiceOptions | null;
+      onChange(voice: string): void;
+      disabled?: boolean;
+    }
+  | {
+      kind: 'list';
+      voices: string[];
+      value: string;
+      onChange(voice: string): void;
+      disabled?: boolean;
+    };
 
 export interface CharacterSettingsControls {
   prompt: TextControl;
@@ -43,7 +54,9 @@ function VoiceSelect({ id, name, voice }: { id: string; name: string; voice: Voi
           disabled={voice.disabled || voice.voices.length === 0}
         >
           {voice.voices.map((entry) => (
-            <option key={entry} value={entry}>{entry}</option>
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
           ))}
         </select>
       </div>
@@ -70,7 +83,9 @@ function VoiceSelect({ id, name, voice }: { id: string; name: string; voice: Voi
           <option value={options.selected}>{options.selected} (not available)</option>
         ) : null}
         {(options?.voices ?? []).map((entry) => (
-          <option key={entry} value={entry}>{entry}</option>
+          <option key={entry} value={entry}>
+            {entry}
+          </option>
         ))}
       </select>
       <small className="kiosk__helper">{helper}</small>
@@ -78,7 +93,13 @@ function VoiceSelect({ id, name, voice }: { id: string; name: string; voice: Voi
   );
 }
 
-export function CharacterSettings({ name, controls }: { name: string; controls: CharacterSettingsControls }) {
+export function CharacterSettings({
+  name,
+  controls,
+}: {
+  name: string;
+  controls: CharacterSettingsControls;
+}) {
   const uid = useId();
   const { prompt, habits, voice } = controls;
   return (

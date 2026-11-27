@@ -74,7 +74,8 @@ export class MotionTraceSink {
   append(lines: unknown): void {
     if (!this.enabled || !Array.isArray(lines)) return;
     for (const line of lines.slice(0, MAX_LINES_PER_BATCH)) {
-      if (line && typeof line === 'object' && !Array.isArray(line)) this.enqueue(line as Record<string, unknown>);
+      if (line && typeof line === 'object' && !Array.isArray(line))
+        this.enqueue(line as Record<string, unknown>);
     }
   }
 
@@ -87,7 +88,14 @@ export class MotionTraceSink {
     } catch (error) {
       data = { traceError: error instanceof Error ? error.message : String(error) };
     }
-    this.enqueue({ ts: this.now().toISOString(), t: Math.round(this.clock() * 100) / 100, avatar, kind, src: 'main', ...data });
+    this.enqueue({
+      ts: this.now().toISOString(),
+      t: Math.round(this.clock() * 100) / 100,
+      avatar,
+      kind,
+      src: 'main',
+      ...data,
+    });
   }
 
   /** Resolves when everything queued so far is on disk. */
@@ -120,7 +128,10 @@ export class MotionTraceSink {
   private async write(text: string): Promise<void> {
     await fs.mkdir(this.directory, { recursive: true });
     if (this.size === null) {
-      this.size = await fs.stat(this.file).then((stat) => stat.size, () => 0);
+      this.size = await fs.stat(this.file).then(
+        (stat) => stat.size,
+        () => 0,
+      );
     }
     if (this.size > this.maxBytes) {
       await fs.rm(this.oldFile, { force: true });

@@ -10,8 +10,15 @@
  * before the wake word is thrown away: an utterance that spans it is cut at the detection.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
-import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
-import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
+import type {
+  LocalVoiceEvent,
+  LocalVoiceStatus,
+} from '../../../main/src/shared/local-voice/types.js';
+import type {
+  RealtimeClientCallbacks,
+  RealtimeClientOptions,
+  RealtimeClientState,
+} from './realtime-client.js';
 import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 // &no-inline keeps Vite from turning the tiny worklet into a data: URL; addModule needs a real file.
 import micCaptureWorkletUrl from './mic-capture.worklet.js?url&no-inline';
@@ -299,7 +306,10 @@ export class LocalVoiceClient {
    * the conversation's output with lip-sync. It stays out of the conversation history and memory.
    * Returns null when the conversation is not running; the caller then plays it on its own.
    */
-  async preview(text: string, instructions?: string): Promise<{ text: string; cancelled: boolean } | null> {
+  async preview(
+    text: string,
+    instructions?: string,
+  ): Promise<{ text: string; cancelled: boolean } | null> {
     const bridge = this.getBridge();
     const context = this.context;
     const output = this.output;
@@ -312,7 +322,11 @@ export class LocalVoiceClient {
     this.busy = true;
     const connectionId = this.connectionId;
     const previousPhase = this.activity.phase;
-    const turn = new Turn(`preview-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, output);
+    const turn = new Turn(
+      `preview-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      context,
+      output,
+    );
     this.ownRequestIds.push(turn.requestId);
     turn.onSentenceStart = (sentence, first) => {
       if (first) {
@@ -322,7 +336,12 @@ export class LocalVoiceClient {
     };
     this.turn = turn;
     try {
-      const result = await bridge.respond({ requestId: turn.requestId, text, instructions, preview: true });
+      const result = await bridge.respond({
+        requestId: turn.requestId,
+        text,
+        instructions,
+        preview: true,
+      });
       await turn.finished();
       return { text: result.text, cancelled: result.cancelled === true };
     } finally {
@@ -594,7 +613,13 @@ export class LocalVoiceClient {
    */
   private async maybeRunSystemTurn(): Promise<void> {
     const bridge = this.getBridge();
-    if (this.systemReady.size === 0 || !bridge || this.state.status !== 'connected' || this.busy || this.segmenter.inProgress) {
+    if (
+      this.systemReady.size === 0 ||
+      !bridge ||
+      this.state.status !== 'connected' ||
+      this.busy ||
+      this.segmenter.inProgress
+    ) {
       return;
     }
     const avatarId = this.systemReady.values().next().value as string;
@@ -668,16 +693,23 @@ export class LocalVoiceClient {
         if (admitted === null) {
           const durationMs = heard.endAt - heard.startAt;
           this.log('info', 'Ignoring speech without the wake word', { durationMs });
-          this.setActivity('waiting', `Ignored ${(durationMs / 1000).toFixed(1)} s of speech without the wake word`);
+          this.setActivity(
+            'waiting',
+            `Ignored ${(durationMs / 1000).toFixed(1)} s of speech without the wake word`,
+          );
           return;
         }
         if (admitted === 'wake-only') {
-          this.log('info', 'Dropped speech before the wake word', { durationMs: heard.endAt - heard.startAt });
+          this.log('info', 'Dropped speech before the wake word', {
+            durationMs: heard.endAt - heard.startAt,
+          });
           this.listen('Wake word heard: say your request');
           return;
         }
         if (admitted !== heard) {
-          this.log('info', 'Dropped speech before the wake word', { droppedMs: admitted.startAt - heard.startAt });
+          this.log('info', 'Dropped speech before the wake word', {
+            droppedMs: admitted.startAt - heard.startAt,
+          });
         }
         utterance = admitted;
       }
@@ -686,13 +718,18 @@ export class LocalVoiceClient {
       this.yieldToKevin();
       this.setActivity('transcribing');
       const endedAt = this.now();
-      const transcript = await bridge.transcribe(encodeWav(utterance.samples, utterance.sampleRate));
+      const transcript = await bridge.transcribe(
+        encodeWav(utterance.samples, utterance.sampleRate),
+      );
       if (connectionId !== this.connectionId) {
         return;
       }
       this.timing = { endedAt, transcriptAt: this.now() };
       const text = this.stripWakePhrase(transcript.text);
-      this.log('info', 'Local voice transcript', { text: transcript.text, timings: transcript.timings });
+      this.log('info', 'Local voice transcript', {
+        text: transcript.text,
+        timings: transcript.timings,
+      });
       if (!text) {
         // Only the wake word was said: keep listening for the request.
         this.listen('Wake word heard: say your request');
@@ -715,7 +752,11 @@ export class LocalVoiceClient {
   }
 
   /** What was said, from the transcript on: record it, run the turn, play the answer, then listen for a follow-up. */
-  private async takeText(bridge: LocalVoiceBridge, text: string, connectionId: number): Promise<void> {
+  private async takeText(
+    bridge: LocalVoiceBridge,
+    text: string,
+    connectionId: number,
+  ): Promise<void> {
     this.callbacks.onUserTranscript?.(text);
     this.setActivity('thinking', `“${text}”`);
     await this.respond(bridge, text, connectionId, false);
@@ -780,7 +821,8 @@ export class LocalVoiceClient {
         if (timing) {
           const at = this.now();
           this.callbacks.onTurnTiming?.({
-            transcriptMs: timing.transcriptAt === null ? null : timing.transcriptAt - timing.endedAt,
+            transcriptMs:
+              timing.transcriptAt === null ? null : timing.transcriptAt - timing.endedAt,
             firstAudioMs: turn.firstAudioAt === null ? null : turn.firstAudioAt - timing.endedAt,
             playbackMs: at - timing.endedAt,
           });
@@ -804,7 +846,14 @@ export class LocalVoiceClient {
       text,
       instructions: this.sessionConfig.instructions,
       // Only a system turn names its avatar; Kevin's own turns go through the floor.
-      ...(system ? { system: true, ...(systemAvatarId && systemAvatarId !== DEFAULT_SPEAKER_ID ? { avatarId: systemAvatarId } : {}) } : {}),
+      ...(system
+        ? {
+            system: true,
+            ...(systemAvatarId && systemAvatarId !== DEFAULT_SPEAKER_ID
+              ? { avatarId: systemAvatarId }
+              : {}),
+          }
+        : {}),
     });
     await turn.finished();
     if (connectionId !== this.connectionId) {
@@ -869,7 +918,9 @@ export class LocalVoiceClient {
     }
     if (event.type === 'sentence') {
       this.routeTurn(turn, event.avatarId || DEFAULT_SPEAKER_ID);
-      turn.enqueue(event.text, event.wav, (error) => this.log('warn', 'Failed to decode reply audio', describe(error)));
+      turn.enqueue(event.text, event.wav, (error) =>
+        this.log('warn', 'Failed to decode reply audio', describe(error)),
+      );
     } else if (event.type === 'error') {
       this.log('error', 'Local voice reply error', { message: event.message });
       this.setActivity('error', `Reply failed: ${event.message}`);
@@ -888,7 +939,12 @@ export class LocalVoiceClient {
    * microphone or the busy state.
    */
   private handleChatterEvent(event: LocalVoiceEvent): void {
-    if (event.type !== 'sentence' || !this.context || this.disposed || this.state.status !== 'connected') {
+    if (
+      event.type !== 'sentence' ||
+      !this.context ||
+      this.disposed ||
+      this.state.status !== 'connected'
+    ) {
       return;
     }
     if (this.ownRequestIds.includes(event.requestId)) {
@@ -915,7 +971,11 @@ export class LocalVoiceClient {
           } else {
             this.callbacks.onFirstAudioFrame?.(avatarId);
           }
-          if (!this.busy && this.chatterPhaseBefore === null && (this.activity.phase === 'waiting' || this.activity.phase === 'listening')) {
+          if (
+            !this.busy &&
+            this.chatterPhaseBefore === null &&
+            (this.activity.phase === 'waiting' || this.activity.phase === 'listening')
+          ) {
             this.chatterPhaseBefore = this.activity.phase;
             this.setActivity('responding', 'Avatar chatter');
           }
@@ -926,7 +986,9 @@ export class LocalVoiceClient {
       turn = created;
       isNew = true;
     }
-    turn.enqueue(event.text, event.wav, (error) => this.log('warn', 'Failed to decode chatter audio', describe(error)));
+    turn.enqueue(event.text, event.wav, (error) =>
+      this.log('warn', 'Failed to decode chatter audio', describe(error)),
+    );
     if (isNew) {
       const tracked = turn;
       // Forget the turn once what is queued has played (its next sentence, if any, starts a new one).
@@ -950,7 +1012,11 @@ export class LocalVoiceClient {
     }
     const before = this.chatterPhaseBefore;
     this.chatterPhaseBefore = null;
-    if (!this.busy && this.activity.phase === 'responding' && this.activity.detail === 'Avatar chatter') {
+    if (
+      !this.busy &&
+      this.activity.phase === 'responding' &&
+      this.activity.detail === 'Avatar chatter'
+    ) {
       this.setActivity(before);
     }
   }
@@ -1004,12 +1070,15 @@ export class LocalVoiceClient {
       return;
     }
     const remainingMs = this.awakeUntil - this.now();
-    this.awakeTimer = window.setTimeout(() => {
-      this.awakeTimer = null;
-      if (!this.busy && this.activity.phase === 'listening') {
-        this.setActivity('waiting');
-      }
-    }, Math.max(0, remainingMs));
+    this.awakeTimer = window.setTimeout(
+      () => {
+        this.awakeTimer = null;
+        if (!this.busy && this.activity.phase === 'listening') {
+          this.setActivity('waiting');
+        }
+      },
+      Math.max(0, remainingMs),
+    );
   }
 
   private setActivity(phase: VoicePhase, detail?: string): void {
@@ -1059,7 +1128,8 @@ export class LocalVoiceClient {
   }
 
   private async applyOutputDevice(): Promise<void> {
-    const element = this.remoteAudioElement as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+    const element = this.remoteAudioElement as
+      (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
     if (!element || typeof element.setSinkId !== 'function') {
       return;
     }
@@ -1098,13 +1168,19 @@ export async function playPreviewReply(
         console.warn('Preview: could not use the chosen output device', error);
       });
     }
-    const turn = new Turn(`preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, context.destination);
+    const turn = new Turn(
+      `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      context,
+      context.destination,
+    );
     const unsubscribe = bridge.onEvent((event) => {
       if (event.requestId !== turn.requestId) {
         return;
       }
       if (event.type === 'sentence') {
-        turn.enqueue(event.text, event.wav, (error) => console.warn('Preview: failed to decode reply audio', error));
+        turn.enqueue(event.text, event.wav, (error) =>
+          console.warn('Preview: failed to decode reply audio', error),
+        );
       }
     });
     try {
@@ -1168,7 +1244,8 @@ class Turn {
         return;
       }
       try {
-        const audio = wav.byteLength > 0 ? await this.context.decodeAudioData(copyBuffer(wav)) : null;
+        const audio =
+          wav.byteLength > 0 ? await this.context.decodeAudioData(copyBuffer(wav)) : null;
         if (this.stopped) {
           return;
         }
@@ -1246,7 +1323,9 @@ export class UtteranceSegmenter {
   private speechMs = 0;
   private sampleRate = 48000;
 
-  constructor(private readonly options: { silenceMs: number; minSpeechMs: number; maxUtteranceMs: number }) {}
+  constructor(
+    private readonly options: { silenceMs: number; minSpeechMs: number; maxUtteranceMs: number },
+  ) {}
 
   push(samples: Float32Array, sampleRate: number, nowMs: number): Utterance | null {
     this.sampleRate = sampleRate;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DownloadHosts } from '../../../main/src/aicontroller/remote-downloads.js';
+import type { DownloadHosts } from '../../../main/src/shared/aicontroller/remote-downloads-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 
 /** The value for "Best fit": the model controller picks the machine by GPU fit and disk. */
@@ -40,7 +40,12 @@ export function DownloadTo({
   return (
     <label className="modelsDialog__inline" htmlFor={id}>
       Download to{' '}
-      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      >
         <option value="">This PC</option>
         {hosts.hosts.map((name) => (
           <option key={name} value={name}>

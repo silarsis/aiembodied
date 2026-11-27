@@ -34,21 +34,24 @@ export function MakeMissingObjects({ backgrounds }: { backgrounds: BackgroundCon
               disabled={!settings.enabled}
               onChange={(event) => {
                 const value = Number.parseInt(event.target.value, 10);
-                if (Number.isFinite(value)) void setObjectSettings({ maxPerRoom: Math.min(MAX_OBJECTS_PER_ROOM, Math.max(0, value)) });
+                if (Number.isFinite(value))
+                  void setObjectSettings({
+                    maxPerRoom: Math.min(MAX_OBJECTS_PER_ROOM, Math.max(0, value)),
+                  });
               }}
             />
           </div>
           <p className="kiosk__helper">
-            When the library has no good match, the object is drawn and turned into a 3D model on this PC (the image and 3D
-            models from Models and servers). It takes minutes per object, one at a time, after the room is already showing;
-            the most important pieces (beds, seats, tables) come first. Objects beyond the limit, or that fail, stay simple
-            shapes.
+            When the library has no good match, the object is drawn and turned into a 3D model on
+            this PC (the image and 3D models from Models and servers). It takes minutes per object,
+            one at a time, after the room is already showing; the most important pieces (beds,
+            seats, tables) come first. Objects beyond the limit, or that fail, stay simple shapes.
           </p>
         </>
       ) : (
         <p className="kiosk__helper">
-          To make missing objects, set up a ComfyUI server for the Concept image and 3D model jobs in Models and servers.
-          Until then they become simple shapes.
+          To make missing objects, set up a ComfyUI server for the Concept image and 3D model jobs
+          in Models and servers. Until then they become simple shapes.
         </p>
       )}
     </section>

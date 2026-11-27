@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import DatabaseConstructor, { type Database as SqliteDatabase } from 'better-sqlite3';
 import { Buffer } from 'node:buffer';
-import type { NewReadingNote, ReadingNote } from '../pursuits/types.js';
+import type { NewReadingNote } from '../pursuits/types.js';
+import type { ReadingNote } from '../shared/pursuits/types.js';
 
 export interface MemoryStoreOptions {
   filePath: string;
@@ -861,13 +862,21 @@ export class MemoryStore {
   /** Save one reading note (pursuits/). Returns it with its id and time. */
   addReadingNote(note: NewReadingNote): ReadingNote {
     this.ensureOpen();
-    const saved: ReadingNote = { ...note, id: randomUUID(), createdAt: note.createdAt ?? Date.now() };
+    const saved: ReadingNote = {
+      ...note,
+      id: randomUUID(),
+      createdAt: note.createdAt ?? Date.now(),
+    };
     this.db
       .prepare(
         `INSERT INTO reading_notes (id, avatar_id, station_id, title, link, takeaway, opinion, connection, questions, curiosity, partial, created_at)
          VALUES (@id, @avatarId, @stationId, @title, @link, @takeaway, @opinion, @connection, @questions, @curiosity, @partial, @createdAt)`,
       )
-      .run({ ...saved, questions: JSON.stringify(saved.questions), partial: saved.partial ? 1 : 0 });
+      .run({
+        ...saved,
+        questions: JSON.stringify(saved.questions),
+        partial: saved.partial ? 1 : 0,
+      });
     return saved;
   }
 
@@ -879,12 +888,15 @@ export class MemoryStore {
         `SELECT id, avatar_id AS avatarId, station_id AS stationId, title, link, takeaway, opinion, connection, questions, curiosity, partial, created_at AS createdAt
          FROM reading_notes WHERE avatar_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
       )
-      .all(avatarId, Math.max(1, Math.min(200, Math.floor(limit)))) as Array<Omit<ReadingNote, 'questions' | 'partial'> & { questions: string; partial: number }>;
+      .all(avatarId, Math.max(1, Math.min(200, Math.floor(limit)))) as Array<
+      Omit<ReadingNote, 'questions' | 'partial'> & { questions: string; partial: number }
+    >;
     return rows.map((row) => {
       let questions: string[] = [];
       try {
         const parsed: unknown = JSON.parse(row.questions);
-        if (Array.isArray(parsed)) questions = parsed.filter((q): q is string => typeof q === 'string');
+        if (Array.isArray(parsed))
+          questions = parsed.filter((q): q is string => typeof q === 'string');
       } catch {
         /* A damaged row still lists, without questions. */
       }
@@ -925,8 +937,17 @@ export class MemoryStore {
   listMemoryOutbox(limit = 100): MemoryOutboxEntry[] {
     this.ensureOpen();
     const rows = this.db
-      .prepare('SELECT id, kind, payload, created_at, attempts, last_error FROM memory_outbox ORDER BY id LIMIT ?')
-      .all(limit) as Array<{ id: number; kind: string; payload: string; created_at: number; attempts: number; last_error: string | null }>;
+      .prepare(
+        'SELECT id, kind, payload, created_at, attempts, last_error FROM memory_outbox ORDER BY id LIMIT ?',
+      )
+      .all(limit) as Array<{
+      id: number;
+      kind: string;
+      payload: string;
+      created_at: number;
+      attempts: number;
+      last_error: string | null;
+    }>;
     return rows.map((row) => ({
       id: row.id,
       kind: row.kind,
@@ -939,7 +960,9 @@ export class MemoryStore {
 
   countMemoryOutbox(): number {
     this.ensureOpen();
-    const row = this.db.prepare('SELECT count(*) AS count FROM memory_outbox').get() as { count: number };
+    const row = this.db.prepare('SELECT count(*) AS count FROM memory_outbox').get() as {
+      count: number;
+    };
     return row.count;
   }
 
@@ -958,7 +981,9 @@ export class MemoryStore {
 
   markMemoryOutboxFailed(ids: readonly number[], error: string): void {
     this.ensureOpen();
-    const mark = this.db.prepare('UPDATE memory_outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?');
+    const mark = this.db.prepare(
+      'UPDATE memory_outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?',
+    );
     this.db.transaction((list: readonly number[]) => {
       for (const id of list) {
         mark.run(error.slice(0, 500), id);

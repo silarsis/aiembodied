@@ -1,0 +1,177 @@
+{
+  "src/App.tsx": {
+    "no-restricted-syntax": {
+      "count": 67
+    }
+  },
+  "src/avatar/avatar-configurator.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/avatar/avatar-image-preview.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/avatar/avatar-model-preview.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/avatar/avatar-studio.tsx": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/avatar/behavior-cues.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/avatar/lora-picker.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/avatar/reading-notes.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/avatar/vrm-avatar-renderer.tsx": {
+    "no-restricted-syntax": {
+      "count": 17
+    }
+  },
+  "src/backgrounds/room-stations.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/furniture/furniture-controls.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/furniture/furniture-viewer.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/places/places-panel.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/places/room-devices-status.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/satellite/satellite-status-panel.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/settings/coding-settings.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/controls-drawer.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/memory-panel.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/model-downloads.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/models-dialog.tsx": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/settings/panel-dialog.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/settings/speaking-engines.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/thinking-downloads.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/tools-settings.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/settings/vision-download.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/status/approvals-card.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/busy-card.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/coding-status.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/coding-tasks.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/dnd-toggle.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/gpu-memory-bar.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/hear-chatter-toggle.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/switchboard-status.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/status/workflows-status.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/talk/type-to-talk.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  }
+}

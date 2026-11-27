@@ -7,9 +7,12 @@
  * does no harm.
  */
 import type { MemoryEngineCodingTask } from '../memory-engine/client.js';
-import type { RunnerEvent, RunnerTask } from './runner-client.js';
+import type { RunnerEvent, RunnerTask } from '../shared/coding/runner-client-types.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 const OUTCOMES = new Set(['done', 'failed', 'cancelled', 'discarded']);
 const MAX_FILES = 200;
@@ -31,13 +34,19 @@ function cut(text: string, limit: number): string {
 /** The files a task changed: the review's list, else what pi touched. */
 function changedFiles(task: RunnerTask): string[] {
   const review = task.review;
-  const files = review?.changed_files?.length ? review.changed_files : review?.files?.map((f) => f.path) ?? task.files_touched ?? [];
+  const files = review?.changed_files?.length
+    ? review.changed_files
+    : (review?.files?.map((f) => f.path) ?? task.files_touched ?? []);
   return files.slice(0, MAX_FILES);
 }
 
 /** What pi said at the end, or else why the task ended the way it did. */
 function summaryOf(task: RunnerTask): string {
-  const text = task.last_text?.trim() || (task.status === 'failed' ? task.error?.trim() : '') || task.phase_detail?.trim() || '';
+  const text =
+    task.last_text?.trim() ||
+    (task.status === 'failed' ? task.error?.trim() : '') ||
+    task.phase_detail?.trim() ||
+    '';
   return cut(text, MAX_SUMMARY);
 }
 
@@ -62,14 +71,19 @@ export class CodingMemoryWriter {
       this.options.post(body);
       this.options.logger?.info('Coding task kept in memory', { task: id, outcome: body.outcome });
     } catch (error) {
-      this.options.logger?.warn('Could not keep a coding task in memory', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Could not keep a coding task in memory', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
   /** The memory engine's form of a runner task. `prState` comes from a "pr" event, if that is what we heard. */
   build(task: RunnerTask, prState?: string | null): MemoryEngineCodingTask {
     const review = task.review;
-    const flags = [...(review?.protected_violations ?? []).map((v) => `protected: ${v}`), ...(review?.flags ?? [])];
+    const flags = [
+      ...(review?.protected_violations ?? []).map((v) => `protected: ${v}`),
+      ...(review?.flags ?? []),
+    ];
     return {
       task_id: task.id,
       workspace_id: task.workspace_id ?? 'unknown',

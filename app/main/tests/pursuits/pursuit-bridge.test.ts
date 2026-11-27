@@ -16,7 +16,7 @@ describe('the pursuits bridge', () => {
     return { api, invoke, listeners };
   }
 
-  it('starts a session, lists the offers, who is reading, and a character\'s notes through IPC', async () => {
+  it("starts a session, lists the offers, who is reading, and a character's notes through IPC", async () => {
     const { api, invoke } = bridge();
     await api.pursuits?.start('sage', 'station-1');
     expect(invoke).toHaveBeenLastCalledWith('pursuits:start', 'sage', 'station-1');

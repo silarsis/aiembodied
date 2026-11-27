@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createIdleDirector, type IdleDirector, type IdleDirectorInputs, type IdleExecutor } from './idle-director.js';
+import {
+  createIdleDirector,
+  type IdleDirector,
+  type IdleDirectorInputs,
+  type IdleExecutor,
+} from './idle-director.js';
 
 export interface UseIdleDirectorOptions extends IdleDirectorInputs {
   executor: IdleExecutor;
@@ -13,14 +18,50 @@ export interface UseIdleDirectorOptions extends IdleDirectorInputs {
  * note for the model's instructions, which the director only changes while the assistant is not
  * mid-response.
  */
-export function useIdleDirector(options: UseIdleDirectorOptions): { director: IdleDirector; idleNote: string } {
-  const { executor, room, settings, motionReady, persona, phase, pick, run, avatars, nobodyHere, places, canWander, pursuitsFor, startPursuit, pursuing } = options;
+export function useIdleDirector(options: UseIdleDirectorOptions): {
+  director: IdleDirector;
+  idleNote: string;
+} {
+  const {
+    executor,
+    room,
+    settings,
+    motionReady,
+    persona,
+    phase,
+    pick,
+    run,
+    avatars,
+    nobodyHere,
+    places,
+    canWander,
+    pursuitsFor,
+    startPursuit,
+    pursuing,
+  } = options;
   const [idleNote, setIdleNote] = useState('');
-  const { director, setInputs } = useMemo(() => createIdleDirector(executor, setIdleNote), [executor]);
+  const { director, setInputs } = useMemo(
+    () => createIdleDirector(executor, setIdleNote),
+    [executor],
+  );
 
   // Declared first, so the director sees the new values when the effects below call it.
   useEffect(() => {
-    setInputs({ room, settings, motionReady, persona, pick, run, avatars, nobodyHere, places, canWander, pursuitsFor, startPursuit, pursuing });
+    setInputs({
+      room,
+      settings,
+      motionReady,
+      persona,
+      pick,
+      run,
+      avatars,
+      nobodyHere,
+      places,
+      canWander,
+      pursuitsFor,
+      startPursuit,
+      pursuing,
+    });
   });
   useEffect(() => {
     director.start();

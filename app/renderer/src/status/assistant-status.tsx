@@ -76,7 +76,9 @@ export function finishToolCall(
   finishedAt: number,
   detail?: string,
 ): ToolCall[] {
-  return calls.map((call) => (call.id === id ? { ...call, status, finishedAt, detail: detail ?? call.detail } : call));
+  return calls.map((call) =>
+    call.id === id ? { ...call, status, finishedAt, detail: detail ?? call.detail } : call,
+  );
 }
 
 function formatSeconds(ms: number): string {
@@ -104,7 +106,13 @@ export interface AssistantStatusPanelProps {
   models?: ModelStatus[] | null;
 }
 
-export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhrase, models }: AssistantStatusPanelProps) {
+export function AssistantStatusPanel({
+  activity,
+  wakeScore,
+  toolCalls,
+  wakePhrase,
+  models,
+}: AssistantStatusPanelProps) {
   const ticking = activity.phase !== 'off' || toolCalls.some((call) => call.status === 'pending');
   const now = useNow(ticking);
   const activeIndex = PHASES.findIndex((entry) => entry.phase === activity.phase);
@@ -128,14 +136,25 @@ export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhras
         })}
       </ol>
 
-      <p className="assistantStatus__summary" role="status" aria-live="polite" data-testid="assistant-status-summary">
+      <p
+        className="assistantStatus__summary"
+        role="status"
+        aria-live="polite"
+        data-testid="assistant-status-summary"
+      >
         <strong>{PHASE_DESCRIPTIONS[activity.phase]}</strong>
         {activity.phase === 'waiting' && wakePhrase ? ` (say “${wakePhrase}”)` : null}
-        {activity.phase !== 'off' ? <span className="assistantStatus__elapsed"> · {formatSeconds(now - activity.since)}</span> : null}
+        {activity.phase !== 'off' ? (
+          <span className="assistantStatus__elapsed"> · {formatSeconds(now - activity.since)}</span>
+        ) : null}
       </p>
       {activity.detail ? (
         <p
-          className={activity.phase === 'error' ? 'assistantStatus__detail assistantStatus__detail--error' : 'assistantStatus__detail'}
+          className={
+            activity.phase === 'error'
+              ? 'assistantStatus__detail assistantStatus__detail--error'
+              : 'assistantStatus__detail'
+          }
           role={activity.phase === 'error' ? 'alert' : undefined}
           data-testid="assistant-status-detail"
         >
@@ -154,7 +173,9 @@ export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhras
                 <li key={entry.id} className="assistantStatus__model" data-state={entry.state}>
                   <span className="assistantStatus__dot" aria-hidden="true" />
                   <span className="assistantStatus__modelLabel">{entry.label}</span>
-                  <span className="assistantStatus__modelState">{MODEL_STATE_LABELS[entry.state]}</span>
+                  <span className="assistantStatus__modelState">
+                    {MODEL_STATE_LABELS[entry.state]}
+                  </span>
                   {entry.model || entry.detail ? (
                     <span className="assistantStatus__modelDetail">
                       {[entry.model, entry.detail].filter(Boolean).join(' · ')}
@@ -177,10 +198,14 @@ export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhras
                 data-detected={wakeScore.detected ? 'true' : 'false'}
                 style={{ width: `${Math.round(Math.min(1, wakeScore.score) * 100)}%` }}
               />
-              <div className="assistantStatus__threshold" style={{ left: `${Math.round(wakeScore.threshold * 100)}%` }} />
+              <div
+                className="assistantStatus__threshold"
+                style={{ left: `${Math.round(wakeScore.threshold * 100)}%` }}
+              />
             </div>
             <span className="assistantStatus__wakeValue">
-              {wakeScore.score.toFixed(2)} / {wakeScore.threshold.toFixed(2)} {wakeScore.detected ? 'heard' : 'below threshold'} ·{' '}
+              {wakeScore.score.toFixed(2)} / {wakeScore.threshold.toFixed(2)}{' '}
+              {wakeScore.detected ? 'heard' : 'below threshold'} ·{' '}
               {formatSeconds(now - wakeScore.at)} ago
             </span>
           </>
@@ -203,7 +228,9 @@ export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhras
                   {call.status === 'pending' ? 'running' : call.status} ·{' '}
                   {formatSeconds((call.finishedAt ?? now) - call.startedAt)}
                 </span>
-                {call.detail ? <span className="assistantStatus__toolDetail">{call.detail}</span> : null}
+                {call.detail ? (
+                  <span className="assistantStatus__toolDetail">{call.detail}</span>
+                ) : null}
               </li>
             ))}
           </ul>

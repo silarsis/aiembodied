@@ -3,20 +3,29 @@ import type {
   ProviderSettings,
   ProviderSettingsPatch,
 } from '../../../main/src/shared/config/provider-settings.js';
-import type { PushToTalkStatus } from '../../../main/src/talk/types.js';
-import type { WakeWordOption } from '../../../main/src/wake-word/types.js';
+import type { PushToTalkStatus } from '../../../main/src/shared/talk/types.js';
+import type { WakeWordOption } from '../../../main/src/shared/wake-word/types.js';
 import type { WakeWordBridge } from '../preload-api.js';
-import { WakeWordTraining, describeWakeWordOption, useWakeWordLibrary } from './wake-word-training.js';
+import {
+  WakeWordTraining,
+  describeWakeWordOption,
+  useWakeWordLibrary,
+} from './wake-word-training.js';
 
 /** The fields of `draft` that differ from `saved`, so only real changes are stored. */
-export function diffProviderSettings(saved: ProviderSettings, draft: ProviderSettings): ProviderSettingsPatch {
+export function diffProviderSettings(
+  saved: ProviderSettings,
+  draft: ProviderSettings,
+): ProviderSettingsPatch {
   const patch: Record<string, unknown> = {};
   for (const key of Object.keys(draft) as (keyof ProviderSettings)[]) {
     const next = draft[key];
     const current = saved[key];
     if (typeof next === 'object' && typeof current === 'object') {
       const changed = Object.fromEntries(
-        Object.entries(next).filter(([field, value]) => (current as Record<string, unknown>)[field] !== value),
+        Object.entries(next).filter(
+          ([field, value]) => (current as Record<string, unknown>)[field] !== value,
+        ),
       );
       if (Object.keys(changed).length > 0) {
         patch[key] = changed;
@@ -62,7 +71,10 @@ export function ProviderSettingsPanel({
     }
   }
 
-  const patch = useMemo(() => (settings && draft ? diffProviderSettings(settings, draft) : {}), [settings, draft]);
+  const patch = useMemo(
+    () => (settings && draft ? diffProviderSettings(settings, draft) : {}),
+    [settings, draft],
+  );
   const dirty = Object.keys(patch).length > 0;
 
   if (!draft || !settings) {
@@ -70,7 +82,10 @@ export function ProviderSettingsPanel({
     return renderLayout ? renderLayout({ devices: loading, actions: null }) : loading;
   }
 
-  const update = <K extends keyof ProviderSettings>(section: K, value: Partial<ProviderSettings[K]> | ProviderSettings[K]) => {
+  const update = <K extends keyof ProviderSettings>(
+    section: K,
+    value: Partial<ProviderSettings[K]> | ProviderSettings[K],
+  ) => {
     setMessage(null);
     setDraft((previous) => {
       if (!previous) {
@@ -91,7 +106,10 @@ export function ProviderSettingsPanel({
       await onSave(patch);
       setMessage({ kind: 'info', text: 'Settings saved and applied.' });
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Failed to save settings.' });
+      setMessage({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'Failed to save settings.',
+      });
     } finally {
       setSaving(false);
     }
@@ -99,14 +117,19 @@ export function ProviderSettingsPanel({
 
   const busy = disabled || saving;
   // The status is for the saved key, so it says nothing about an unsaved edit.
-  const savedShortcutStatus = pushToTalkStatus?.shortcut === settings.talk.shortcut ? pushToTalkStatus : null;
+  const savedShortcutStatus =
+    pushToTalkStatus?.shortcut === settings.talk.shortcut ? pushToTalkStatus : null;
   const shortcutActive = Boolean(savedShortcutStatus?.registered);
   const shortcutError = savedShortcutStatus?.error;
   const wakeWordOptions: WakeWordOption[] = wakeWords.options ?? [];
   if (!wakeWordOptions.some((option) => option.model === draft.wakeWord.model)) {
     wakeWordOptions.unshift({
       model: draft.wakeWord.model,
-      label: draft.wakeWord.model.split(/[\\/]/).pop()?.replace(/\.onnx$/i, '') ?? draft.wakeWord.model,
+      label:
+        draft.wakeWord.model
+          .split(/[\\/]/)
+          .pop()
+          ?.replace(/\.onnx$/i, '') ?? draft.wakeWord.model,
       source: 'trained',
     });
   }
@@ -149,10 +172,16 @@ export function ProviderSettingsPanel({
           />
         </div>
         <p className="kiosk__helper">
-          Higher means fewer false wakes but more missed ones. 0.5 suits most models; try 0.7 if she wakes on her own.
+          Higher means fewer false wakes but more missed ones. 0.5 suits most models; try 0.7 if she
+          wakes on her own.
         </p>
         {wakeWordBridge ? (
-          <WakeWordTraining training={wakeWords.training} onTrain={wakeWords.train} onCancel={wakeWords.cancel} disabled={disabled} />
+          <WakeWordTraining
+            training={wakeWords.training}
+            onTrain={wakeWords.train}
+            onCancel={wakeWords.cancel}
+            disabled={disabled}
+          />
         ) : null}
       </SettingsGroup>
 
@@ -165,8 +194,8 @@ export function ProviderSettingsPanel({
           disabled={busy}
         />
         <p className="kiosk__helper">
-          Works from any app. Press it and speak; press it again to send straight away instead of waiting for a pause.
-          During a reply it stops the reply and listens.
+          Works from any app. Press it and speak; press it again to send straight away instead of
+          waiting for a pause. During a reply it stops the reply and listens.
           {shortcutActive ? ` Active: ${formatShortcut(settings.talk.shortcut)}.` : ''}
         </p>
         {shortcutError ? (
@@ -187,8 +216,6 @@ export function ProviderSettingsPanel({
           </label>
         </div>
       </SettingsGroup>
-
-
     </div>
   );
   const actions = (
@@ -202,16 +229,34 @@ export function ProviderSettingsPanel({
         </button>
       </div>
       {message ? (
-        <p role={message.kind === 'error' ? 'alert' : 'status'} className={message.kind === 'error' ? 'kiosk__error' : 'kiosk__info'}>
+        <p
+          role={message.kind === 'error' ? 'alert' : 'status'}
+          className={message.kind === 'error' ? 'kiosk__error' : 'kiosk__info'}
+        >
           {message.text}
         </p>
       ) : null}
     </>
   );
-  return renderLayout ? renderLayout({ devices, actions }) : <div className="providerSettings">{devices}{actions}</div>;
+  return renderLayout ? (
+    renderLayout({ devices, actions })
+  ) : (
+    <div className="providerSettings">
+      {devices}
+      {actions}
+    </div>
+  );
 }
 
-function SettingsGroup({ title, id, children }: { title: string; id: string; children: ReactNode }) {
+function SettingsGroup({
+  title,
+  id,
+  children,
+}: {
+  title: string;
+  id: string;
+  children: ReactNode;
+}) {
   return (
     <fieldset className="providerSettings__group" aria-labelledby={`settings-${id}-title`}>
       <legend id={`settings-${id}-title`}>{title}</legend>
@@ -284,7 +329,9 @@ export function acceleratorFromKeyEvent(event: {
     key = KEY_NAMES[code];
   }
   if (!key) {
-    return /^(Control|Shift|Alt|Meta|OS)(Left|Right)?$/.test(code) ? null : { error: `${code} can't be used as a shortcut.` };
+    return /^(Control|Shift|Alt|Meta|OS)(Left|Right)?$/.test(code)
+      ? null
+      : { error: `${code} can't be used as a shortcut.` };
   }
   const modifiers = [
     event.ctrlKey ? 'Ctrl' : null,
@@ -301,7 +348,9 @@ export function acceleratorFromKeyEvent(event: {
 
 /** An accelerator as people read it: CommandOrControl is Ctrl on Windows. */
 export function formatShortcut(accelerator: string): string {
-  return accelerator.replace(/\b(CommandOrControl|CmdOrCtrl|Control)\b/g, 'Ctrl').replace(/\+/g, ' + ');
+  return accelerator
+    .replace(/\b(CommandOrControl|CmdOrCtrl|Control)\b/g, 'Ctrl')
+    .replace(/\+/g, ' + ');
 }
 
 function ShortcutField({

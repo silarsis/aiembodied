@@ -10,7 +10,7 @@ import {
   PlaceManager,
   placesNote,
 } from '../../src/places/place-manager.js';
-import type { PlacesSnapshot } from '../../src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../src/shared/places/place-manager-types.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 
@@ -20,13 +20,24 @@ const PROFILES = [
   { id: 'rex', name: 'Rex', vrmModelId: null },
 ];
 
-function setup(options: { kv?: Record<string, string>; profiles?: typeof PROFILES; withBus?: boolean } = {}) {
+function setup(
+  options: { kv?: Record<string, string>; profiles?: typeof PROFILES; withBus?: boolean } = {},
+) {
   const kv = new Map<string, string>(Object.entries(options.kv ?? {}));
-  const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
+  const store = {
+    getValue: (key: string) => kv.get(key) ?? null,
+    setValue: (key: string, value: string) => void kv.set(key, value),
+  };
   const published: SwitchboardEventInput[] = [];
-  const bus = { publish: (event: SwitchboardEventInput) => (published.push(event), null) } as unknown as SwitchboardBus;
+  const bus = {
+    publish: (event: SwitchboardEventInput) => (published.push(event), null),
+  } as unknown as SwitchboardBus;
   const profiles = options.profiles ?? PROFILES;
-  const manager = new PlaceManager({ store, registry: { list: () => profiles }, bus: options.withBus === false ? undefined : () => bus });
+  const manager = new PlaceManager({
+    store,
+    registry: { list: () => profiles },
+    bus: options.withBus === false ? undefined : () => bus,
+  });
   const snapshots: PlacesSnapshot[] = [];
   manager.onChanged((snapshot) => snapshots.push(snapshot));
   return { manager, kv, published, snapshots };
@@ -53,14 +64,26 @@ describe('PlaceManager', () => {
 
     it('fills in built-ins that are missing and keeps stored extras', () => {
       const { manager } = setup({
-        kv: { [PLACES_KEY]: JSON.stringify([{ id: 'attic', name: 'the attic', node: 'pc-2' }, { id: 'home', name: 'Living room', node: 'wrong' }, 'junk']) },
+        kv: {
+          [PLACES_KEY]: JSON.stringify([
+            { id: 'attic', name: 'the attic', node: 'pc-2' },
+            { id: 'home', name: 'Living room', node: 'wrong' },
+            'junk',
+          ]),
+        },
       });
       const list = manager.list();
       expect(list.map((place) => place.id)).toEqual(['home', 'next-door', 'attic']);
       // A built-in keeps its node; only the name can change.
       expect(list[0]).toEqual({ id: 'home', name: 'Living room', node: 'local' });
       // A place drawn by another PC says whether that PC is connected (not yet, after a start-up).
-      expect(list[2]).toEqual({ id: 'attic', name: 'the attic', node: 'pc-2', online: false, room: DEFAULT_DESKTOP_ROOM });
+      expect(list[2]).toEqual({
+        id: 'attic',
+        name: 'the attic',
+        node: 'pc-2',
+        online: false,
+        room: DEFAULT_DESKTOP_ROOM,
+      });
     });
 
     it('survives garbage in the store', () => {
@@ -71,8 +94,16 @@ describe('PlaceManager', () => {
 
     it('renames a place, saves it and announces the change', () => {
       const { manager, kv, snapshots } = setup();
-      expect(manager.rename('next-door', '  the garden ')).toEqual({ id: 'next-door', name: 'the garden', node: 'offscreen' });
-      expect(JSON.parse(kv.get(PLACES_KEY) ?? '[]')).toContainEqual({ id: 'next-door', name: 'the garden', node: 'offscreen' });
+      expect(manager.rename('next-door', '  the garden ')).toEqual({
+        id: 'next-door',
+        name: 'the garden',
+        node: 'offscreen',
+      });
+      expect(JSON.parse(kv.get(PLACES_KEY) ?? '[]')).toContainEqual({
+        id: 'next-door',
+        name: 'the garden',
+        node: 'offscreen',
+      });
       expect(snapshots).toHaveLength(1);
       expect(manager.rename('nowhere', 'x')).toBeNull();
       expect(manager.rename('home', '   ')).toBeNull();
@@ -104,16 +135,30 @@ describe('PlaceManager', () => {
     });
 
     it('treats an unknown place as home, and ignores avatars that are not in the registry', () => {
-      const { manager } = setup({ kv: { [LOCATIONS_KEY]: JSON.stringify({ sage: 'the-moon', ghost: 'next-door', rex: 'next-door' }) } });
+      const { manager } = setup({
+        kv: {
+          [LOCATIONS_KEY]: JSON.stringify({
+            sage: 'the-moon',
+            ghost: 'next-door',
+            rex: 'next-door',
+          }),
+        },
+      });
       expect(manager.locationOf('sage')).toBe('home');
       expect(manager.avatarsAt('home')).toEqual(['echo', 'sage']);
       expect(manager.avatarsAt('next-door')).toEqual(['rex']);
-      expect(manager.snapshot().locations).toEqual({ echo: 'home', sage: 'home', rex: 'next-door' });
+      expect(manager.snapshot().locations).toEqual({
+        echo: 'home',
+        sage: 'home',
+        rex: 'next-door',
+      });
       expect(manager.isPresent('ghost')).toBe(false);
     });
 
     it('keeps registry order in avatarsAt', () => {
-      const { manager } = setup({ kv: { [LOCATIONS_KEY]: JSON.stringify({ rex: 'next-door', echo: 'next-door' }) } });
+      const { manager } = setup({
+        kv: { [LOCATIONS_KEY]: JSON.stringify({ rex: 'next-door', echo: 'next-door' }) },
+      });
       expect(manager.avatarsAt('next-door')).toEqual(['echo', 'rex']);
     });
   });
@@ -128,7 +173,9 @@ describe('PlaceManager', () => {
       expect(manager.inTransit('sage')).toBe(true);
       expect(manager.avatarsAt('home')).toEqual(['echo', 'rex']);
       expect(manager.avatarsAt('next-door')).toEqual([]);
-      expect(snapshots.at(-1)?.transit).toEqual([{ avatarId: 'sage', from: 'home', to: 'next-door' }]);
+      expect(snapshots.at(-1)?.transit).toEqual([
+        { avatarId: 'sage', from: 'home', to: 'next-door' },
+      ]);
       // Nothing is stored until it arrives.
       expect(kv.get(LOCATIONS_KEY)).toBeUndefined();
 
@@ -154,7 +201,9 @@ describe('PlaceManager', () => {
     });
 
     it('fails a move that is not confirmed in time and leaves the avatar where it was', () => {
-      const { manager, kv, published } = setup({ kv: { [LOCATIONS_KEY]: JSON.stringify({ sage: 'next-door' }) } });
+      const { manager, kv, published } = setup({
+        kv: { [LOCATIONS_KEY]: JSON.stringify({ sage: 'next-door' }) },
+      });
       manager.startMove('sage', 'home', 'summoned');
       vi.advanceTimersByTime(MOVE_DEADLINE_MS - 1);
       expect(manager.inTransit('sage')).toBe(true);
@@ -171,7 +220,9 @@ describe('PlaceManager', () => {
 
     it('puts a failed move away from this PC back on screen', () => {
       // A place drawn by another PC that never confirms: the avatar is back in the room it left.
-      const { manager } = setup({ kv: { [PLACES_KEY]: JSON.stringify([{ id: 'attic', name: 'the attic', node: 'pc-2' }]) } });
+      const { manager } = setup({
+        kv: { [PLACES_KEY]: JSON.stringify([{ id: 'attic', name: 'the attic', node: 'pc-2' }]) },
+      });
       manager.setOnline('attic', true);
       manager.startMove('sage', 'attic', 'chose to');
       expect(manager.isPresent('sage')).toBe(false);
@@ -181,12 +232,27 @@ describe('PlaceManager', () => {
 
     it('rejects moves that make no sense', () => {
       const { manager } = setup();
-      expect(manager.startMove('sage', 'home', 'x')).toEqual({ ok: false, reason: 'already there' });
-      expect(manager.startMove('sage', 'moon', 'x')).toEqual({ ok: false, reason: 'unknown place' });
-      expect(manager.startMove('ghost', 'next-door', 'x')).toEqual({ ok: false, reason: 'unknown avatar' });
+      expect(manager.startMove('sage', 'home', 'x')).toEqual({
+        ok: false,
+        reason: 'already there',
+      });
+      expect(manager.startMove('sage', 'moon', 'x')).toEqual({
+        ok: false,
+        reason: 'unknown place',
+      });
+      expect(manager.startMove('ghost', 'next-door', 'x')).toEqual({
+        ok: false,
+        reason: 'unknown avatar',
+      });
       expect(manager.startMove('sage', 'next-door', 'x').ok).toBe(true);
-      expect(manager.startMove('sage', 'home', 'x')).toEqual({ ok: false, reason: 'already moving' });
-      expect(manager.startMove('sage', 'next-door', 'x')).toEqual({ ok: false, reason: 'already moving' });
+      expect(manager.startMove('sage', 'home', 'x')).toEqual({
+        ok: false,
+        reason: 'already moving',
+      });
+      expect(manager.startMove('sage', 'next-door', 'x')).toEqual({
+        ok: false,
+        reason: 'already moving',
+      });
     });
 
     it('can move two avatars at once', () => {
@@ -201,7 +267,13 @@ describe('PlaceManager', () => {
       const { manager, kv } = setup();
       manager.startMove('rex', 'next-door', 'x');
       vi.advanceTimersByTime(HALLWAY_MS);
-      const again = new PlaceManager({ store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) }, registry: { list: () => PROFILES } });
+      const again = new PlaceManager({
+        store: {
+          getValue: (key) => kv.get(key) ?? null,
+          setValue: (key, value) => void kv.set(key, value),
+        },
+        registry: { list: () => PROFILES },
+      });
       expect(again.locationOf('rex')).toBe('next-door');
       expect(again.avatarsAt('home')).toEqual(['echo', 'sage']);
     });
@@ -211,7 +283,11 @@ describe('PlaceManager', () => {
       manager.startMove('sage', 'next-door', 'x');
       vi.advanceTimersByTime(HALLWAY_MS);
       expect(snapshots).toHaveLength(2);
-      expect(snapshots[1]).toMatchObject({ localPlaceId: 'home', locations: { sage: 'next-door' }, transit: [] });
+      expect(snapshots[1]).toMatchObject({
+        localPlaceId: 'home',
+        locations: { sage: 'next-door' },
+        transit: [],
+      });
     });
   });
 
@@ -265,8 +341,19 @@ describe('PlaceManager', () => {
 
     it('never lets a failing bus disturb a move', () => {
       const kv = new Map<string, string>();
-      const bus = { publish: () => { throw new Error('bus down'); } } as unknown as SwitchboardBus;
-      const manager = new PlaceManager({ store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) }, registry: { list: () => PROFILES }, bus: () => bus });
+      const bus = {
+        publish: () => {
+          throw new Error('bus down');
+        },
+      } as unknown as SwitchboardBus;
+      const manager = new PlaceManager({
+        store: {
+          getValue: (key) => kv.get(key) ?? null,
+          setValue: (key, value) => void kv.set(key, value),
+        },
+        registry: { list: () => PROFILES },
+        bus: () => bus,
+      });
       expect(manager.startMove('sage', 'next-door', 'x').ok).toBe(true);
       vi.advanceTimersByTime(HALLWAY_MS);
       expect(manager.locationOf('sage')).toBe('next-door');
@@ -291,7 +378,9 @@ describe('PlaceManager', () => {
     it('handles nobody, two and three avatars', () => {
       const { manager } = setup();
       expect(placesNote(manager, nameOf)).toContain('next door (nobody is there)');
-      const two = setup({ kv: { [LOCATIONS_KEY]: JSON.stringify({ sage: 'next-door', rex: 'next-door' }) } });
+      const two = setup({
+        kv: { [LOCATIONS_KEY]: JSON.stringify({ sage: 'next-door', rex: 'next-door' }) },
+      });
       expect(placesNote(two.manager, nameOf)).toContain('next door (Sage and Rex are there)');
     });
 

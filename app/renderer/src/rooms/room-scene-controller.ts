@@ -1,6 +1,11 @@
 import * as THREE from 'three';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
-import { DEFAULT_ROOM_AVATAR_HEIGHT, measureAvatarHeight, measureSoleLift, placeAtHome } from './avatar-placement.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
+import {
+  DEFAULT_ROOM_AVATAR_HEIGHT,
+  measureAvatarHeight,
+  measureSoleLift,
+  placeAtHome,
+} from './avatar-placement.js';
 import { RoomCompanions } from './room-companions.js';
 import { RoomOccupancy } from './room-occupancy.js';
 import { RoomStage } from './room-stage.js';
@@ -155,12 +160,16 @@ export class RoomSceneController {
   ): void {
     this.sceneEnv.releaseHeld();
     this.avatar = root;
-    this.avatarBase = root ? { position: root.position.clone(), rotationY: root.rotation.y, scale: root.scale.x } : null;
+    this.avatarBase = root
+      ? { position: root.position.clone(), rotationY: root.rotation.y, scale: root.scale.x }
+      : null;
     // Measured before placement, while the avatar still stands at its normalised spot.
     this.soleLift = root ? measureSoleLift(root) : 0;
     this.naturalHeight = root ? measureAvatarHeight(root) : 0;
     this.rig =
-      root && humanoid ? { scene: root, baseRotationY: root.rotation.y, humanoid, restHipsHeight } : null;
+      root && humanoid
+        ? { scene: root, baseRotationY: root.rotation.y, humanoid, restHipsHeight }
+        : null;
     this.body = humanoid?.getNormalizedBoneNode('hips') ?? null;
     if (root && this.stage) this.placeAvatar();
   }
@@ -278,7 +287,9 @@ export class RoomSceneController {
     this.stage?.step(
       dt,
       echoHidden ? null : (this.body ?? this.avatar),
-      this.hiddenIds.size === 0 ? this.companions.bodies() : this.companions.bodies().filter((body) => !this.hiddenIds.has(body.id)),
+      this.hiddenIds.size === 0
+        ? this.companions.bodies()
+        : this.companions.bodies().filter((body) => !this.hiddenIds.has(body.id)),
     );
   }
 
@@ -401,7 +412,14 @@ export class RoomSceneController {
     const [bx, by, bz] = this.avatarBase.position.toArray();
     const placed = placeAtHome(
       { position: [bx * factor, by * factor, bz * factor], rotationY: this.avatarBase.rotationY },
-      { position: [this.room.home.position[0], this.room.home.position[1] + this.soleLift * factor, this.room.home.position[2]], facing: this.room.home.facing },
+      {
+        position: [
+          this.room.home.position[0],
+          this.room.home.position[1] + this.soleLift * factor,
+          this.room.home.position[2],
+        ],
+        facing: this.room.home.facing,
+      },
     );
     this.avatar.scale.setScalar(this.avatarBase.scale * factor);
     this.currentScale = factor;

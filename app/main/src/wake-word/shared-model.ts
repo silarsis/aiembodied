@@ -6,7 +6,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { WakeWordConfig } from '../config/config-manager.js';
+import type { WakeWordConfig } from '../shared/config/config-manager-types.js';
 import { BUILTIN_WAKE_WORD_MODELS } from './open-wake-word.js';
 
 /** A wake word model is a few hundred kilobytes; anything much bigger is not one. */
@@ -28,15 +28,28 @@ export function isInside(directory: string, candidate: string): boolean {
 }
 
 /** Null when the picked model cannot be shared (outside the trained folder, not .onnx, too big, unreadable). */
-export async function readSharedWakeWord(config: WakeWordConfig, trainedDirectory: string): Promise<SharedWakeWordAnswer | null> {
-  const base = { keywordLabel: config.keywordLabel, threshold: config.threshold, cooldownMs: config.cooldownMs };
-  if ((BUILTIN_WAKE_WORD_MODELS as readonly string[]).includes(config.model)) return { model: config.model, ...base };
-  if (!config.model.toLowerCase().endsWith('.onnx') || !isInside(trainedDirectory, config.model)) return null;
+export async function readSharedWakeWord(
+  config: WakeWordConfig,
+  trainedDirectory: string,
+): Promise<SharedWakeWordAnswer | null> {
+  const base = {
+    keywordLabel: config.keywordLabel,
+    threshold: config.threshold,
+    cooldownMs: config.cooldownMs,
+  };
+  if ((BUILTIN_WAKE_WORD_MODELS as readonly string[]).includes(config.model))
+    return { model: config.model, ...base };
+  if (!config.model.toLowerCase().endsWith('.onnx') || !isInside(trainedDirectory, config.model))
+    return null;
   try {
     const info = await stat(config.model);
     if (!info.isFile() || info.size === 0 || info.size > MAX_SHARED_MODEL_BYTES) return null;
     const bytes = await readFile(config.model);
-    return { model: path.basename(config.model), ...base, bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) };
+    return {
+      model: path.basename(config.model),
+      ...base,
+      bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    };
   } catch {
     return null;
   }

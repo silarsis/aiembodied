@@ -1,6 +1,10 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ConversationAppendMessagePayload, ConversationMessage, ConversationSession } from '../../main/src/conversation/types.js';
+import type {
+  ConversationAppendMessagePayload,
+  ConversationMessage,
+  ConversationSession,
+} from '../../main/src/shared/conversation/types.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/shared/config/provider-settings.js';
 import { builtInServers, defaultRoutes } from '../../main/src/shared/config/model-routing.js';
 import type { AvatarModelSummary } from '../src/avatar/types.js';
@@ -14,7 +18,9 @@ interface FakeCallbacks {
 const localClients = vi.hoisted(() => [] as Array<{ callbacks: FakeCallbacks }>);
 
 vi.mock('../src/realtime/local-voice-client.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/realtime/local-voice-client.js')>('../src/realtime/local-voice-client.js');
+  const actual = await vi.importActual<typeof import('../src/realtime/local-voice-client.js')>(
+    '../src/realtime/local-voice-client.js',
+  );
   class FakeLocalVoiceClient {
     callbacks: FakeCallbacks;
     constructor(options: { callbacks?: FakeCallbacks }) {
@@ -44,19 +50,46 @@ class MockAudioContext {
   currentTime = 0;
   state = 'running';
   createMediaStreamSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
-  createGain = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 0, setTargetAtTime: vi.fn(), setValueAtTime: vi.fn() } }));
-  createMediaStreamDestination = vi.fn(() => ({ stream: new MockMediaStream(), connect: vi.fn(), disconnect: vi.fn() }));
-  createAnalyser = vi.fn(() => ({ fftSize: 2048, smoothingTimeConstant: 0, connect: vi.fn(), disconnect: vi.fn(), getFloatTimeDomainData: vi.fn() }));
+  createGain = vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    gain: { value: 0, setTargetAtTime: vi.fn(), setValueAtTime: vi.fn() },
+  }));
+  createMediaStreamDestination = vi.fn(() => ({
+    stream: new MockMediaStream(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }));
+  createAnalyser = vi.fn(() => ({
+    fftSize: 2048,
+    smoothingTimeConstant: 0,
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    getFloatTimeDomainData: vi.fn(),
+  }));
   resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
 }
 
-const model = (id: string): AvatarModelSummary => ({ id, name: id, createdAt: 1, version: '1.0', fileSha: id, thumbnailDataUrl: null, description: null });
+const model = (id: string): AvatarModelSummary => ({
+  id,
+  name: id,
+  createdAt: 1,
+  version: '1.0',
+  fileSha: id,
+  thumbnailDataUrl: null,
+  description: null,
+});
 
 describe('App with several avatars (local backend)', () => {
   const originalAudioContext = window.AudioContext;
   const originalMediaDevices = navigator.mediaDevices;
-  const originalConsole = { error: console.error, warn: console.warn, info: console.info, debug: console.debug };
+  const originalConsole = {
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+    debug: console.debug,
+  };
 
   beforeEach(() => {
     localClients.length = 0;
@@ -107,11 +140,20 @@ describe('App with several avatars (local backend)', () => {
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       realtimeVoice: 'shimmer',
       metrics: { enabled: false, host: '127.0.0.1', port: 9090, path: '/metrics' },
-      wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+      wakeWord: {
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
+        cooldownMs: 1500,
+        deviceIndex: undefined,
+      },
     };
     const models = {
       get: vi.fn(async () => ({
-        servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({ ...server, hasKey: false })),
+        servers: builtInServers({
+          providers: DEFAULT_PROVIDER_SETTINGS,
+          comfyUiBaseUrl: 'http://127.0.0.1:8188',
+        }).map((server) => ({ ...server, hasKey: false })),
         routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
       })),
       probe: vi.fn(async () => ({ status: 'up', models: {}, checkedAt: 0 })),
@@ -126,18 +168,27 @@ describe('App with several avatars (local backend)', () => {
       wakeWord: { onWake: () => () => undefined },
       avatars: { list: avatarsList },
       avatar: new Proxy(
-        { listModels, getActiveModel: vi.fn().mockResolvedValue(model('m1')), loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)) },
+        {
+          listModels,
+          getActiveModel: vi.fn().mockResolvedValue(model('m1')),
+          loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+        },
         {
           get: (target, key) => {
             if (key in target) return (target as Record<string | symbol, unknown>)[key];
             // Subscriptions return an unsubscribe function; everything else resolves to an empty list.
-            return typeof key === 'string' && /^on[A-Z]/.test(key) ? () => () => undefined : vi.fn().mockResolvedValue([]);
+            return typeof key === 'string' && /^on[A-Z]/.test(key)
+              ? () => () => undefined
+              : vi.fn().mockResolvedValue([]);
           },
         },
       ),
       models,
       conversation: {
-        getHistory: vi.fn().mockResolvedValue({ currentSessionId: 'session-1', sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }] }),
+        getHistory: vi.fn().mockResolvedValue({
+          currentSessionId: 'session-1',
+          sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }],
+        }),
         appendMessage,
         onSessionStarted: (listener: (session: ConversationSession) => void) => {
           sessionListener = listener;
@@ -162,7 +213,11 @@ describe('App with several avatars (local backend)', () => {
     });
     await waitFor(() => expect(appendMessage).toHaveBeenCalledTimes(2));
     const payloads = appendMessage.mock.calls.map(([payload]) => payload);
-    expect(payloads[0]).toMatchObject({ role: 'assistant', content: 'Sage speaking.', speaker: 'sage' });
+    expect(payloads[0]).toMatchObject({
+      role: 'assistant',
+      content: 'Sage speaking.',
+      speaker: 'sage',
+    });
     expect(payloads[1]).toMatchObject({ role: 'assistant', content: 'Echo speaking.' });
     expect(payloads[1]).not.toHaveProperty('speaker');
 
@@ -170,7 +225,11 @@ describe('App with several avatars (local backend)', () => {
     await act(async () => {
       callbacks.onAvatarStream?.('sage', new MockMediaStream() as unknown as MediaStream);
     });
-    expect(console.error).not.toHaveBeenCalledWith('Failed to attach viseme driver', 'sage', expect.anything());
+    expect(console.error).not.toHaveBeenCalledWith(
+      'Failed to attach viseme driver',
+      'sage',
+      expect.anything(),
+    );
   });
 
   it('plays a {move:} from another avatar on that avatar, and tells main the tag instructions', async () => {
@@ -179,9 +238,13 @@ describe('App with several avatars (local backend)', () => {
       { id: 'sage', name: 'Sage', vrmModelId: 'm1' },
     ]);
     const setTagInstructions = vi.fn().mockResolvedValue(undefined);
-    let finishStream: (value: { chunks: number; firstChunkMs: number | null }) => void = () => undefined;
+    let finishStream: (value: { chunks: number; firstChunkMs: number | null }) => void = () =>
+      undefined;
     const streamMotion = vi.fn(
-      () => new Promise<{ chunks: number; firstChunkMs: number | null }>((resolve) => { finishStream = resolve; }),
+      () =>
+        new Promise<{ chunks: number; firstChunkMs: number | null }>((resolve) => {
+          finishStream = resolve;
+        }),
     );
     const cancelMotion = vi.fn().mockResolvedValue(undefined);
     const config = {
@@ -193,7 +256,13 @@ describe('App with several avatars (local backend)', () => {
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       realtimeVoice: 'shimmer',
       metrics: { enabled: false, host: '127.0.0.1', port: 9090, path: '/metrics' },
-      wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+      wakeWord: {
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
+        cooldownMs: 1500,
+        deviceIndex: undefined,
+      },
     };
     (window as unknown as { aiembodied: unknown }).aiembodied = {
       ping: () => 'pong',
@@ -216,19 +285,27 @@ describe('App with several avatars (local backend)', () => {
         {
           get: (target, key) => {
             if (key in target) return (target as Record<string | symbol, unknown>)[key];
-            return typeof key === 'string' && /^on[A-Z]/.test(key) ? () => () => undefined : vi.fn().mockResolvedValue([]);
+            return typeof key === 'string' && /^on[A-Z]/.test(key)
+              ? () => () => undefined
+              : vi.fn().mockResolvedValue([]);
           },
         },
       ),
       models: {
         get: vi.fn(async () => ({
-          servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({ ...server, hasKey: false })),
+          servers: builtInServers({
+            providers: DEFAULT_PROVIDER_SETTINGS,
+            comfyUiBaseUrl: 'http://127.0.0.1:8188',
+          }).map((server) => ({ ...server, hasKey: false })),
           routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
         })),
         probe: vi.fn(async () => ({ status: 'up', models: {}, checkedAt: 0 })),
       },
       conversation: {
-        getHistory: vi.fn().mockResolvedValue({ currentSessionId: 'session-1', sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }] }),
+        getHistory: vi.fn().mockResolvedValue({
+          currentSessionId: 'session-1',
+          sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }],
+        }),
         appendMessage: vi.fn(),
         onSessionStarted: () => () => undefined,
         onMessageAppended: () => () => undefined,
@@ -241,7 +318,10 @@ describe('App with several avatars (local backend)', () => {
     await waitFor(() => expect(localClients.length).toBeGreaterThan(0));
     await waitFor(() => expect(setTagInstructions).toHaveBeenCalled());
     await waitFor(() => {
-      const last = setTagInstructions.mock.calls.at(-1)?.[0] as { shared: string; moveOnly: string };
+      const last = setTagInstructions.mock.calls.at(-1)?.[0] as {
+        shared: string;
+        moveOnly: string;
+      };
       expect(last.shared).toContain('{move:');
     });
     const sent = setTagInstructions.mock.calls.at(-1)?.[0] as { shared: string; moveOnly: string };

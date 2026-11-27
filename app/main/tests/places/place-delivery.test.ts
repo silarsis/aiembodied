@@ -18,7 +18,7 @@ function setup(locations: Record<string, string>, connected: string[] = ['study'
 }
 
 describe('place delivery', () => {
-  it('delivers a local place to bija\'s window', () => {
+  it("delivers a local place to bija's window", () => {
     const { delivery, local } = setup({});
     expect(delivery.sinkFor('home')).toBe(local);
   });
@@ -28,7 +28,16 @@ describe('place delivery', () => {
     const sink = delivery.sinkFor('study');
     expect(sink).not.toBeNull();
     sink?.send('local-voice:event', { requestId: 'r1', type: 'sentence' });
-    expect(sent).toEqual([{ placeId: 'study', op: { op: 'ipc', channel: 'local-voice:event', args: [{ requestId: 'r1', type: 'sentence' }] } }]);
+    expect(sent).toEqual([
+      {
+        placeId: 'study',
+        op: {
+          op: 'ipc',
+          channel: 'local-voice:event',
+          args: [{ requestId: 'r1', type: 'sentence' }],
+        },
+      },
+    ]);
     expect(sink?.isDestroyed()).toBe(false);
   });
 
@@ -46,12 +55,17 @@ describe('place delivery', () => {
     expect(sink?.isDestroyed()).toBe(true);
   });
 
-  it('sends an avatar\'s event to the screen that shows it', () => {
+  it("sends an avatar's event to the screen that shows it", () => {
     const { delivery, sent, broadcast } = setup({ sage: 'study', rex: 'next-door' });
     delivery.sendForAvatar('echo', 'local-voice:system-ready', { urgent: false });
     expect(broadcast).toHaveBeenCalledWith('local-voice:system-ready', { urgent: false });
     delivery.sendForAvatar('sage', 'local-voice:system-ready', { avatarId: 'sage' });
-    expect(sent).toEqual([{ placeId: 'study', op: { op: 'ipc', channel: 'local-voice:system-ready', args: [{ avatarId: 'sage' }] } }]);
+    expect(sent).toEqual([
+      {
+        placeId: 'study',
+        op: { op: 'ipc', channel: 'local-voice:system-ready', args: [{ avatarId: 'sage' }] },
+      },
+    ]);
     delivery.sendForAvatar('rex', 'local-voice:system-ready', { avatarId: 'rex' });
     expect(broadcast).toHaveBeenCalledTimes(1);
     expect(sent).toHaveLength(2);

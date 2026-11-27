@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { WorkerOptions } from 'node:worker_threads';
 import type { Logger } from 'winston';
 import { WakeWordService, type WorkerFactory } from '../src/wake-word/wake-word-service.js';
-import type { WakeWordDetectionEvent, WakeWordWorkerMessage } from '../src/wake-word/types.js';
+import type { WakeWordWorkerMessage } from '../src/wake-word/types.js';
+import type { WakeWordDetectionEvent } from '../src/shared/wake-word/types.js';
 
 class FakeWorker extends EventEmitter {
   terminated = false;
@@ -65,24 +66,34 @@ describe('WakeWordService', () => {
       const spawn = vi.fn();
       const { service, worker } = createService({ onSpawn: spawn });
       service.on('error', () => {});
-      const wake = vi.fn(), peak = vi.fn();
-      service.on('wake', wake); service.on('peak', peak);
-      service.start({ modelPaths: { melspectrogram: 'mel', embedding: 'embedding', wakeWord: 'wake' }, keywordLabel: 'Test', threshold: .5 });
+      const wake = vi.fn(),
+        peak = vi.fn();
+      service.on('wake', wake);
+      service.on('peak', peak);
+      service.start({
+        modelPaths: { melspectrogram: 'mel', embedding: 'embedding', wakeWord: 'wake' },
+        keywordLabel: 'Test',
+        threshold: 0.5,
+      });
       worker.emit('message', { type: 'error', error: { message: 'device error' }, fatal: true });
-      vi.mocked(logger.info).mockClear(); vi.mocked(logger.debug).mockClear();
+      vi.mocked(logger.info).mockClear();
+      vi.mocked(logger.debug).mockClear();
       worker.postMessage = () => {
-        const event = { confidence: .99, timestamp: Date.now(), keywordLabel: 'Test' };
+        const event = { confidence: 0.99, timestamp: Date.now(), keywordLabel: 'Test' };
         worker.emit('message', { type: 'wake', event });
         worker.emit('message', { type: 'peak', event });
         worker.emit('exit', 0);
       };
       await service.dispose();
       await vi.advanceTimersByTimeAsync(30000);
-      expect(wake).not.toHaveBeenCalled(); expect(peak).not.toHaveBeenCalled();
+      expect(wake).not.toHaveBeenCalled();
+      expect(peak).not.toHaveBeenCalled();
       expect(logger.debug).not.toHaveBeenCalled();
       expect(logger.info).not.toHaveBeenCalledWith('Wake word detected', expect.anything());
       expect(spawn).toHaveBeenCalledOnce();
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('emits wake events that meet confidence threshold', async () => {
     const { service, worker } = createService();
@@ -90,7 +101,11 @@ describe('WakeWordService', () => {
     service.on('wake', listener);
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -109,15 +124,25 @@ describe('WakeWordService', () => {
   it('logs detections without overriding the logger timestamp', async () => {
     const { service, worker } = createService();
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Hey Jarvis',
       threshold: 0.5,
     });
-    const event: WakeWordDetectionEvent = { keywordLabel: 'Hey Jarvis', confidence: 0.99, timestamp: 1234 };
+    const event: WakeWordDetectionEvent = {
+      keywordLabel: 'Hey Jarvis',
+      confidence: 0.99,
+      timestamp: 1234,
+    };
 
     worker.emit('message', { type: 'wake', event } satisfies WakeWordWorkerMessage);
 
-    const call = vi.mocked(logger.info).mock.calls.find(([message]) => message === 'Wake word detected');
+    const call = vi
+      .mocked(logger.info)
+      .mock.calls.find(([message]) => message === 'Wake word detected');
     expect(call?.[1]).toEqual({ keyword: 'Hey Jarvis', confidence: 0.99, detectedAt: 1234 });
   });
 
@@ -128,17 +153,27 @@ describe('WakeWordService', () => {
     service.on('wake', wake);
     service.on('peak', peak);
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Hey Jarvis',
       threshold: 0.5,
     });
-    const event: WakeWordDetectionEvent = { keywordLabel: 'Hey Jarvis', confidence: 0.31234, timestamp: 4321 };
+    const event: WakeWordDetectionEvent = {
+      keywordLabel: 'Hey Jarvis',
+      confidence: 0.31234,
+      timestamp: 4321,
+    };
 
     worker.emit('message', { type: 'peak', event } satisfies WakeWordWorkerMessage);
 
     expect(peak).toHaveBeenCalledWith(event);
     expect(wake).not.toHaveBeenCalled();
-    const call = vi.mocked(logger.debug).mock.calls.find(([message]) => message === 'Wake word peak score');
+    const call = vi
+      .mocked(logger.debug)
+      .mock.calls.find(([message]) => message === 'Wake word peak score');
     expect(call?.[1]).toEqual({ keyword: 'Hey Jarvis', confidence: 0.312, detectedAt: 4321 });
   });
 
@@ -148,7 +183,11 @@ describe('WakeWordService', () => {
     service.on('wake', listener);
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -170,7 +209,11 @@ describe('WakeWordService', () => {
     service.on('wake', listener);
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -200,7 +243,11 @@ describe('WakeWordService', () => {
     const { service } = createService({ worker });
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -224,7 +271,11 @@ describe('WakeWordService', () => {
     });
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -256,10 +307,14 @@ describe('WakeWordService', () => {
       maxRestartDelayMs: 1000,
     });
 
-    service.on('error', () => { });
+    service.on('error', () => {});
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -301,10 +356,14 @@ describe('WakeWordService', () => {
       autoRestart: false,
     });
 
-    service.on('error', () => { });
+    service.on('error', () => {});
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -346,10 +405,14 @@ describe('WakeWordService', () => {
       maxRestartDelayMs: 1000,
     });
 
-    service.on('error', () => { });
+    service.on('error', () => {});
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });
@@ -405,10 +468,14 @@ describe('WakeWordService', () => {
       maxRestartDelayMs: 1000,
     });
 
-    service.on('error', () => { });
+    service.on('error', () => {});
 
     service.start({
-      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      modelPaths: {
+        melspectrogram: 'mel.onnx',
+        embedding: 'embedding.onnx',
+        wakeWord: 'hey_jarvis.onnx',
+      },
       keywordLabel: 'Porcupine',
       threshold: 0.5,
     });

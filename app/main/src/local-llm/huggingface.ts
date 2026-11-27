@@ -1,3 +1,9 @@
+import type {
+  HfLookup,
+  HfQuant,
+  HfFile,
+  HfRepoSuggestion,
+} from '../shared/local-llm/huggingface-types.js';
 /**
  * Hugging Face lookups for the thinking model: turn a pasted link, repo name or search words into
  * the GGUF files llama-server can run, grouped by size (quantisation).
@@ -13,52 +19,13 @@
 
 export type HuggingFaceRef = { repo: string; quant?: string; file?: string } | { search: string };
 
-export interface HfFile {
-  /** Path inside the repo, such as Q4_K_M/model-00001-of-00002.gguf. */
-  path: string;
-  size: number;
-  sha256?: string;
-}
-
-/** One size of the model: a quantisation, made of one GGUF file or several split parts. */
-export interface HfQuant {
-  /** Unique in the repo: the first file's path without its split suffix. */
-  id: string;
-  /** Q4_K_M, UD-Q4_K_XL, BF16… or the file name when it has no quant in it. */
-  label: string;
-  files: HfFile[];
-  sizeBytes: number;
-}
-
-export interface HfRepoSuggestion {
-  repo: string;
-  downloads: number;
-  likes: number;
-}
-
-export interface HfLookup {
-  /** Set when the reference named a repo that exists. */
-  repo?: string;
-  /** Gated repos need a Hugging Face token and the licence accepted on the website. */
-  gated: boolean;
-  quants: HfQuant[];
-  /** The quant to preselect: the one the reference named, else a good default. */
-  selected?: string;
-  /** The context length the model was trained for, when Hugging Face reads it from the GGUF. */
-  contextLength?: number;
-  /** The repo's vision projector files (mmproj), for models that read images. */
-  mmproj?: HfFile[];
-  /** GGUF repos to pick from when the reference was search words or a repo with no GGUF files. */
-  suggestions: HfRepoSuggestion[];
-  note?: string;
-}
-
 const HF = 'https://huggingface.co';
 const HF_HOSTS = new Set(['huggingface.co', 'www.huggingface.co', 'hf.co']);
 const REPO = /^[A-Za-z0-9][\w.-]*\/[\w.-]+$/;
 const SPLIT = /-(\d{5})-of-(\d{5})\.gguf$/i;
 /** Quant names as llama.cpp and the big quantisers (unsloth, bartowski, TheBloke) write them. */
-const QUANT = /(?:^|[-_./])((?:UD-)?(?:I?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32|FP16|MXFP4(?:_MOE)?|TQ\d_\d))(?=[-_./]|\.gguf$|$)/i;
+const QUANT =
+  /(?:^|[-_./])((?:UD-)?(?:I?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32|FP16|MXFP4(?:_MOE)?|TQ\d_\d))(?=[-_./]|\.gguf$|$)/i;
 /** Preferred default sizes, best first: a good size/quality balance for chat. */
 const PREFERRED = ['Q4_K_M', 'UD-Q4_K_XL', 'Q4_K_L', 'Q4_K_S', 'Q4_0', 'Q5_K_M', 'Q8_0'];
 
@@ -69,7 +36,11 @@ export function parseHuggingFaceRef(text: string): HuggingFaceRef | null {
   let quant: string | undefined;
   let file: string | undefined;
   // Links (with or without https://).
-  const asUrl = /^[a-z]+:\/\//i.test(value) ? value : /^(www\.)?(huggingface\.co|hf\.co)\//i.test(value) ? `https://${value}` : null;
+  const asUrl = /^[a-z]+:\/\//i.test(value)
+    ? value
+    : /^(www\.)?(huggingface\.co|hf\.co)\//i.test(value)
+      ? `https://${value}`
+      : null;
   if (asUrl) {
     let url: URL;
     try {
@@ -88,7 +59,10 @@ export function parseHuggingFaceRef(text: string): HuggingFaceRef | null {
       name = name.slice(0, colon);
     }
     // /blob/<rev>/<path>, /resolve/<rev>/<path>, /tree/<rev>/<folder>
-    if ((parts[2] === 'blob' || parts[2] === 'resolve' || parts[2] === 'tree') && parts.length > 4) {
+    if (
+      (parts[2] === 'blob' || parts[2] === 'resolve' || parts[2] === 'tree') &&
+      parts.length > 4
+    ) {
       const inner = parts.slice(4).join('/');
       if (/\.gguf$/i.test(inner)) file = inner;
       else quant ??= quantOf(inner) ?? undefined;
@@ -139,13 +113,22 @@ export function groupGgufQuants(files: RawSibling[]): HfQuant[] {
     const id = split ? path.replace(SPLIT, '.gguf') : path;
     const size = entry.lfs?.size ?? entry.size ?? 0;
     const sha256 = entry.lfs?.sha256 ?? entry.lfs?.oid;
-    const file: HfFile = { path, size, ...(sha256 && /^[a-f0-9]{64}$/i.test(sha256) ? { sha256: sha256.toLowerCase() } : {}) };
+    const file: HfFile = {
+      path,
+      size,
+      ...(sha256 && /^[a-f0-9]{64}$/i.test(sha256) ? { sha256: sha256.toLowerCase() } : {}),
+    };
     const group = groups.get(id);
     if (group) {
       group.files.push(file);
       group.sizeBytes += size;
     } else {
-      groups.set(id, { id, label: quantOf(path) ?? name.replace(/\.gguf$/i, ''), files: [file], sizeBytes: size });
+      groups.set(id, {
+        id,
+        label: quantOf(path) ?? name.replace(/\.gguf$/i, ''),
+        files: [file],
+        sizeBytes: size,
+      });
     }
   }
   const quants = [...groups.values()];
@@ -154,7 +137,8 @@ export function groupGgufQuants(files: RawSibling[]): HfQuant[] {
   const counts = new Map<string, number>();
   for (const quant of quants) counts.set(quant.label, (counts.get(quant.label) ?? 0) + 1);
   for (const quant of quants) {
-    if ((counts.get(quant.label) ?? 0) > 1) quant.label = (quant.id.split('/').at(-1) ?? quant.id).replace(/\.gguf$/i, '');
+    if ((counts.get(quant.label) ?? 0) > 1)
+      quant.label = (quant.id.split('/').at(-1) ?? quant.id).replace(/\.gguf$/i, '');
   }
   return quants.sort((a, b) => a.sizeBytes - b.sizeBytes);
 }
@@ -176,7 +160,11 @@ export function listMmprojFiles(files: RawSibling[]): HfFile[] {
 }
 
 /** The quant to preselect: the one asked for, else a common chat default, else the middle size. */
-export function pickDefaultQuant(quants: HfQuant[], wanted?: string, file?: string): string | undefined {
+export function pickDefaultQuant(
+  quants: HfQuant[],
+  wanted?: string,
+  file?: string,
+): string | undefined {
   if (!quants.length) return undefined;
   if (file) {
     const hit = quants.find((quant) => quant.files.some((entry) => entry.path === file));
@@ -184,7 +172,9 @@ export function pickDefaultQuant(quants: HfQuant[], wanted?: string, file?: stri
   }
   if (wanted) {
     const target = wanted.toUpperCase();
-    const hit = quants.find((quant) => quant.label.toUpperCase() === target) ?? quants.find((quant) => quantOf(quant.id) === target);
+    const hit =
+      quants.find((quant) => quant.label.toUpperCase() === target) ??
+      quants.find((quant) => quantOf(quant.id) === target);
     if (hit) return hit.id;
   }
   for (const name of PREFERRED) {
@@ -207,14 +197,21 @@ function headers(token?: string): Record<string, string> {
   return { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
-async function getJson<T>(url: string, token: string | undefined, fetchFn: typeof fetch): Promise<T> {
+async function getJson<T>(
+  url: string,
+  token: string | undefined,
+  fetchFn: typeof fetch,
+): Promise<T> {
   let response: Response;
   try {
     response = await fetchFn(url, { headers: headers(token), signal: AbortSignal.timeout(20_000) });
   } catch {
-    throw new HuggingFaceError("Hugging Face isn't answering. Check this PC's internet connection.");
+    throw new HuggingFaceError(
+      "Hugging Face isn't answering. Check this PC's internet connection.",
+    );
   }
-  if (!response.ok) throw new HuggingFaceError(`Hugging Face answered ${response.status}.`, response.status);
+  if (!response.ok)
+    throw new HuggingFaceError(`Hugging Face answered ${response.status}.`, response.status);
   return (await response.json()) as T;
 }
 
@@ -227,7 +224,11 @@ interface RawModel {
   likes?: number;
 }
 
-async function searchGgufRepos(params: Record<string, string>, token: string | undefined, fetchFn: typeof fetch): Promise<HfRepoSuggestion[]> {
+async function searchGgufRepos(
+  params: Record<string, string>,
+  token: string | undefined,
+  fetchFn: typeof fetch,
+): Promise<HfRepoSuggestion[]> {
   const query = new URLSearchParams({ sort: 'downloads', direction: '-1', limit: '10', ...params });
   query.append('filter', 'gguf');
   const found = await getJson<RawModel[]>(`${HF}/api/models?${query.toString()}`, token, fetchFn);
@@ -237,14 +238,22 @@ async function searchGgufRepos(params: Record<string, string>, token: string | u
 }
 
 /** Read a repo's GGUF sizes, or suggest GGUF repos for search words or a repo without any. */
-export async function lookupHuggingFace(ref: HuggingFaceRef, token?: string, fetchFn: typeof fetch = fetch): Promise<HfLookup> {
+export async function lookupHuggingFace(
+  ref: HuggingFaceRef,
+  token?: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<HfLookup> {
   if ('search' in ref) {
     const suggestions = await searchGgufRepos({ search: ref.search }, token, fetchFn);
     return {
       gated: false,
       quants: [],
       suggestions,
-      ...(suggestions.length ? {} : { note: `No GGUF models on Hugging Face match “${ref.search}”. Try fewer words, or paste the repo name.` }),
+      ...(suggestions.length
+        ? {}
+        : {
+            note: `No GGUF models on Hugging Face match “${ref.search}”. Try fewer words, or paste the repo name.`,
+          }),
     };
   }
   let model: RawModel;
@@ -253,11 +262,23 @@ export async function lookupHuggingFace(ref: HuggingFaceRef, token?: string, fet
   } catch (error) {
     if (error instanceof HuggingFaceError && error.status === 404) {
       // A private or mistyped repo; search for the name instead.
-      const suggestions = await searchGgufRepos({ search: ref.repo.split('/')[1] }, token, fetchFn).catch(() => []);
-      return { gated: false, quants: [], suggestions, note: `There is no public model called ${ref.repo} on Hugging Face${token ? '' : ' (a private one needs a Hugging Face token)'}.` };
+      const suggestions = await searchGgufRepos(
+        { search: ref.repo.split('/')[1] },
+        token,
+        fetchFn,
+      ).catch(() => []);
+      return {
+        gated: false,
+        quants: [],
+        suggestions,
+        note: `There is no public model called ${ref.repo} on Hugging Face${token ? '' : ' (a private one needs a Hugging Face token)'}.`,
+      };
     }
     if (error instanceof HuggingFaceError && (error.status === 401 || error.status === 403)) {
-      throw new HuggingFaceError(`${ref.repo} needs a Hugging Face token${token ? ' with access to it' : ''}. Add one under Servers → Hugging Face.`, error.status);
+      throw new HuggingFaceError(
+        `${ref.repo} needs a Hugging Face token${token ? ' with access to it' : ''}. Add one under Servers → Hugging Face.`,
+        error.status,
+      );
     }
     throw error;
   }
@@ -265,11 +286,20 @@ export async function lookupHuggingFace(ref: HuggingFaceRef, token?: string, fet
   const gated = Boolean(model.gated);
   const quants = groupGgufQuants(model.siblings ?? []);
   const mmproj = listMmprojFiles(model.siblings ?? []);
-  const contextLength = typeof model.gguf?.context_length === 'number' && model.gguf.context_length > 0 ? model.gguf.context_length : undefined;
+  const contextLength =
+    typeof model.gguf?.context_length === 'number' && model.gguf.context_length > 0
+      ? model.gguf.context_length
+      : undefined;
   if (!quants.length) {
     // A base model (safetensors): offer the GGUF versions made from it.
-    const suggestions = await searchGgufRepos({ filter: `base_model:quantized:${repo}` }, token, fetchFn).catch(() => []);
-    const fallback = suggestions.length ? suggestions : await searchGgufRepos({ search: repo.split('/')[1] }, token, fetchFn).catch(() => []);
+    const suggestions = await searchGgufRepos(
+      { filter: `base_model:quantized:${repo}` },
+      token,
+      fetchFn,
+    ).catch(() => []);
+    const fallback = suggestions.length
+      ? suggestions
+      : await searchGgufRepos({ search: repo.split('/')[1] }, token, fetchFn).catch(() => []);
     return {
       repo,
       gated,
@@ -286,7 +316,11 @@ export async function lookupHuggingFace(ref: HuggingFaceRef, token?: string, fet
     ...(mmproj.length ? { mmproj } : {}),
     ...(contextLength ? { contextLength } : {}),
     suggestions: [],
-    ...(gated ? { note: `${repo} is gated: accept its licence on huggingface.co and add a Hugging Face token under Servers before downloading.` } : {}),
+    ...(gated
+      ? {
+          note: `${repo} is gated: accept its licence on huggingface.co and add a Hugging Face token under Servers before downloading.`,
+        }
+      : {}),
   };
 }
 

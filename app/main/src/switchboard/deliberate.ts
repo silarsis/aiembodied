@@ -25,13 +25,14 @@ export const DELIBERATE_MAX_TOKENS = 120;
 export const DELIBERATE_TEMPERATURE = 0.2;
 const MAX_TEXT_CHARS = 1500;
 
-export const deliberateSystemPrompt = (name = 'Echo'): string => [
-  `You are ${name}, a friendly embodied assistant who lives in a room with Kevin and sees what is going on around him.`,
-  'You get a message that arrived while Kevin may or may not be around.',
-  'Decide: ignore (noise), remember (worth knowing later, not worth interrupting), say (Kevin would want to hear it now).',
-  'Consider whether Kevin is talking, absent, or asleep.',
-  'Answer with one JSON object {"action": "ignore|remember|say", "reason": "..."} and nothing else.',
-].join(' ');
+export const deliberateSystemPrompt = (name = 'Echo'): string =>
+  [
+    `You are ${name}, a friendly embodied assistant who lives in a room with Kevin and sees what is going on around him.`,
+    'You get a message that arrived while Kevin may or may not be around.',
+    'Decide: ignore (noise), remember (worth knowing later, not worth interrupting), say (Kevin would want to hear it now).',
+    'Consider whether Kevin is talking, absent, or asleep.',
+    'Answer with one JSON object {"action": "ignore|remember|say", "reason": "..."} and nothing else.',
+  ].join(' ');
 
 /** The decision prompt for the default avatar. */
 export const DELIBERATE_SYSTEM_PROMPT = deliberateSystemPrompt();
@@ -70,9 +71,19 @@ export function parseDecision(raw: string): Omit<Decision, 'urgent'> | null {
   return null;
 }
 
-export function buildDeliberateUser(event: SwitchboardEvent, presence: PresenceTracker, now: number): string {
-  const text = typeof event.payload.text === 'string' ? event.payload.text.trim().slice(0, MAX_TEXT_CHARS) : '';
-  const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
+export function buildDeliberateUser(
+  event: SwitchboardEvent,
+  presence: PresenceTracker,
+  now: number,
+): string {
+  const text =
+    typeof event.payload.text === 'string'
+      ? event.payload.text.trim().slice(0, MAX_TEXT_CHARS)
+      : '';
+  const source =
+    typeof event.payload.source === 'string'
+      ? event.payload.source
+      : `${event.producer.kind}:${event.producer.id}`;
   return [
     'Presence:',
     presence.describe(now),
@@ -85,11 +96,18 @@ export function buildDeliberateUser(event: SwitchboardEvent, presence: PresenceT
   ].join('\n');
 }
 
-export async function deliberate(event: SwitchboardEvent, presence: PresenceTracker, options: DeliberateOptions = {}): Promise<Decision | null> {
+export async function deliberate(
+  event: SwitchboardEvent,
+  presence: PresenceTracker,
+  options: DeliberateOptions = {},
+): Promise<Decision | null> {
   const clients =
     options.clients ??
     (options.routing && options.keyFor
-      ? idleClients({ routing: options.routing, keyFor: options.keyFor, fetchFn: options.fetchFn }, { temperature: DELIBERATE_TEMPERATURE, maxTokens: DELIBERATE_MAX_TOKENS })
+      ? idleClients(
+          { routing: options.routing, keyFor: options.keyFor, fetchFn: options.fetchFn },
+          { temperature: DELIBERATE_TEMPERATURE, maxTokens: DELIBERATE_MAX_TOKENS },
+        )
       : []);
   if (clients.length === 0) return null;
   const chat = clients.length > 1 ? new FailoverChatClient(clients, options.logger) : clients[0];
@@ -123,7 +141,9 @@ export async function deliberate(event: SwitchboardEvent, presence: PresenceTrac
     }
     return { ...parsed, urgent: event.priority === 'urgent', engine: 'llm' };
   } catch (error) {
-    options.logger?.warn('Deliberation failed.', { message: error instanceof Error ? error.message : String(error) });
+    options.logger?.warn('Deliberation failed.', {
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

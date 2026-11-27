@@ -8,8 +8,18 @@ function Fixture({ onOpenCharacter = () => undefined }: { onOpenCharacter?: () =
   const [open, setOpen] = useState(false);
   return (
     <ControlsDrawer open={open} onOpenChange={setOpen}>
-      <ControlButton id="character" title="Characters" keywords="avatar model" onOpen={onOpenCharacter} />
-      <ControlButton id="devices" title="Devices and wake words" keywords="microphone threshold" onOpen={() => undefined} />
+      <ControlButton
+        id="character"
+        title="Characters"
+        keywords="avatar model"
+        onOpen={onOpenCharacter}
+      />
+      <ControlButton
+        id="devices"
+        title="Devices and wake words"
+        keywords="microphone threshold"
+        onOpen={() => undefined}
+      />
     </ControlsDrawer>
   );
 }

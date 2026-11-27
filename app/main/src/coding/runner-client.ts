@@ -1,3 +1,10 @@
+import type {
+  RunnerEvent,
+  RunnerTask,
+  RunnerTaskRequest,
+  RunnerAnswer,
+  RunnerModelRef,
+} from '../shared/coding/runner-client-types.js';
 /**
  * Talks to the coding runner (services/coder, see its API.md): setup calls, status, tasks and
  * the server-sent event stream. Fetch only, no extra dependency. Keys travel in request bodies
@@ -8,11 +15,6 @@ export interface RunnerHealth {
   ok: boolean;
   version?: string;
   pi?: { found: boolean; version?: string | null };
-}
-
-export interface RunnerModelRef {
-  provider: 'local' | 'openai' | 'anthropic';
-  id: string;
 }
 
 export interface RunnerSettings {
@@ -43,90 +45,16 @@ export interface RunnerKeys {
 
 export interface RunnerCapabilities {
   backend?: { name?: string; version?: string | null; models?: unknown[]; error?: string | null };
-  workspaces?: Array<{ id: string; kind?: string; detected?: { checks_suggestion?: string | null; package_manager?: string | null; [key: string]: unknown } }>;
+  workspaces?: Array<{
+    id: string;
+    kind?: string;
+    detected?: {
+      checks_suggestion?: string | null;
+      package_manager?: string | null;
+      [key: string]: unknown;
+    };
+  }>;
   [key: string]: unknown;
-}
-
-/** One pending question of a task (the runner's `questions` list, oldest first). */
-export interface RunnerQuestion {
-  id: string;
-  /** confirm: a guard confirmation; select: pick one of options; input: free text for an input/editor dialog; ask_echo: pi called its ask_echo tool; text: pi ended its turn with a question. */
-  kind: 'confirm' | 'select' | 'input' | 'ask_echo' | 'text';
-  method: string;
-  title?: string | null;
-  message?: string | null;
-  options?: unknown[] | null;
-  asked_at?: string;
-}
-
-export interface RunnerReview {
-  no_changes?: boolean;
-  summary?: string;
-  files?: Array<{ path: string; added: number; deleted: number; binary?: boolean }>;
-  changed_files?: string[];
-  added?: number;
-  deleted?: number;
-  changed_lines?: number;
-  protected_violations?: string[];
-  flags?: string[];
-}
-
-/** A task as the runner returns it (see services/coder/API.md). */
-export interface RunnerTask {
-  id: string;
-  status: string;
-  workspace_id?: string;
-  goal?: string;
-  acceptance?: string[];
-  scope?: string[];
-  branch?: string | null;
-  phase_detail?: string | null;
-  current_tool?: string | null;
-  files_touched?: string[];
-  question?: RunnerQuestion | null;
-  questions?: RunnerQuestion[];
-  last_text?: string | null;
-  checks_ok?: boolean | null;
-  checks_output?: string | null;
-  review?: RunnerReview | null;
-  pr_url?: string | null;
-  pr_state?: string | null;
-  error?: string | null;
-  provider?: string | null;
-  model?: string | null;
-  created_at?: string;
-  updated_at?: string;
-  [key: string]: unknown;
-}
-
-export interface RunnerAnswer {
-  value?: string;
-  confirmed?: boolean;
-  cancelled?: boolean;
-  dialog_id?: string;
-}
-
-export interface RunnerTaskRequest {
-  workspace_id: string;
-  goal: string;
-  acceptance?: string[];
-  scope?: string[];
-  model?: RunnerModelRef;
-}
-
-/** One message of GET /v1/events. task_id is null for the message sent on connect. */
-export interface RunnerEvent {
-  /** "pr" when the task's pull request changed state; other messages carry no type. */
-  type?: string;
-  task_id: string | null;
-  pr_state?: string | null;
-  ci_state?: string | null;
-  status?: string | null;
-  current_tool?: string | null;
-  question?: unknown;
-  questions?: RunnerQuestion[];
-  local_model_needed?: boolean;
-  hold?: boolean;
 }
 
 export class RunnerError extends Error {
@@ -213,7 +141,12 @@ export class CodingRunnerClient {
 
   /** The diff of a task against its base commit (plain text, at most 500 KB). */
   async taskDiff(id: string): Promise<string> {
-    return this.request<string>('GET', `/v1/tasks/${encodeURIComponent(id)}/diff`, undefined, 'text');
+    return this.request<string>(
+      'GET',
+      `/v1/tasks/${encodeURIComponent(id)}/diff`,
+      undefined,
+      'text',
+    );
   }
 
   steer(id: string, message: string): Promise<RunnerTask> {
@@ -245,8 +178,12 @@ export class CodingRunnerClient {
    * Follow GET /v1/events. Reconnects with a growing wait (1 s up to 30 s) when the stream ends or
    * fails; the wait starts over after a connection that worked. Returns a function that stops it.
    */
-  subscribe(handlers: RunnerStreamHandlers, options: { sleep?: (ms: number) => Promise<void>; idleMs?: number } = {}): () => void {
-    const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  subscribe(
+    handlers: RunnerStreamHandlers,
+    options: { sleep?: (ms: number) => Promise<void>; idleMs?: number } = {},
+  ): () => void {
+    const sleep =
+      options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     // The runner sends a comment every 15 s; silence for longer means the connection is dead.
     const idleMs = options.idleMs ?? 45_000;
     let stopped = false;
@@ -264,8 +201,12 @@ export class CodingRunnerClient {
         };
         try {
           arm();
-          const response = await this.fetchFn(`${this.baseUrl}/v1/events`, { headers: { Accept: 'text/event-stream' }, signal: current.signal });
-          if (!response.ok || !response.body) throw new RunnerError(`The runner answered ${response.status}.`, response.status);
+          const response = await this.fetchFn(`${this.baseUrl}/v1/events`, {
+            headers: { Accept: 'text/event-stream' },
+            signal: current.signal,
+          });
+          if (!response.ok || !response.body)
+            throw new RunnerError(`The runner answered ${response.status}.`, response.status);
           connected = true;
           wait = 1000;
           handlers.onOpen?.();
@@ -286,7 +227,8 @@ export class CodingRunnerClient {
             }
           }
         } catch (error) {
-          if (!stopped) handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
+          if (!stopped)
+            handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
         } finally {
           if (idleTimer) clearTimeout(idleTimer);
         }
@@ -302,12 +244,20 @@ export class CodingRunnerClient {
     };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown, as: 'json' | 'text' = 'json'): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    as: 'json' | 'text' = 'json',
+  ): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchFn(`${this.baseUrl}${path}`, {
         method,
-        headers: { Accept: as === 'text' ? 'text/plain' : 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        headers: {
+          Accept: as === 'text' ? 'text/plain' : 'application/json',
+          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -323,7 +273,10 @@ export class CodingRunnerClient {
       } catch {
         // No JSON body.
       }
-      throw new RunnerError(detail || `The coding runner answered ${response.status}.`, response.status);
+      throw new RunnerError(
+        detail || `The coding runner answered ${response.status}.`,
+        response.status,
+      );
     }
     if (response.status === 204) return undefined as T;
     if (as === 'text') return (await response.text()) as T;

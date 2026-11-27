@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { BackgroundController } from './use-backgrounds.js';
-import { MAX_ROOM_AVATAR_HEIGHT, MIN_ROOM_AVATAR_HEIGHT, type OnTalk, type Restlessness } from '../../../main/src/shared/rooms/idle-settings.js';
+import {
+  MAX_ROOM_AVATAR_HEIGHT,
+  MIN_ROOM_AVATAR_HEIGHT,
+  type OnTalk,
+  type Restlessness,
+} from '../../../main/src/shared/rooms/idle-settings.js';
 import { RoomCards } from './room-cards.js';
 import { RoomDescribeForm } from './room-describe-form.js';
 import { GeneratedObjects, MakeMissingObjects } from './room-objects.js';
@@ -51,7 +56,11 @@ export function BackgroundControls({
       {tab === '3d' ? (
         <>
           <RoomCards backgrounds={backgrounds} onPickDescription={setRoomPrompt} />
-          <RoomDescribeForm backgrounds={backgrounds} prompt={roomPrompt} onPromptChange={setRoomPrompt} />
+          <RoomDescribeForm
+            backgrounds={backgrounds}
+            prompt={roomPrompt}
+            onPromptChange={setRoomPrompt}
+          />
           <MakeMissingObjects backgrounds={backgrounds} />
           <GeneratedObjects backgrounds={backgrounds} />
           <RoomStations backgrounds={backgrounds} stations={stations} mcp={mcp} />
@@ -69,90 +78,92 @@ export function BackgroundControls({
           ) : null}
         </>
       ) : null}
-      {tab === '2d' ? <>
-      <div className="backgroundControls__grid" aria-label="Background choices">
-        <button
-          type="button"
-          className="backgroundCard"
-          aria-pressed={backgrounds.activeId === null}
-          onClick={() => void backgrounds.select(null)}
-        >
-          <span className="backgroundCard__plain" />
-          <span>Plain background</span>
-        </button>
-        {backgrounds.items.map((item) => (
-          <div className="backgroundCard__entry" key={item.id}>
+      {tab === '2d' ? (
+        <>
+          <div className="backgroundControls__grid" aria-label="Background choices">
             <button
               type="button"
               className="backgroundCard"
-              aria-pressed={item.id === backgrounds.activeId}
-              onClick={() => {
-                if (item.description && !backgrounds.generating) {
-                  setPrompt(item.description);
-                  setNotice('');
-                }
-                void backgrounds.select(item.id);
-              }}
+              aria-pressed={backgrounds.activeId === null}
+              onClick={() => void backgrounds.select(null)}
             >
-              <img src={item.thumbnailDataUrl} alt="" />
-              <span>{item.name}</span>
+              <span className="backgroundCard__plain" />
+              <span>Plain background</span>
             </button>
-            {!item.builtIn ? (
-              <button
-                type="button"
-                className="backgroundCard__delete"
-                aria-label={`Delete ${item.name}`}
-                onClick={() => void backgrounds.remove(item.id)}
-              >
-                Delete
-              </button>
-            ) : null}
+            {backgrounds.items.map((item) => (
+              <div className="backgroundCard__entry" key={item.id}>
+                <button
+                  type="button"
+                  className="backgroundCard"
+                  aria-pressed={item.id === backgrounds.activeId}
+                  onClick={() => {
+                    if (item.description && !backgrounds.generating) {
+                      setPrompt(item.description);
+                      setNotice('');
+                    }
+                    void backgrounds.select(item.id);
+                  }}
+                >
+                  <img src={item.thumbnailDataUrl} alt="" />
+                  <span>{item.name}</span>
+                </button>
+                {!item.builtIn ? (
+                  <button
+                    type="button"
+                    className="backgroundCard__delete"
+                    aria-label={`Delete ${item.name}`}
+                    onClick={() => void backgrounds.remove(item.id)}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <form
-        className="faces__form"
-        aria-label="Generate background"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setNotice('');
-          void backgrounds.generate(prompt.trim()).then((created) => {
-            if (created) {
-              setPrompt('');
-              setNotice('Background ready. Select it above to use it.');
-            }
-          });
-        }}
-      >
-        <label className="faces__field">
-          <span>Background description</span>
-          <textarea
-            rows={3}
-            maxLength={1000}
-            value={prompt}
-            placeholder="A peaceful Japanese garden with an open stone path…"
-            onChange={(event) => setPrompt(event.target.value)}
-            disabled={backgrounds.generating}
-          />
-        </label>
-        <button
-          type="submit"
-          className="faces__submit"
-          disabled={backgrounds.generating || !prompt.trim()}
-        >
-          {backgrounds.generating ? 'Creating background…' : 'Generate background'}
-        </button>
-      </form>
-      <p className="kiosk__helper">
-        Describe a place. A new background is added to your library when it is ready; your current
-        scene stays selected. Generation can take several minutes.
-      </p>
-      {backgrounds.generating ? (
-        <p role="status">
-          Creating your background. You can keep talking and use the other controls.
-        </p>
+          <form
+            className="faces__form"
+            aria-label="Generate background"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setNotice('');
+              void backgrounds.generate(prompt.trim()).then((created) => {
+                if (created) {
+                  setPrompt('');
+                  setNotice('Background ready. Select it above to use it.');
+                }
+              });
+            }}
+          >
+            <label className="faces__field">
+              <span>Background description</span>
+              <textarea
+                rows={3}
+                maxLength={1000}
+                value={prompt}
+                placeholder="A peaceful Japanese garden with an open stone path…"
+                onChange={(event) => setPrompt(event.target.value)}
+                disabled={backgrounds.generating}
+              />
+            </label>
+            <button
+              type="submit"
+              className="faces__submit"
+              disabled={backgrounds.generating || !prompt.trim()}
+            >
+              {backgrounds.generating ? 'Creating background…' : 'Generate background'}
+            </button>
+          </form>
+          <p className="kiosk__helper">
+            Describe a place. A new background is added to your library when it is ready; your
+            current scene stays selected. Generation can take several minutes.
+          </p>
+          {backgrounds.generating ? (
+            <p role="status">
+              Creating your background. You can keep talking and use the other controls.
+            </p>
+          ) : null}
+        </>
       ) : null}
-      </> : null}
       {notice ? (
         <p role="status" className="kiosk__info">
           {notice}
@@ -182,7 +193,9 @@ function AvatarHeight({ backgrounds }: { backgrounds: BackgroundController }) {
   const { idleSettings: settings, setIdleSettings } = backgrounds;
   return (
     <div className="control">
-      <label htmlFor="room-avatar-height">Avatar height in rooms: {settings.avatarHeight.toFixed(2)} m</label>
+      <label htmlFor="room-avatar-height">
+        Avatar height in rooms: {settings.avatarHeight.toFixed(2)} m
+      </label>
       <input
         id="room-avatar-height"
         type="range"
@@ -217,7 +230,9 @@ function WhenIdle({ backgrounds }: { backgrounds: BackgroundController }) {
           id="idle-restlessness"
           value={settings.restlessness}
           disabled={!settings.enabled}
-          onChange={(event) => void setIdleSettings({ restlessness: event.target.value as Restlessness })}
+          onChange={(event) =>
+            void setIdleSettings({ restlessness: event.target.value as Restlessness })
+          }
         >
           {RESTLESSNESS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -242,8 +257,8 @@ function WhenIdle({ backgrounds }: { backgrounds: BackgroundController }) {
         </select>
       </div>
       <p className="kiosk__helper">
-        After a quiet minute or so the avatar walks to things it can see, sits, browses or picks something up. Talking always
-        wins. Needs the motion service.
+        After a quiet minute or so the avatar walks to things it can see, sits, browses or picks
+        something up. Talking always wins. Needs the motion service.
       </p>
     </section>
   );

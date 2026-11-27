@@ -43,18 +43,14 @@ import {
 import { CODER_CONTEXT_LENGTH } from '../shared/coding/types.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CoderLeases } from '../aicontroller/bridge.js';
+import type { SwapState, SwapPhase } from '../shared/coding/model-swap-types.js';
 
 export type CoderMemoryMode = 'auto' | 'side-by-side' | 'swap';
 
-export type SwapPhase = 'idle' | 'waiting-for-quiet' | 'swapping-in' | 'coder-loaded' | 'swapping-back';
-
-export interface SwapState {
-  phase: SwapPhase;
-  /** For the status panel, in words. */
-  message: string;
-}
-
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface CoderModelSwapOptions {
   /** The current model routing. */
@@ -66,7 +62,10 @@ export interface CoderModelSwapOptions {
   /** Echo's llama-server. */
   echo: Pick<LocalLlmControl, 'stop' | 'start'>;
   /** Builds the control for the coder's llama-server (pid file coder-llm.pid). */
-  coder: (model: { path: string; alias: string; contextLength: number }, baseUrl: string) => Pick<LocalLlmControl, 'stop' | 'start'>;
+  coder: (
+    model: { path: string; alias: string; contextLength: number },
+    baseUrl: string,
+  ) => Pick<LocalLlmControl, 'stop' | 'start'>;
   /** The model controller; when it is in use, leases replace starting and stopping llama-server. */
   controller?: CoderLeases;
   /** True when something answers GET <url>/models. */
@@ -104,7 +103,8 @@ export interface CoderModelSwapOptions {
 }
 
 const GIB = 1024 ** 3;
-const WAITING_MESSAGE = 'Not enough memory to run the coder next to Echo’s model; waiting until things are quiet to swap.';
+const WAITING_MESSAGE =
+  'Not enough memory to run the coder next to Echo’s model; waiting until things are quiet to swap.';
 
 /** The memory the coder needs next to what is running: the file plus a little, and 4 GiB for context. */
 export function coderMemoryNeed(ggufBytes: number): number {
@@ -178,13 +178,18 @@ export class CoderModelSwap {
   /** Kevin said something to Echo (a conversation turn, not a system update). In auto mode after a swap, this sends the models back. */
   noteActivity(): Promise<void> {
     this.lastActivity = this.now();
-    if (this.override && this.loadMode === 'swap' && this.state.phase === 'coder-loaded') return this.reconcile();
+    if (this.override && this.loadMode === 'swap' && this.state.phase === 'coder-loaded')
+      return this.reconcile();
     return this.chain;
   }
 
   /** True while the coder model holds Echo's place or is being swapped out for Echo's model, so Echo can't answer yet. */
   reclaiming(): boolean {
-    return this.reclaimingNow || this.override !== null || (this.state.phase === 'swapping-in' && this.loadMode === 'swap');
+    return (
+      this.reclaimingNow ||
+      this.override !== null ||
+      (this.state.phase === 'swapping-in' && this.loadMode === 'swap')
+    );
   }
 
   /** Resolves true once the swap back is done and Echo's llama-server answers; false if that takes longer than timeoutMs. */
@@ -193,7 +198,8 @@ export class CoderModelSwap {
     for (;;) {
       if (!this.reclaiming()) {
         const echo = routeTargets(this.options.routing(), 'llm')[0];
-        if (!echo || (await this.options.isUp(`${echo.server.url}/models`).catch(() => false))) return true;
+        if (!echo || (await this.options.isUp(`${echo.server.url}/models`).catch(() => false)))
+          return true;
       }
       if (this.now() >= deadline) return false;
       await this.sleep(this.pollMs);
@@ -207,7 +213,10 @@ export class CoderModelSwap {
       await this.options.setHold(hold);
       this.held = hold; // a newer wish that differs is retried by the next step
     } catch (error) {
-      this.options.logger.warn('Could not change the coding hold.', { hold, message: error instanceof Error ? error.message : String(error) });
+      this.options.logger.warn('Could not change the coding hold.', {
+        hold,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -237,9 +246,13 @@ export class CoderModelSwap {
   }
 
   private reconcile(): Promise<void> {
-    this.chain = this.chain.then(() => this.step()).catch((error) => {
-      this.options.logger.warn('Coder model swap failed.', { message: error instanceof Error ? error.message : String(error) });
-    });
+    this.chain = this.chain
+      .then(() => this.step())
+      .catch((error) => {
+        this.options.logger.warn('Coder model swap failed.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     return this.chain;
   }
 
@@ -249,12 +262,21 @@ export class CoderModelSwap {
     if (phase === 'waiting-for-quiet') {
       // While it isn't quiet, only measure memory again once a minute (the reader runs PowerShell).
       // After Kevin talked, only a quiet moment will do; otherwise look at memory again once a minute.
-      if (this.needed && (this.isQuiet() || (!this.needQuiet && this.now() - this.waitCheckedAt >= 60_000))) return this.swapIn();
+      if (
+        this.needed &&
+        (this.isQuiet() || (!this.needQuiet && this.now() - this.waitCheckedAt >= 60_000))
+      )
+        return this.swapIn();
       if (this.needed) return;
       this.state = { phase: 'idle', message: 'Not needed now.' };
       return;
     }
-    if (phase === 'coder-loaded' && this.loadMode === 'swap' && this.override && this.talkedSince(this.loadStartedAt)) {
+    if (
+      phase === 'coder-loaded' &&
+      this.loadMode === 'swap' &&
+      this.override &&
+      this.talkedSince(this.loadStartedAt)
+    ) {
       // Kevin is talking to Echo: pause the tasks and give the memory back now, and wait for a quiet moment if a task still needs the model.
       this.reclaimingNow = true;
       try {
@@ -274,7 +296,12 @@ export class CoderModelSwap {
     }
     if (this.needed && phase === 'idle' && this.now() >= this.retryAfter) return this.swapIn();
     if (this.needed && phase === 'coder-loaded') return this.watch();
-    if (!this.needed && phase === 'coder-loaded' && this.idleSince !== null && this.now() - this.idleSince >= this.idleLimit()) {
+    if (
+      !this.needed &&
+      phase === 'coder-loaded' &&
+      this.idleSince !== null &&
+      this.now() - this.idleSince >= this.idleLimit()
+    ) {
       return this.swapBack();
     }
   }
@@ -298,7 +325,10 @@ export class CoderModelSwap {
       return true;
     }
     const need = coderMemoryNeed(size);
-    this.options.logger.info('Coder memory check.', { freeGiB: +(free / GIB).toFixed(1), needGiB: +(need / GIB).toFixed(1) });
+    this.options.logger.info('Coder memory check.', {
+      freeGiB: +(free / GIB).toFixed(1),
+      needGiB: +(need / GIB).toFixed(1),
+    });
     return free >= need;
   }
 
@@ -311,7 +341,12 @@ export class CoderModelSwap {
     if (!this.controlled() && (this.options.platform ?? process.platform) !== 'win32') return null;
     const routing = this.options.routing();
     const target = routeTargets(routing, 'coding')[0];
-    if (!target || target.server.id !== BUILT_IN_SERVER_IDS.coderLlm || !isLocalUrl(target.server.url)) return null;
+    if (
+      !target ||
+      target.server.id !== BUILT_IN_SERVER_IDS.coderLlm ||
+      !isLocalUrl(target.server.url)
+    )
+      return null;
     return { server: target.server, alias: target.model?.trim() || DEFAULT_CODER_MODEL };
   }
 
@@ -334,14 +369,18 @@ export class CoderModelSwap {
   private async swapIn(): Promise<void> {
     const coder = this.coderServer();
     if (!coder) {
-      this.state = { phase: 'idle', message: 'The coding model is not run by this app, so nothing is swapped.' };
+      this.state = {
+        phase: 'idle',
+        message: 'The coding model is not run by this app, so nothing is swapped.',
+      };
       return;
     }
     const controller = this.controlled();
     if (controller) return this.swapInViaController(controller, coder);
     const gguf = this.options.configuredGguf()?.trim() || this.options.detectGguf();
     if (!gguf) {
-      const message = 'No Qwen3-Coder-Next GGUF found. Pick the file on the Coding page. Echo’s model was not stopped.';
+      const message =
+        'No Qwen3-Coder-Next GGUF found. Pick the file on the Coding page. Echo’s model was not stopped.';
       if (this.state.message !== message) this.set('idle', message);
       return;
     }
@@ -351,7 +390,11 @@ export class CoderModelSwap {
     const mode = this.options.mode();
     let swapMode = mode === 'swap';
     // Auto only has a choice to make when Echo's model is the one this app runs; otherwise nothing shares memory with it.
-    if (mode === 'auto' && echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm && !(await this.fitsNextToEcho(gguf))) {
+    if (
+      mode === 'auto' &&
+      echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm &&
+      !(await this.fitsNextToEcho(gguf))
+    ) {
       if (!this.isQuiet()) {
         this.waitCheckedAt = this.now();
         if (this.state.phase !== 'waiting-for-quiet') {
@@ -365,7 +408,12 @@ export class CoderModelSwap {
     this.loadStartedAt = this.now();
     this.loadMode = swapMode ? 'swap' : 'side-by-side';
     this.loadedServer = coder.server;
-    this.set('swapping-in', swapMode ? 'Stopping Echo’s model to make room for the coder model.' : 'Loading the coder model next to Echo’s.');
+    this.set(
+      'swapping-in',
+      swapMode
+        ? 'Stopping Echo’s model to make room for the coder model.'
+        : 'Loading the coder model next to Echo’s.',
+    );
     let echoId: string | null = null;
     if (swapMode && echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm) {
       echoId = echoTarget.server.id;
@@ -375,8 +423,16 @@ export class CoderModelSwap {
       // Something already serves it (started by hand): use it, and leave it running afterwards.
       this.startedCoder = false;
     } else {
-      this.set('swapping-in', swapMode ? 'Loading the coder model. This takes a few minutes.' : 'Loading the coder model next to Echo’s. This takes a few minutes.');
-      this.coderControl = this.options.coder({ path: gguf, alias: coder.alias, contextLength: CODER_CONTEXT_LENGTH }, coder.server.url);
+      this.set(
+        'swapping-in',
+        swapMode
+          ? 'Loading the coder model. This takes a few minutes.'
+          : 'Loading the coder model next to Echo’s. This takes a few minutes.',
+      );
+      this.coderControl = this.options.coder(
+        { path: gguf, alias: coder.alias, contextLength: CODER_CONTEXT_LENGTH },
+        coder.server.url,
+      );
       await this.coderControl.start();
       this.startedCoder = true;
     }
@@ -401,32 +457,48 @@ export class CoderModelSwap {
     this.downChecks = 0;
     this.needQuiet = false;
     if (swapMode) {
-      await this.setOverride({ server: coder.server, model: coder.alias, exclude: echoId && this.stoppedEcho ? [echoId] : [] });
+      await this.setOverride({
+        server: coder.server,
+        model: coder.alias,
+        exclude: echoId && this.stoppedEcho ? [echoId] : [],
+      });
     }
     this.set(
       'coder-loaded',
-      swapMode ? 'The coder model is loaded. Echo’s chat uses it until the tasks are done.' : 'The coder model is loaded next to Echo’s.',
+      swapMode
+        ? 'The coder model is loaded. Echo’s chat uses it until the tasks are done.'
+        : 'The coder model is loaded next to Echo’s.',
     );
     await this.hold(false);
   }
 
   /** The controller version of swapIn: lease coder-llm (it evicts Echo's model if needed) and chat on its URL. */
-  private async swapInViaController(controller: CoderLeases, coder: { server: ModelServer; alias: string }): Promise<void> {
+  private async swapInViaController(
+    controller: CoderLeases,
+    coder: { server: ModelServer; alias: string },
+  ): Promise<void> {
     const echoTarget = routeTargets(this.options.routing(), 'llm')[0];
     const echoId = echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm ? echoTarget.server.id : null;
     this.loadStartedAt = this.now();
     this.loadMode = 'swap';
     this.loadedServer = coder.server;
-    this.set('swapping-in', 'Asking the model controller for the coder model. It makes room by stopping Echo’s model. This takes a few minutes.');
+    this.set(
+      'swapping-in',
+      'Asking the model controller for the coder model. It makes room by stopping Echo’s model. This takes a few minutes.',
+    );
     // Echo's lease is given up first (a leased backend is never evicted) and taken again on the way back.
     this.stoppedEcho = echoId !== null;
     let url: string | null;
     try {
       ({ url } = await controller.leaseCoder());
     } catch (error) {
-      this.options.logger.warn('The model controller did not lease the coder model.', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger.warn('The model controller did not lease the coder model.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       this.retryAfter = this.now() + 10 * 60_000;
-      await this.restoreEcho('The model controller could not lease the coder model. Echo’s model is back; trying again in 10 minutes.');
+      await this.restoreEcho(
+        'The model controller could not lease the coder model. Echo’s model is back; trying again in 10 minutes.',
+      );
       return;
     }
     if (!this.needed) this.idleSince ??= this.now();
@@ -435,7 +507,10 @@ export class CoderModelSwap {
     const server = url ? { ...coder.server, url: url.replace(/\/+$/, '') } : coder.server;
     this.loadedServer = server;
     await this.setOverride({ server, model: coder.alias, exclude: echoId ? [echoId] : [] });
-    this.set('coder-loaded', 'The coder model is loaded. Echo’s chat uses it until the tasks are done.');
+    this.set(
+      'coder-loaded',
+      'The coder model is loaded. Echo’s chat uses it until the tasks are done.',
+    );
     await this.hold(false);
   }
 
@@ -468,7 +543,9 @@ export class CoderModelSwap {
 
   private async swapBack(): Promise<void> {
     await this.restoreEcho(
-      this.loadMode === 'swap' ? 'Not needed now. Echo’s model is back.' : 'Not needed now; the coder model was stopped to free memory.',
+      this.loadMode === 'swap'
+        ? 'Not needed now. Echo’s model is back.'
+        : 'Not needed now; the coder model was stopped to free memory.',
     );
   }
 
@@ -476,16 +553,21 @@ export class CoderModelSwap {
   private async restoreEcho(message: string): Promise<void> {
     this.set(
       'swapping-back',
-      this.loadMode === 'swap' ? 'Stopping the coder model and starting Echo’s model again.' : 'Stopping the coder model to free memory.',
+      this.loadMode === 'swap'
+        ? 'Stopping the coder model and starting Echo’s model again.'
+        : 'Stopping the coder model to free memory.',
     );
     if (this.override) await this.setOverride(null);
     const controller = this.controlled();
     if (controller) return this.restoreEchoViaController(controller, message);
     if (this.startedCoder) await this.coderControl?.stop().catch(() => false);
     this.startedCoder = false;
-    if (this.stoppedEcho) await this.options.echo.start().catch((error) => {
-      this.options.logger.warn('Echo’s model could not be started again.', { message: error instanceof Error ? error.message : String(error) });
-    });
+    if (this.stoppedEcho)
+      await this.options.echo.start().catch((error) => {
+        this.options.logger.warn('Echo’s model could not be started again.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     const startedEcho = this.stoppedEcho;
     this.stoppedEcho = false;
     this.loadedServer = null;

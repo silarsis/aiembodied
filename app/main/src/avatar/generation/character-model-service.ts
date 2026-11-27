@@ -1,6 +1,9 @@
 import type { MemoryStore } from '../../memory/index.js';
 import { hostLabel, type ImageModelFile } from './image-model-service.js';
-import type { AvatarCharacterModelSelection, AvatarCharacterModelSummary } from '../types.js';
+import type {
+  AvatarCharacterModelSelection,
+  AvatarCharacterModelSummary,
+} from '../../shared/avatar/types.js';
 
 /**
  * The weights a geometry run loads. TRELLIS.2 builds a textured mesh from the front image alone;
@@ -103,8 +106,8 @@ export class AvatarCharacterModelService {
         rigReason = error instanceof Error ? error.message : String(error);
       }
       const vision = files
-        ? files.find((file) => file.kind === 'qwen3-vl' && file.name === DEFAULT_FACE_VISION_MODEL)?.name ??
-          files.find((file) => file.kind === 'qwen3-vl')?.name
+        ? (files.find((file) => file.kind === 'qwen3-vl' && file.name === DEFAULT_FACE_VISION_MODEL)
+            ?.name ?? files.find((file) => file.kind === 'qwen3-vl')?.name)
         : DEFAULT_FACE_VISION_MODEL;
       const stylisedReason =
         rigReason ??
@@ -113,7 +116,11 @@ export class AvatarCharacterModelService {
           : `Finding stylised faces needs Qwen3-VL in ComfyUI. Put ${DEFAULT_FACE_VISION_MODEL} in its text_encoders folder and refresh.`);
       this.rig = [
         {
-          model: { id: BLENDER_FACE_FIT_RIG, name: 'Blender auto-rig with fitted face', face: 'fitted' },
+          model: {
+            id: BLENDER_FACE_FIT_RIG,
+            name: 'Blender auto-rig with fitted face',
+            face: 'fitted',
+          },
           summary: {
             id: BLENDER_FACE_FIT_RIG,
             name: 'Blender auto-rig with fitted face',
@@ -163,7 +170,12 @@ export class AvatarCharacterModelService {
     if (!checkpoints.length)
       return [
         {
-          model: { kind: 'hunyuan3d-2mv', id: DEFAULT_HUNYUAN_MV, name: 'Hunyuan3D 2mv', checkpoint: DEFAULT_HUNYUAN_MV },
+          model: {
+            kind: 'hunyuan3d-2mv',
+            id: DEFAULT_HUNYUAN_MV,
+            name: 'Hunyuan3D 2mv',
+            checkpoint: DEFAULT_HUNYUAN_MV,
+          },
           summary: {
             id: DEFAULT_HUNYUAN_MV,
             name: 'Hunyuan3D 2mv',
@@ -184,7 +196,9 @@ export class AvatarCharacterModelService {
           description,
           views: true,
           available: true,
-          ...hostLabel(files?.find((file) => file.folder === 'checkpoints' && file.name === checkpoint)?.hosts),
+          ...hostLabel(
+            files?.find((file) => file.folder === 'checkpoints' && file.name === checkpoint)?.hosts,
+          ),
         },
       };
     });
@@ -247,7 +261,10 @@ export class AvatarCharacterModelService {
             description: 'Textured mesh from the front image only, generated in ComfyUI.',
             available: !reason,
             ...(reason ? { unavailableReason: reason } : {}),
-            ...hostLabel(files?.find((file) => file.folder === 'diffusion_models' && file.name === unet)?.hosts),
+            ...hostLabel(
+              files?.find((file) => file.folder === 'diffusion_models' && file.name === unet)
+                ?.hosts,
+            ),
           },
         };
       })

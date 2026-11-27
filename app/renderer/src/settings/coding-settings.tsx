@@ -3,10 +3,18 @@
  * takes the tasks, the coder model file, and the workspaces (repositories) the runner may work in.
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { ModelServerView } from '../../../main/src/config/config-manager.js';
-import type { CodingBridge, CodingConfig, CodingStatus } from '../../../main/src/coding/bridge-types.js';
-import { SELF_PROTECTED_PATHS, slugifyWorkspaceId, type CodingWorkspace } from '../../../main/src/shared/coding/types.js';
-import type { ServerProbe } from '../../../main/src/config/model-server-probe.js';
+import type { ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
+import type {
+  CodingBridge,
+  CodingConfig,
+  CodingStatus,
+} from '../../../main/src/shared/coding/bridge-types.js';
+import {
+  SELF_PROTECTED_PATHS,
+  slugifyWorkspaceId,
+  type CodingWorkspace,
+} from '../../../main/src/shared/coding/types.js';
+import type { ServerProbe } from '../../../main/src/shared/config/model-server-probe-types.js';
 
 export const CODING_STATUS_POLL_MS = 5000;
 
@@ -23,7 +31,16 @@ interface Draft {
   protectedPaths: string;
 }
 
-const emptyDraft = (): Draft => ({ id: '', name: '', path: '', kind: 'project', baseBranch: 'main', checks: '', setup: '', protectedPaths: '' });
+const emptyDraft = (): Draft => ({
+  id: '',
+  name: '',
+  path: '',
+  kind: 'project',
+  baseBranch: 'main',
+  checks: '',
+  setup: '',
+  protectedPaths: '',
+});
 
 const toDraft = (workspace: CodingWorkspace): Draft => ({
   id: workspace.id,
@@ -39,7 +56,9 @@ const toDraft = (workspace: CodingWorkspace): Draft => ({
 function fromDraft(draft: Draft, taken: string[]): CodingWorkspace {
   let id = draft.id;
   if (!id) {
-    const base = slugifyWorkspaceId(draft.name || draft.path.split(/[\\/]/).filter(Boolean).pop() || 'workspace');
+    const base = slugifyWorkspaceId(
+      draft.name || draft.path.split(/[\\/]/).filter(Boolean).pop() || 'workspace',
+    );
     id = base;
     for (let n = 2; taken.includes(id); n += 1) id = `${base}-${n}`;
   }
@@ -93,7 +112,8 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
         setGguf(view.coding.coderGguf ?? '');
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load the coding settings.');
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Could not load the coding settings.');
       });
     return () => {
       cancelled = true;
@@ -159,26 +179,45 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
     const taken = coding.workspaces.map((entry) => entry.id);
     const workspace = fromDraft(draft, taken);
     const exists = coding.workspaces.some((entry) => entry.id === workspace.id);
-    const workspaces = exists ? coding.workspaces.map((entry) => (entry.id === workspace.id ? workspace : entry)) : [...coding.workspaces, workspace];
+    const workspaces = exists
+      ? coding.workspaces.map((entry) => (entry.id === workspace.id ? workspace : entry))
+      : [...coding.workspaces, workspace];
     if (await save({ ...coding, workspaces }, 'Saved.')) setDraft(null);
   };
 
   const removeWorkspace = async (id: string) => {
-    if (await save({ ...coding, workspaces: coding.workspaces.filter((entry) => entry.id !== id) }, 'Removed.')) setDraft(null);
+    if (
+      await save(
+        { ...coding, workspaces: coding.workspaces.filter((entry) => entry.id !== id) },
+        'Removed.',
+      )
+    )
+      setDraft(null);
   };
 
   const suggest = async () => {
     if (!draft) return;
-    const workspace = fromDraft(draft, coding.workspaces.map((entry) => entry.id));
+    const workspace = fromDraft(
+      draft,
+      coding.workspaces.map((entry) => entry.id),
+    );
     const exists = coding.workspaces.some((entry) => entry.id === workspace.id);
     // The runner can only look at a workspace it has been told about, so save the row first.
-    const workspaces = exists ? coding.workspaces.map((entry) => (entry.id === workspace.id ? workspace : entry)) : [...coding.workspaces, workspace];
+    const workspaces = exists
+      ? coding.workspaces.map((entry) => (entry.id === workspace.id ? workspace : entry))
+      : [...coding.workspaces, workspace];
     if (!(await save({ ...coding, workspaces }))) return;
     setBusy(true);
     try {
       const suggestion = await api.suggestChecks(workspace.id);
-      setDraft((current) => (current ? { ...current, id: workspace.id, checks: suggestion ?? current.checks } : current));
-      setNotice(suggestion ? `Suggested: ${suggestion}` : 'The runner could not suggest a checks command for this repository.');
+      setDraft((current) =>
+        current ? { ...current, id: workspace.id, checks: suggestion ?? current.checks } : current,
+      );
+      setNotice(
+        suggestion
+          ? `Suggested: ${suggestion}`
+          : 'The runner could not suggest a checks command for this repository.',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The runner did not answer.');
     } finally {
@@ -221,21 +260,38 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
             <span
               className={`modelsDialog__dot is-${!runnerProbe ? 'unknown' : runnerProbe === 'checking' ? 'checking' : runnerProbe.status}`}
               role="img"
-              aria-label={runnerProbe && runnerProbe !== 'checking' ? (runnerProbe.status === 'up' ? 'Runner running' : 'Runner not ready') : 'Runner not checked'}
+              aria-label={
+                runnerProbe && runnerProbe !== 'checking'
+                  ? runnerProbe.status === 'up'
+                    ? 'Runner running'
+                    : 'Runner not ready'
+                  : 'Runner not checked'
+              }
             />
             <span className="modelsDialog__state">
-              {!runnerProbe ? 'Not checked yet' : runnerProbe === 'checking' ? 'Checking…' : runnerProbe.status === 'up' ? 'Running' : (runnerProbe.message ?? 'Not reachable')}
+              {!runnerProbe
+                ? 'Not checked yet'
+                : runnerProbe === 'checking'
+                  ? 'Checking…'
+                  : runnerProbe.status === 'up'
+                    ? 'Running'
+                    : (runnerProbe.message ?? 'Not reachable')}
             </span>
             {runner ? (
-              <button type="button" onClick={() => onProbeRunner(runner.id)} disabled={runnerProbe === 'checking'}>
+              <button
+                type="button"
+                onClick={() => onProbeRunner(runner.id)}
+                disabled={runnerProbe === 'checking'}
+              >
                 Test
               </button>
             ) : null}
           </span>
         </div>
         <p className="kiosk__helper">
-          The runner (services/coder) starts with pnpm dev:run. Each task runs in its own git worktree and ends in a pull request you approve. It needs pi:
-          npm install -g @earendil-works/pi-coding-agent. Add a runner on another PC under Servers.
+          The runner (services/coder) starts with pnpm dev:run. Each task runs in its own git
+          worktree and ends in a pull request you approve. It needs pi: npm install -g
+          @earendil-works/pi-coding-agent. Add a runner on another PC under Servers.
         </p>
         {status ? <p className="kiosk__helper">Models: {status.swap.message}</p> : null}
       </div>
@@ -248,7 +304,10 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
             <input
               id="coding-gguf"
               value={gguf}
-              placeholder={status?.detectedGguf ?? 'Path to the Q4_K_M .gguf file (the first part, if it is split)'}
+              placeholder={
+                status?.detectedGguf ??
+                'Path to the Q4_K_M .gguf file (the first part, if it is split)'
+              }
               onChange={(event) => setGguf(event.target.value)}
               onBlur={() => saveGguf(gguf)}
               onKeyDown={(event) => {
@@ -260,7 +319,11 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
               <button type="button" onClick={() => void pickGguf()} disabled={busy}>
                 Browse…
               </button>
-              {status?.detectedGguf ? <small>Detected: {status.detectedGguf}</small> : <small>Nothing detected. Pick the file.</small>}
+              {status?.detectedGguf ? (
+                <small>Detected: {status.detectedGguf}</small>
+              ) : (
+                <small>Nothing detected. Pick the file.</small>
+              )}
             </span>
           </span>
           <label htmlFor="coding-memory">Memory</label>
@@ -268,21 +331,32 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
             id="coding-memory"
             value={coding.coderMemory ?? 'auto'}
             disabled={busy}
-            onChange={(event) => void save({ ...coding, coderMemory: coderMemoryFrom(event.target.value) }, 'Saved.')}
+            onChange={(event) =>
+              void save({ ...coding, coderMemory: coderMemoryFrom(event.target.value) }, 'Saved.')
+            }
           >
-            <option value="auto">Auto: next to Echo’s model if it fits, otherwise wait for a quiet moment and swap</option>
+            <option value="auto">
+              Auto: next to Echo’s model if it fits, otherwise wait for a quiet moment and swap
+            </option>
             <option value="side-by-side">Run next to Echo’s model (needs memory for both)</option>
-            <option value="swap">Swap: stop Echo’s model while coding (Echo chats on the coder model)</option>
+            <option value="swap">
+              Swap: stop Echo’s model while coding (Echo chats on the coder model)
+            </option>
           </select>
         </div>
         <p className="kiosk__helper">
-          Only used when the Coding model is the built-in Qwen3-Coder-Next server. While a task runs, the app loads this model next to Echo’s chat model and stops it again when it is no longer needed. With Swap, it stops Echo’s chat model instead and puts it back when the tasks are done.
+          Only used when the Coding model is the built-in Qwen3-Coder-Next server. While a task
+          runs, the app loads this model next to Echo’s chat model and stops it again when it is no
+          longer needed. With Swap, it stops Echo’s chat model instead and puts it back when the
+          tasks are done.
         </p>
       </div>
 
       <div className="modelsDialog__list">
         <span className="modelsDialog__group">Workspaces</span>
-        {workspaceError ? <p className="kiosk__error">The runner refused the workspaces: {workspaceError}</p> : null}
+        {workspaceError ? (
+          <p className="kiosk__error">The runner refused the workspaces: {workspaceError}</p>
+        ) : null}
         {coding.workspaces.length ? (
           coding.workspaces.map((workspace) => (
             <div key={workspace.id} className="modelsDialog__server">
@@ -290,18 +364,29 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
                 <b>{workspace.name}</b>
                 <code>{workspace.path}</code>
               </div>
-              <small className={`modelsDialog__where ${workspace.kind === 'self' ? 'is-online' : 'is-local'}`}>{workspace.kind === 'self' ? 'Echo’s own code' : 'Project'}</small>
+              <small
+                className={`modelsDialog__where ${workspace.kind === 'self' ? 'is-online' : 'is-local'}`}
+              >
+                {workspace.kind === 'self' ? 'Echo’s own code' : 'Project'}
+              </small>
               <span className="modelsDialog__state">
                 {workspace.baseBranch}
                 {workspace.checks ? ` · ${workspace.checks}` : ''}
               </span>
-              <button type="button" onClick={() => setDraft(toDraft(workspace))} disabled={busy} aria-label={`Edit ${workspace.name}`}>
+              <button
+                type="button"
+                onClick={() => setDraft(toDraft(workspace))}
+                disabled={busy}
+                aria-label={`Edit ${workspace.name}`}
+              >
                 Edit
               </button>
             </div>
           ))
         ) : (
-          <p className="kiosk__helper">No workspaces yet. Echo can only code in the repositories you add here.</p>
+          <p className="kiosk__helper">
+            No workspaces yet. Echo can only code in the repositories you add here.
+          </p>
         )}
         {draft ? (
           <form
@@ -315,17 +400,38 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
             <b>{draft.id ? 'Edit workspace' : 'New workspace'}</b>
             <div className="modelsDialog__fields">
               <label htmlFor="ws-name">Name</label>
-              <input id="ws-name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              <input
+                id="ws-name"
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              />
               <label htmlFor="ws-path">Folder</label>
               <span className="modelsDialog__model">
-                <input id="ws-path" value={draft.path} placeholder="C:\src\my-project" onChange={(event) => setDraft({ ...draft, path: event.target.value })} />
+                <input
+                  id="ws-path"
+                  value={draft.path}
+                  placeholder="C:\src\my-project"
+                  onChange={(event) => setDraft({ ...draft, path: event.target.value })}
+                />
                 <span className="modelsDialog__modelActions">
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() =>
                       void api.pickFolder().then((picked) => {
-                        if (picked) setDraft((current) => (current ? { ...current, path: picked, name: current.name || picked.split(/[\\/]/).filter(Boolean).pop() || '' } : current));
+                        if (picked)
+                          setDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  path: picked,
+                                  name:
+                                    current.name ||
+                                    picked.split(/[\\/]/).filter(Boolean).pop() ||
+                                    '',
+                                }
+                              : current,
+                          );
                       })
                     }
                   >
@@ -335,28 +441,59 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
                 </span>
               </span>
               <label htmlFor="ws-kind">Kind</label>
-              <select id="ws-kind" value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value === 'self' ? 'self' : 'project' })}>
+              <select
+                id="ws-kind"
+                value={draft.kind}
+                onChange={(event) =>
+                  setDraft({ ...draft, kind: event.target.value === 'self' ? 'self' : 'project' })
+                }
+              >
                 <option value="project">Project</option>
                 <option value="self">Echo’s own code</option>
               </select>
               <label htmlFor="ws-branch">Base branch</label>
-              <input id="ws-branch" value={draft.baseBranch} onChange={(event) => setDraft({ ...draft, baseBranch: event.target.value })} />
+              <input
+                id="ws-branch"
+                value={draft.baseBranch}
+                onChange={(event) => setDraft({ ...draft, baseBranch: event.target.value })}
+              />
               <label htmlFor="ws-checks">Checks</label>
               <span className="modelsDialog__model">
-                <input id="ws-checks" value={draft.checks} placeholder="pnpm test" onChange={(event) => setDraft({ ...draft, checks: event.target.value })} />
+                <input
+                  id="ws-checks"
+                  value={draft.checks}
+                  placeholder="pnpm test"
+                  onChange={(event) => setDraft({ ...draft, checks: event.target.value })}
+                />
                 <span className="modelsDialog__modelActions">
-                  <button type="button" onClick={() => void suggest()} disabled={busy || !draft.path.trim()}>
+                  <button
+                    type="button"
+                    onClick={() => void suggest()}
+                    disabled={busy || !draft.path.trim()}
+                  >
                     Suggest
                   </button>
-                  <small>Run before a task goes to review. Suggest saves the row and asks the runner.</small>
+                  <small>
+                    Run before a task goes to review. Suggest saves the row and asks the runner.
+                  </small>
                 </span>
               </span>
               <label htmlFor="ws-setup">Setup command</label>
               <span className="modelsDialog__model">
-                <input id="ws-setup" value={draft.setup} placeholder="auto: install dependencies" onChange={(event) => setDraft({ ...draft, setup: event.target.value })} />
-                <small>Runs in each task’s fresh worktree before pi starts. Empty: installs with pnpm, npm, yarn or uv if it finds their lockfile.</small>
+                <input
+                  id="ws-setup"
+                  value={draft.setup}
+                  placeholder="auto: install dependencies"
+                  onChange={(event) => setDraft({ ...draft, setup: event.target.value })}
+                />
+                <small>
+                  Runs in each task’s fresh worktree before pi starts. Empty: installs with pnpm,
+                  npm, yarn or uv if it finds their lockfile.
+                </small>
               </span>
-              <label htmlFor="ws-protected">{draft.kind === 'self' ? 'Extra protected paths' : 'Protected paths'}</label>
+              <label htmlFor="ws-protected">
+                {draft.kind === 'self' ? 'Extra protected paths' : 'Protected paths'}
+              </label>
               <span className="modelsDialog__model">
                 {draft.kind === 'self' ? (
                   <small>
@@ -374,14 +511,22 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
               </span>
             </div>
             <div className="modelsDialog__actions">
-              <button type="submit" className="modelsDialog__primary" disabled={busy || !draft.path.trim()}>
+              <button
+                type="submit"
+                className="modelsDialog__primary"
+                disabled={busy || !draft.path.trim()}
+              >
                 Save workspace
               </button>
               <button type="button" onClick={() => setDraft(null)} disabled={busy}>
                 Cancel
               </button>
               {draft.id ? (
-                <button type="button" onClick={() => void removeWorkspace(draft.id)} disabled={busy}>
+                <button
+                  type="button"
+                  onClick={() => void removeWorkspace(draft.id)}
+                  disabled={busy}
+                >
                   Remove workspace
                 </button>
               ) : null}
@@ -389,7 +534,12 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
           </form>
         ) : (
           <div>
-            <button type="button" className="modelsDialog__primary" onClick={() => setDraft(emptyDraft())} disabled={busy}>
+            <button
+              type="button"
+              className="modelsDialog__primary"
+              onClick={() => setDraft(emptyDraft())}
+              disabled={busy}
+            >
               Add a workspace
             </button>
           </div>

@@ -1,8 +1,12 @@
 import { EventEmitter } from 'node:events';
 import type { IpcMainInvokeEvent } from 'electron';
-import type { ConfigSecretKey } from '../src/config/config-manager.js';
+import type { ConfigSecretKey } from '../src/shared/config/config-manager-types.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+} from '../src/shared/config/model-routing.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {
@@ -67,18 +71,28 @@ const ConfigManagerMock = vi.fn(function () {
     setSecret: setSecretMock,
     testSecret: testSecretMock,
     setAudioDevicePreferences: setAudioDevicePreferencesMock,
-    getServerKey: (id: string) => (id === 'openai' ? (getConfigMock() as { realtimeApiKey?: string } | undefined)?.realtimeApiKey : undefined),
+    getServerKey: (id: string) =>
+      id === 'openai'
+        ? (getConfigMock() as { realtimeApiKey?: string } | undefined)?.realtimeApiKey
+        : undefined,
     getModelRoutingView: () => {
       const models = (getConfigMock() as { models: ReturnType<typeof testRouting> }).models;
-      return { servers: models.servers.map((server) => ({ ...server, hasKey: false })), routes: models.routes };
+      return {
+        servers: models.servers.map((server) => ({ ...server, hasKey: false })),
+        routes: models.routes,
+      };
     },
-    getCoding: () => (getConfigMock() as { coding?: unknown } | undefined)?.coding ?? { workspaces: [] },
+    getCoding: () =>
+      (getConfigMock() as { coding?: unknown } | undefined)?.coding ?? { workspaces: [] },
   };
 });
 
 function testRouting() {
   return resolveModelRouting(
-    builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+    builtInServers({
+      providers: DEFAULT_PROVIDER_SETTINGS,
+      comfyUiBaseUrl: 'http://127.0.0.1:8188',
+    }),
     defaultRoutes(DEFAULT_PROVIDER_SETTINGS, 'off'),
   );
 }
@@ -177,7 +191,10 @@ const resolvePreloadScriptPathMock = vi.fn();
 const resolveRendererEntryPointMock = vi.fn();
 
 class RuntimeResourceNotFoundErrorDouble extends Error {
-  constructor(message: string, public readonly attempted: string[]) {
+  constructor(
+    message: string,
+    public readonly attempted: string[],
+  ) {
     super(message);
     this.name = 'RuntimeResourceNotFoundError';
   }
@@ -213,7 +230,7 @@ vi.mock('../src/wake-word/wake-word-service.js', () => ({
 class CrashGuardDouble {
   watch = vi.fn();
   notifyAppQuitting = vi.fn();
-  constructor(public readonly options: unknown) { }
+  constructor(public readonly options: unknown) {}
 }
 
 const crashGuardInstances: CrashGuardDouble[] = [];
@@ -331,7 +348,7 @@ class AvatarModelServiceDouble {
   listActiveModelBones = vi.fn().mockResolvedValue([]);
   seedDefaultModelIfMissing = vi.fn().mockResolvedValue(undefined);
 
-  constructor(public readonly options: unknown) { }
+  constructor(public readonly options: unknown) {}
 }
 
 const avatarModelServiceInstances: AvatarModelServiceDouble[] = [];
@@ -353,7 +370,7 @@ class AvatarAnimationServiceDouble {
   deleteAnimation = vi.fn().mockResolvedValue(undefined);
   loadAnimationBinary = vi.fn().mockResolvedValue(new ArrayBuffer(0));
 
-  constructor(public readonly options: unknown) { }
+  constructor(public readonly options: unknown) {}
 }
 
 const avatarAnimationServiceInstances: AvatarAnimationServiceDouble[] = [];
@@ -372,7 +389,7 @@ vi.mock('../src/avatar/avatar-animation-service.js', () => ({
 class VrmaGenerationServiceDouble {
   generateAnimation = vi.fn().mockResolvedValue({ animation: { id: 'vrma-generated' } });
 
-  constructor(public readonly options: unknown) { }
+  constructor(public readonly options: unknown) {}
 }
 
 const vrmaGenerationServiceInstances: VrmaGenerationServiceDouble[] = [];
@@ -564,7 +581,9 @@ describe('main process bootstrap', () => {
     createDevTrayMock.mockClear();
     createDevTrayDestroyMock.mockReset();
     createDevTrayMock.mockImplementation(() =>
-      Promise.resolve({ destroy: createDevTrayDestroyMock } as unknown as ReturnType<typeof TrayMock>),
+      Promise.resolve({ destroy: createDevTrayDestroyMock } as unknown as ReturnType<
+        typeof TrayMock
+      >),
     );
 
     TrayMock.mockClear();
@@ -721,18 +740,27 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
     expect(ipcMainMock.on).toHaveBeenCalledWith('diagnostics:preload-log', expect.any(Function));
-    const diagnosticsHandler = ipcMainMock.on.mock.calls.find((call) => call[0] === 'diagnostics:preload-log')?.[1];
+    const diagnosticsHandler = ipcMainMock.on.mock.calls.find(
+      (call) => call[0] === 'diagnostics:preload-log',
+    )?.[1];
     expect(typeof diagnosticsHandler).toBe('function');
-    diagnosticsHandler?.({}, { level: 'warn', message: 'preload warning', meta: { context: 'preload' }, ts: 1700000000 });
+    diagnosticsHandler?.(
+      {},
+      { level: 'warn', message: 'preload warning', meta: { context: 'preload' }, ts: 1700000000 },
+    );
     expect(mockLogger.warn).toHaveBeenCalledWith('preload warning', {
       from: 'preload',
       context: 'preload',
       ts: 1700000000,
     });
 
-    const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+    const handleEntries = new Map(
+      ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]),
+    );
     // Animation clips follow Thinking (the local model) unless pointed elsewhere.
-    expect(mockLogger.info).toHaveBeenCalledWith('Animation clip generation ready.', { model: 'qwen-next-flash' });
+    expect(mockLogger.info).toHaveBeenCalledWith('Animation clip generation ready.', {
+      model: 'qwen-next-flash',
+    });
 
     const expectedConfigChannels = [
       'config:get',
@@ -766,15 +794,23 @@ describe('main process bootstrap', () => {
 
     const setSecretHandler = handleEntries.get('config:set-secret');
     expect(typeof setSecretHandler).toBe('function');
-    await expect(setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'next-key' })).resolves.toEqual({
+    await expect(
+      setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'next-key' }),
+    ).resolves.toEqual({
       hasRealtimeApiKey: true,
     });
     expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
 
     // A new key rebuilds the helpers that use it (Pose generation is on OpenAI by default); Animation
     // clips run on the local Thinking model, so the key leaves them alone.
-    expect(mockLogger.info.mock.calls.filter(([message]) => message === 'Pose generation ready.')).toHaveLength(2);
-    expect(mockLogger.info.mock.calls.filter(([message]) => message === 'Animation clip generation ready.')).toHaveLength(1);
+    expect(
+      mockLogger.info.mock.calls.filter(([message]) => message === 'Pose generation ready.'),
+    ).toHaveLength(2);
+    expect(
+      mockLogger.info.mock.calls.filter(
+        ([message]) => message === 'Animation clip generation ready.',
+      ),
+    ).toHaveLength(1);
 
     expect(vrmaGenerationServiceInstances).toHaveLength(1);
 
@@ -815,9 +851,13 @@ describe('main process bootstrap', () => {
     const getActiveModelHandler = handleEntries.get('avatar-model:get-active');
     expect(typeof getActiveModelHandler).toBe('function');
     // The avatar registry reads the active model too (every time something asks who is where), so count this call only.
-    const activeModelCallsBefore = vi.mocked(avatarModelService?.getActiveModel as () => unknown).mock.calls.length;
+    const activeModelCallsBefore = vi.mocked(avatarModelService?.getActiveModel as () => unknown)
+      .mock.calls.length;
     await expect(getActiveModelHandler?.({})).resolves.toBeNull();
-    expect(vi.mocked(avatarModelService?.getActiveModel as () => unknown).mock.calls.length - activeModelCallsBefore).toBe(1);
+    expect(
+      vi.mocked(avatarModelService?.getActiveModel as () => unknown).mock.calls.length -
+        activeModelCallsBefore,
+    ).toBe(1);
 
     const setActiveModelHandler = handleEntries.get('avatar-model:set-active');
     expect(typeof setActiveModelHandler).toBe('function');
@@ -829,7 +869,10 @@ describe('main process bootstrap', () => {
     await expect(
       uploadModelHandler?.({}, { fileName: 'model.vrm', data: 'AAAA' }),
     ).resolves.toEqual({ model: { id: 'vrm-uploaded' } });
-    expect(avatarModelService?.uploadModel).toHaveBeenCalledWith({ fileName: 'model.vrm', data: 'AAAA' });
+    expect(avatarModelService?.uploadModel).toHaveBeenCalledWith({
+      fileName: 'model.vrm',
+      data: 'AAAA',
+    });
 
     const deleteModelHandler = handleEntries.get('avatar-model:delete');
     expect(typeof deleteModelHandler).toBe('function');
@@ -841,14 +884,16 @@ describe('main process bootstrap', () => {
     await expect(loadModelBinaryHandler?.({}, 'vrm-4')).resolves.toBeInstanceOf(ArrayBuffer);
     expect(avatarModelService?.loadModelBinary).toHaveBeenCalledWith('vrm-4');
 
-    const avatarAnimationService = avatarAnimationServiceInstances[avatarAnimationServiceInstances.length - 1];
+    const avatarAnimationService =
+      avatarAnimationServiceInstances[avatarAnimationServiceInstances.length - 1];
     expect(avatarAnimationService).toBeDefined();
     expect(avatarAnimationService?.options).toMatchObject({
       logger: mockLogger,
       animationsDirectory: expect.stringContaining('vrma-animations'),
     });
 
-    const vrmaGenerationService = vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1];
+    const vrmaGenerationService =
+      vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1];
     expect(vrmaGenerationService).toBeDefined();
     expect(vrmaGenerationService?.options).toMatchObject({
       logger: mockLogger,
@@ -870,13 +915,20 @@ describe('main process bootstrap', () => {
     await expect(
       uploadAnimationHandler?.({}, { fileName: 'idle.vrma', data: 'AAAA' }),
     ).resolves.toEqual({ animation: { id: 'vrma-uploaded' } });
-    expect(avatarAnimationService?.uploadAnimation).toHaveBeenCalledWith({ fileName: 'idle.vrma', data: 'AAAA' });
+    expect(avatarAnimationService?.uploadAnimation).toHaveBeenCalledWith({
+      fileName: 'idle.vrma',
+      data: 'AAAA',
+    });
 
     const generateAnimationHandler = handleEntries.get('avatar-animation:generate');
     expect(typeof generateAnimationHandler).toBe('function');
-    await expect(generateAnimationHandler?.({}, { prompt: 'Wave hello' })).resolves.toEqual({ animation: { id: 'vrma-generated' } });
+    await expect(generateAnimationHandler?.({}, { prompt: 'Wave hello' })).resolves.toEqual({
+      animation: { id: 'vrma-generated' },
+    });
     expect(avatarModelService?.listActiveModelBones).toHaveBeenCalledTimes(1);
-    expect(vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1]?.generateAnimation).toHaveBeenCalledWith({
+    expect(
+      vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1]?.generateAnimation,
+    ).toHaveBeenCalledWith({
       prompt: 'Wave hello',
       bones: [],
     });
@@ -893,7 +945,11 @@ describe('main process bootstrap', () => {
 
     const listPosesHandler = handleEntries.get('avatar-pose:list');
     expect(typeof listPosesHandler).toBe('function');
-    await expect(listPosesHandler?.({})).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'builtin:relaxed-neutral', builtIn: true })]));
+    await expect(listPosesHandler?.({})).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'builtin:relaxed-neutral', builtIn: true }),
+      ]),
+    );
 
     const generatePoseHandler = handleEntries.get('avatar-pose:generate');
     expect(typeof generatePoseHandler).toBe('function');
@@ -909,20 +965,26 @@ describe('main process bootstrap', () => {
     await expect(triggerBehaviorHandler?.({}, 'greet_face')).resolves.toBe(true);
     expect(
       mockLogger.info.mock.calls.some(
-        ([message, meta]) => message === 'Avatar behavior cue requested.' && (meta as { cue?: string })?.cue === 'greet_face',
+        ([message, meta]) =>
+          message === 'Avatar behavior cue requested.' &&
+          (meta as { cue?: string })?.cue === 'greet_face',
       ),
     ).toBe(true);
     expect(
       mainWindow.webContents.send.mock.calls.some(
-        ([channel, payload]) => channel === 'camera:detection' && (payload as { cue?: string })?.cue === 'greet_face',
+        ([channel, payload]) =>
+          channel === 'camera:detection' && (payload as { cue?: string })?.cue === 'greet_face',
       ),
     ).toBe(true);
 
     const cameraEmitHandler = handleEntries.get('camera:emit-detection');
     expect(typeof cameraEmitHandler).toBe('function');
-    await expect(cameraEmitHandler?.({}, { cue: 'greet_face', confidence: 0.5 })).resolves.toBe(true);
+    await expect(cameraEmitHandler?.({}, { cue: 'greet_face', confidence: 0.5 })).resolves.toBe(
+      true,
+    );
     expect(
-      mainWindow.webContents.send.mock.calls.filter((call) => call[0] === 'camera:detection').length,
+      mainWindow.webContents.send.mock.calls.filter((call) => call[0] === 'camera:detection')
+        .length,
     ).toBeGreaterThanOrEqual(2);
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
@@ -951,7 +1013,11 @@ describe('main process bootstrap', () => {
       stack: wakeError.stack,
     });
 
-    wakeWordService.emit('ready', { keywordLabel: 'Porcupine', frameLength: 512, sampleRate: 16000 });
+    wakeWordService.emit('ready', {
+      keywordLabel: 'Porcupine',
+      frameLength: 512,
+      sampleRate: 16000,
+    });
     expect(mockLogger.info).toHaveBeenCalledWith('Wake word service ready', {
       keywordLabel: 'Porcupine',
       frameLength: 512,
@@ -991,26 +1057,41 @@ describe('main process bootstrap', () => {
     // Avatar-aware routing: no avatarId is Echo, an avatarId picks that avatar's own service.
     const avatarsListHandler = handleEntries.get('avatars:list');
     expect(typeof avatarsListHandler).toBe('function');
-    expect(avatarsListHandler?.({})).toEqual([expect.objectContaining({ id: 'echo', name: 'Echo' })]);
+    expect(avatarsListHandler?.({})).toEqual([
+      expect.objectContaining({ id: 'echo', name: 'Echo' }),
+    ]);
     const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
     const seenAvatars: string[] = [];
-    const statusSpy = vi.spyOn(LocalVoiceService.prototype, 'systemStatus').mockImplementation(function (this: { avatarId: string }) {
-      seenAvatars.push(this.avatarId);
-      return { pending: 0, ready: false, texts: [], urgent: false };
-    });
-    const resetSpy = vi.spyOn(LocalVoiceService.prototype, 'resetHistory').mockImplementation(function (this: { avatarId: string }) {
-      seenAvatars.push(`reset:${this.avatarId}`);
-    });
-    const cancelSpy = vi.spyOn(LocalVoiceService.prototype, 'cancel').mockImplementation(function (this: { avatarId: string }) {
-      seenAvatars.push(`cancel:${this.avatarId}`);
-    });
+    const statusSpy = vi
+      .spyOn(LocalVoiceService.prototype, 'systemStatus')
+      .mockImplementation(function (this: { avatarId: string }) {
+        seenAvatars.push(this.avatarId);
+        return { pending: 0, ready: false, texts: [], urgent: false };
+      });
+    const resetSpy = vi
+      .spyOn(LocalVoiceService.prototype, 'resetHistory')
+      .mockImplementation(function (this: { avatarId: string }) {
+        seenAvatars.push(`reset:${this.avatarId}`);
+      });
+    const cancelSpy = vi
+      .spyOn(LocalVoiceService.prototype, 'cancel')
+      .mockImplementation(function (this: { avatarId: string }) {
+        seenAvatars.push(`cancel:${this.avatarId}`);
+      });
     await handleEntries.get('local-voice:system-status')?.({});
     await handleEntries.get('local-voice:system-status')?.({}, 'sage');
     await handleEntries.get('local-voice:reset')?.({});
     await handleEntries.get('local-voice:reset')?.({}, 'sage');
     await handleEntries.get('local-voice:cancel')?.({}, 'r1');
     await handleEntries.get('local-voice:cancel')?.({}, 'r2', 'sage');
-    expect(seenAvatars).toEqual(['echo', 'sage', 'reset:echo', 'reset:sage', 'cancel:echo', 'cancel:sage']);
+    expect(seenAvatars).toEqual([
+      'echo',
+      'sage',
+      'reset:echo',
+      'reset:sage',
+      'cancel:echo',
+      'cancel:sage',
+    ]);
     statusSpy.mockRestore();
     resetSpy.mockRestore();
     cancelSpy.mockRestore();
@@ -1253,7 +1334,9 @@ describe('main process bootstrap', () => {
     await whenReadyDeferred.promise;
     await flushPromises();
 
-    const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+    const handleEntries = new Map(
+      ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]),
+    );
     const quitHandler = handleEntries.get('app:quit');
     expect(typeof quitHandler).toBe('function');
 
@@ -1391,7 +1474,11 @@ describe('main process bootstrap', () => {
       // Without the switchboard the app keeps its bus in-process; spy on what is published to it.
       process.env.SWITCHBOARD_ENABLED = '0';
       const { LocalOnlyBus } = await import('../src/switchboard/bus.js');
-      const published: Array<{ type: string; txn?: { id: string }; payload: Record<string, unknown> }> = [];
+      const published: Array<{
+        type: string;
+        txn?: { id: string };
+        payload: Record<string, unknown>;
+      }> = [];
       vi.spyOn(LocalOnlyBus.prototype, 'publish').mockImplementation((event) => {
         published.push(event as (typeof published)[number]);
         return null;
@@ -1409,7 +1496,13 @@ describe('main process bootstrap', () => {
         audioInputDeviceId: undefined,
         audioOutputDeviceId: undefined,
         featureFlags: {},
-        wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 900, deviceIndex: 1 },
+        wakeWord: {
+          model: 'hey_jarvis',
+          keywordLabel: 'Hey Jarvis',
+          threshold: 0.5,
+          cooldownMs: 900,
+          deviceIndex: 1,
+        },
         metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
       } as const;
       loadMock.mockResolvedValue(config);
@@ -1420,18 +1513,36 @@ describe('main process bootstrap', () => {
       await whenReadyDeferred.promise;
       await flushPromises();
       await waitForExpect(() => expect(createdWindows).toHaveLength(1));
-      const handlers = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+      const handlers = new Map(
+        ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]),
+      );
       const sender = { isDestroyed: () => false, send: vi.fn() };
       const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
-      const served: Array<{ avatarId: string; requestId: string; instructions?: string; silent?: boolean }> = [];
-      const respondSpy = vi.spyOn(LocalVoiceService.prototype, 'respond').mockImplementation(async function (this: { avatarId: string }, request) {
-        served.push({ avatarId: this.avatarId, requestId: request.requestId, instructions: request.instructions, silent: request.silent });
-        return { requestId: request.requestId, text: '', cancelled: false };
-      });
+      const served: Array<{
+        avatarId: string;
+        requestId: string;
+        instructions?: string;
+        silent?: boolean;
+      }> = [];
+      const respondSpy = vi
+        .spyOn(LocalVoiceService.prototype, 'respond')
+        .mockImplementation(async function (this: { avatarId: string }, request) {
+          served.push({
+            avatarId: this.avatarId,
+            requestId: request.requestId,
+            instructions: request.instructions,
+            silent: request.silent,
+          });
+          return { requestId: request.requestId, text: '', cancelled: false };
+        });
       for (const name of avatarNames) {
-        await handlers.get('avatars:add')?.({}, { name, prompt: `You are ${name}, another AI in the room with Echo and Kevin.` });
+        await handlers.get('avatars:add')?.(
+          {},
+          { name, prompt: `You are ${name}, another AI in the room with Echo and Kevin.` },
+        );
       }
-      const respond = (payload: Record<string, unknown>) => handlers.get('local-voice:respond')?.({ sender }, payload);
+      const respond = (payload: Record<string, unknown>) =>
+        handlers.get('local-voice:respond')?.({ sender }, payload);
       return { handlers, served, respond, respondSpy, sender, published };
     }
 
@@ -1443,14 +1554,24 @@ describe('main process bootstrap', () => {
       const { served, respond, respondSpy, handlers } = await boot();
       await respond({ requestId: 'r1', text: 'Sage, hello', instructions: 'You are Echo.' });
       // Her prompt gets the places paragraph at the end, and nothing else.
-      expect(served).toEqual([{ avatarId: 'echo', requestId: 'r1', instructions: `You are Echo.\n\n${PLACES_NOTE_ALONE}`, silent: undefined }]);
+      expect(served).toEqual([
+        {
+          avatarId: 'echo',
+          requestId: 'r1',
+          instructions: `You are Echo.\n\n${PLACES_NOTE_ALONE}`,
+          silent: undefined,
+        },
+      ]);
       expect(handlers.get('avatars:list')?.({})).toHaveLength(1);
       respondSpy.mockRestore();
     });
 
     describe('places', () => {
       /** Like waitForExpect, but the assertion may be async (it reads state over IPC). */
-      const untilAsync = async (assertion: () => Promise<void>, timeoutMs = 3000): Promise<void> => {
+      const untilAsync = async (
+        assertion: () => Promise<void>,
+        timeoutMs = 3000,
+      ): Promise<void> => {
         const deadline = Date.now() + timeoutMs;
         for (;;) {
           try {
@@ -1467,15 +1588,42 @@ describe('main process bootstrap', () => {
 
       it('moves an avatar next door over IPC, journals it and pushes the change', async () => {
         const { handlers, respondSpy, published } = await boot(['Sage']);
-        const before = (await call(handlers, 'places:snapshot')) as { locations: Record<string, string>; transit: unknown[] };
+        const before = (await call(handlers, 'places:snapshot')) as {
+          locations: Record<string, string>;
+          transit: unknown[];
+        };
         expect(before.locations).toEqual({ echo: 'home', sage: 'home' });
         expect(await call(handlers, 'places:move', 'sage', 'Next Door')).toEqual({ ok: true });
-        expect(await call(handlers, 'places:move', 'sage', 'next door')).toEqual({ ok: false, reason: 'already moving' });
-        expect(await call(handlers, 'places:move', 'sage', 'the moon')).toEqual({ ok: false, reason: 'unknown place' });
-        expect(await call(handlers, 'places:move', 'sage', '')).toEqual({ ok: false, reason: 'invalid request' });
-        expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(1);
-        await waitForExpect(() => expect(published.some((event) => event.type === 'avatar.move' && (event as { txn?: { state?: string } }).txn?.state === 'done')).toBe(true), 3000);
-        expect(((await call(handlers, 'places:snapshot')) as { locations: Record<string, string> }).locations.sage).toBe('next-door');
+        expect(await call(handlers, 'places:move', 'sage', 'next door')).toEqual({
+          ok: false,
+          reason: 'already moving',
+        });
+        expect(await call(handlers, 'places:move', 'sage', 'the moon')).toEqual({
+          ok: false,
+          reason: 'unknown place',
+        });
+        expect(await call(handlers, 'places:move', 'sage', '')).toEqual({
+          ok: false,
+          reason: 'invalid request',
+        });
+        expect(
+          ((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit,
+        ).toHaveLength(1);
+        await waitForExpect(
+          () =>
+            expect(
+              published.some(
+                (event) =>
+                  event.type === 'avatar.move' &&
+                  (event as { txn?: { state?: string } }).txn?.state === 'done',
+              ),
+            ).toBe(true),
+          3000,
+        );
+        expect(
+          ((await call(handlers, 'places:snapshot')) as { locations: Record<string, string> })
+            .locations.sage,
+        ).toBe('next-door');
         expect(published.filter((event) => event.type === 'avatar.move')).toHaveLength(2);
         respondSpy.mockRestore();
       });
@@ -1483,15 +1631,33 @@ describe('main process bootstrap', () => {
       it('lists where the other avatars are in each prompt', async () => {
         const { handlers, respondSpy, respond, served } = await boot(['Sage']);
         await call(handlers, 'places:move', 'sage', 'next door');
-        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(0), 3000);
-        await respond({ requestId: 'r1', text: 'hi', avatarId: 'echo', instructions: 'You are Echo.' });
-        expect(served.find((turn) => turn.requestId === 'r1')?.instructions).toContain('next door (Sage is there)');
+        await untilAsync(
+          async () =>
+            expect(
+              ((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit,
+            ).toHaveLength(0),
+          3000,
+        );
+        await respond({
+          requestId: 'r1',
+          text: 'hi',
+          avatarId: 'echo',
+          instructions: 'You are Echo.',
+        });
+        expect(served.find((turn) => turn.requestId === 'r1')?.instructions).toContain(
+          'next door (Sage is there)',
+        );
         respondSpy.mockRestore();
       });
 
       it('leaves the places paragraph out of a preview turn', async () => {
         const { respondSpy, respond, served } = await boot();
-        await respond({ requestId: 'p1', text: 'hi', preview: true, instructions: 'You are Echo.' });
+        await respond({
+          requestId: 'p1',
+          text: 'hi',
+          preview: true,
+          instructions: 'You are Echo.',
+        });
         expect(served.find((turn) => turn.requestId === 'p1')?.instructions).toBe('You are Echo.');
         respondSpy.mockRestore();
       });
@@ -1499,9 +1665,19 @@ describe('main process bootstrap', () => {
       it('calls an avatar over before it answers when Kevin names it', async () => {
         const { handlers, respondSpy, respond, served } = await boot(['Sage']);
         await call(handlers, 'places:move', 'sage', 'next door');
-        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(0), 3000);
+        await untilAsync(
+          async () =>
+            expect(
+              ((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit,
+            ).toHaveLength(0),
+          3000,
+        );
         const answered = respond({ requestId: 'r1', text: 'Sage, come here', avatarId: 'sage' });
-        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]));
+        await untilAsync(async () =>
+          expect(
+            ((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit,
+          ).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]),
+        );
         // The turn waits for the renderer to let her in.
         expect(served.filter((turn) => turn.requestId === 'r1')).toHaveLength(0);
         await call(handlers, 'places:arrived', 'sage');
@@ -1514,9 +1690,19 @@ describe('main process bootstrap', () => {
       it('calls Echo back when nobody is here and Kevin names no one', async () => {
         const { handlers, respondSpy, respond, served } = await boot();
         await call(handlers, 'places:move', 'echo', 'next door');
-        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(0), 3000);
+        await untilAsync(
+          async () =>
+            expect(
+              ((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit,
+            ).toHaveLength(0),
+          3000,
+        );
         const answered = respond({ requestId: 'r1', text: 'Anyone there?' });
-        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(1));
+        await untilAsync(async () =>
+          expect(
+            ((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit,
+          ).toHaveLength(1),
+        );
         await call(handlers, 'places:arrived', 'echo');
         await answered;
         expect(served.map((turn) => [turn.avatarId, turn.requestId])).toEqual([['echo', 'r1']]);
@@ -1526,18 +1712,32 @@ describe('main process bootstrap', () => {
 
     it('adds, updates and removes avatars over IPC', async () => {
       const { handlers, respondSpy } = await boot();
-      const call = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args) as unknown;
-      const sage = call('avatars:add', { name: 'Sage!', prompt: 'Be calm.' }) as { id: string; prompt?: string };
+      const call = (channel: string, ...args: unknown[]) =>
+        handlers.get(channel)?.({}, ...args) as unknown;
+      const sage = call('avatars:add', { name: 'Sage!', prompt: 'Be calm.' }) as {
+        id: string;
+        prompt?: string;
+      };
       expect(sage).toMatchObject({ id: 'sage', name: 'Sage!', prompt: 'Be calm.' });
       expect(call('avatars:add', { name: 'Sage' })).toMatchObject({ id: 'sage-2' });
       expect(() => call('avatars:add', { name: '  ' })).toThrow(/name/i);
       expect(() => call('avatars:add', { name: 'x'.repeat(81) })).toThrow(/80/);
       expect(() => call('avatars:add', { name: 'Ok', prompt: 'p'.repeat(4001) })).toThrow(/4000/);
-      expect(call('avatars:update', 'sage', { name: 'Sagey', prompt: '' })).toMatchObject({ id: 'sage', name: 'Sagey' });
-      expect((call('avatars:list') as Array<{ id: string; prompt?: string }>).find((p) => p.id === 'sage')?.prompt).toBeUndefined();
+      expect(call('avatars:update', 'sage', { name: 'Sagey', prompt: '' })).toMatchObject({
+        id: 'sage',
+        name: 'Sagey',
+      });
+      expect(
+        (call('avatars:list') as Array<{ id: string; prompt?: string }>).find(
+          (p) => p.id === 'sage',
+        )?.prompt,
+      ).toBeUndefined();
       expect(() => call('avatars:remove', 'echo')).toThrow(/Echo/);
       call('avatars:remove', 'sage');
-      expect((call('avatars:list') as Array<{ id: string }>).map((p) => p.id)).toEqual(['echo', 'sage-2']);
+      expect((call('avatars:list') as Array<{ id: string }>).map((p) => p.id)).toEqual([
+        'echo',
+        'sage-2',
+      ]);
       respondSpy.mockRestore();
     });
 
@@ -1545,7 +1745,7 @@ describe('main process bootstrap', () => {
       const call = (handlers: Map<string, unknown>, channel: string, ...args: unknown[]) =>
         (handlers.get(channel) as ((...a: unknown[]) => unknown) | undefined)?.({}, ...args);
 
-      it('keeps a body-sharing avatar\'s idle habits and voice under its own id, apart from Echo\'s', async () => {
+      it("keeps a body-sharing avatar's idle habits and voice under its own id, apart from Echo's", async () => {
         const { handlers, respondSpy } = await boot(['Sage', 'Rex']);
         await call(handlers, 'avatar:idle-habits:set', '  Hums.  ', 'sage');
         await call(handlers, 'avatar:idle-habits:set', 'Reads.', 'rex');
@@ -1558,7 +1758,9 @@ describe('main process bootstrap', () => {
         await call(handlers, 'avatar:voice:set-preference', 'alloy', undefined, 'sage');
         expect(setValueMock).toHaveBeenCalledWith('avatar.voice.avatar:sage.kokoro', 'am_adam');
         expect(setValueMock).toHaveBeenCalledWith('avatar.voice.avatar:sage', 'alloy');
-        expect(await call(handlers, 'avatar:voice:get-preference', 'kokoro', 'sage')).toBe('am_adam');
+        expect(await call(handlers, 'avatar:voice:get-preference', 'kokoro', 'sage')).toBe(
+          'am_adam',
+        );
         expect(await call(handlers, 'avatar:voice:get-preference', 'kokoro', 'rex')).toBeNull();
         // An empty voice for an engine clears the pick.
         await call(handlers, 'avatar:voice:set-preference', '', 'kokoro', 'sage');
@@ -1566,9 +1768,13 @@ describe('main process bootstrap', () => {
         respondSpy.mockRestore();
       });
 
-      it('keeps a library character\'s settings under its VRM model and a body-sharing avatar\'s prompt in its profile', async () => {
+      it("keeps a library character's settings under its VRM model and a body-sharing avatar's prompt in its profile", async () => {
         const { handlers, served, respond, respondSpy } = await boot(['Sage']);
-        const luna = call(handlers, 'avatars:add', { name: 'Luna', vrmModelId: 'm-luna', prompt: 'Fallback Luna.' }) as { id: string };
+        const luna = call(handlers, 'avatars:add', {
+          name: 'Luna',
+          vrmModelId: 'm-luna',
+          prompt: 'Fallback Luna.',
+        }) as { id: string };
         expect(luna.id).toBe('luna');
         await call(handlers, 'avatar:idle-habits:set', 'Paints.', 'luna');
         await call(handlers, 'avatar:voice:set-preference', 'b', 'kokoro', 'luna');
@@ -1580,21 +1786,30 @@ describe('main process bootstrap', () => {
         await call(handlers, 'avatar:prompt:set-preference', ' Luna is shy. ', 'luna');
         expect(setValueMock).toHaveBeenCalledWith('avatar.prompt.m-luna', 'Luna is shy.');
         expect(await call(handlers, 'avatar:prompt:get-preference', 'luna')).toBe('Luna is shy.');
-        expect((call(handlers, 'avatars:list') as Array<{ id: string; prompt?: string }>).find((p) => p.id === 'luna')?.prompt).toBeUndefined();
+        expect(
+          (call(handlers, 'avatars:list') as Array<{ id: string; prompt?: string }>).find(
+            (p) => p.id === 'luna',
+          )?.prompt,
+        ).toBeUndefined();
 
         // A body-sharing avatar has no prompt key: its prompt is the profile's.
         await call(handlers, 'avatar:prompt:set-preference', 'Ignored.', 'sage');
-        expect(setValueMock).not.toHaveBeenCalledWith(expect.stringContaining('avatar.prompt.avatar:'), expect.anything());
+        expect(setValueMock).not.toHaveBeenCalledWith(
+          expect.stringContaining('avatar.prompt.avatar:'),
+          expect.anything(),
+        );
         expect(await call(handlers, 'avatar:prompt:get-preference', 'sage')).toBeNull();
 
         await respond({ requestId: 'r1', text: 'x', avatarId: 'luna' });
         await respond({ requestId: 'r2', text: 'x', avatarId: 'sage' });
-        expect(served.find((s) => s.requestId === 'r1')?.instructions).toBe(`Luna is shy.\n\n${PLACES_NOTE_ALONE}`);
+        expect(served.find((s) => s.requestId === 'r1')?.instructions).toBe(
+          `Luna is shy.\n\n${PLACES_NOTE_ALONE}`,
+        );
         expect(served.find((s) => s.requestId === 'r2')?.instructions).toContain('You are Sage');
         respondSpy.mockRestore();
       });
 
-      it('tells the idle director each avatar\'s personality and habits, as main uses them', async () => {
+      it("tells the idle director each avatar's personality and habits, as main uses them", async () => {
         const { handlers, respondSpy } = await boot(['Sage']);
         call(handlers, 'avatars:add', { name: 'Luna', vrmModelId: 'm-luna' });
         await call(handlers, 'avatar:prompt:set-preference', 'Luna is shy.', 'luna');
@@ -1607,44 +1822,65 @@ describe('main process bootstrap', () => {
         respondSpy.mockRestore();
       });
 
-      it('reads the named avatar\'s voice for the speaking voice options', async () => {
+      it("reads the named avatar's voice for the speaking voice options", async () => {
         const { handlers, respondSpy } = await boot(['Sage']);
         await call(handlers, 'avatar:voice:set-preference', 'am_adam', 'kokoro', 'sage');
-        expect(await call(handlers, 'local-voice:voice-options', 'sage')).toMatchObject({ engine: 'kokoro', selected: 'am_adam' });
+        expect(await call(handlers, 'local-voice:voice-options', 'sage')).toMatchObject({
+          engine: 'kokoro',
+          selected: 'am_adam',
+        });
         // Without an avatar id it is the active character's (Echo has no body here, so no pick), and another avatar has none.
-        expect(await call(handlers, 'local-voice:voice-options')).toMatchObject({ engine: 'kokoro', selected: null });
-        expect(await call(handlers, 'local-voice:voice-options', 'rex')).toMatchObject({ selected: null });
+        expect(await call(handlers, 'local-voice:voice-options')).toMatchObject({
+          engine: 'kokoro',
+          selected: null,
+        });
+        expect(await call(handlers, 'local-voice:voice-options', 'rex')).toMatchObject({
+          selected: null,
+        });
         respondSpy.mockRestore();
       });
 
-      it('clears an avatar\'s own settings when it is removed, and leaves a library character\'s alone', async () => {
+      it("clears an avatar's own settings when it is removed, and leaves a library character's alone", async () => {
         const { handlers, respondSpy } = await boot(['Sage']);
         call(handlers, 'avatars:add', { name: 'Luna', vrmModelId: 'm-luna' });
         deleteValueMock.mockClear();
         call(handlers, 'avatars:remove', 'sage');
         const deleted = deleteValueMock.mock.calls.map(([key]) => key as string);
-        expect(deleted).toEqual(expect.arrayContaining([
-          'avatar.idleHabits.avatar:sage',
-          'avatar.voice.avatar:sage',
-          'avatar.voice.avatar:sage.kokoro',
-          'avatar.voice.avatar:sage.kitten',
-          'avatar.voice.avatar:sage.piper',
-        ]));
+        expect(deleted).toEqual(
+          expect.arrayContaining([
+            'avatar.idleHabits.avatar:sage',
+            'avatar.voice.avatar:sage',
+            'avatar.voice.avatar:sage.kokoro',
+            'avatar.voice.avatar:sage.kitten',
+            'avatar.voice.avatar:sage.piper',
+          ]),
+        );
         deleteValueMock.mockClear();
         call(handlers, 'avatars:remove', 'luna');
-        expect(deleteValueMock.mock.calls.map(([key]) => key as string).filter((key) => key.includes('m-luna'))).toEqual([]);
+        expect(
+          deleteValueMock.mock.calls
+            .map(([key]) => key as string)
+            .filter((key) => key.includes('m-luna')),
+        ).toEqual([]);
         respondSpy.mockRestore();
       });
     });
 
     /** A fake quick-decision server: answers Kevin's lines from `answers` (by the line's text); anything else fails. */
-    function fakeQuickModel(answers: Record<string, { addressed: string; wants?: string; other?: string }>) {
+    function fakeQuickModel(
+      answers: Record<string, { addressed: string; wants?: string; other?: string }>,
+    ) {
       const real = globalThis.fetch;
-      const pick = (keys: string[], chosen: string) => Object.fromEntries(keys.map((key) => [key, key === chosen ? 0.97 : 0.01]));
+      const pick = (keys: string[], chosen: string) =>
+        Object.fromEntries(keys.map((key) => [key, key === chosen ? 0.97 : 0.01]));
       vi.stubGlobal('fetch', async (url: string, init?: { body?: string }) => {
         if (String(url).endsWith('/v1/systemone') && init?.body) {
-          const body = JSON.parse(init.body) as { model?: string; state: unknown; questions: Record<string, { criteria: Record<string, string> }> };
-          const last = typeof body.state === 'string' ? body.state.split('\n').pop() ?? '' : '';
+          const body = JSON.parse(init.body) as {
+            model?: string;
+            state: unknown;
+            questions: Record<string, { criteria: Record<string, string> }>;
+          };
+          const last = typeof body.state === 'string' ? (body.state.split('\n').pop() ?? '') : '';
           const answer = answers[last.replace(/^Kevin: /, '')];
           // The floor asks for its own checkpoint, not the decide route's model.
           if (answer && body.model === 'laya-floor-v1' && body.questions.addressed) {
@@ -1654,7 +1890,10 @@ describe('main process bootstrap', () => {
               wants: { probabilities: pick(keys('wants'), answer.wants ?? 'answer') },
               other: { probabilities: pick(keys('other'), answer.other ?? 'none') },
             };
-            return new Response(JSON.stringify({ answers: result }), { status: 200, headers: { 'content-type': 'application/json' } });
+            return new Response(JSON.stringify({ answers: result }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
           }
         }
         return new Response('no', { status: 503 });
@@ -1665,17 +1904,37 @@ describe('main process bootstrap', () => {
     it('routes by name, host and explicit avatar id', async () => {
       const restore = fakeQuickModel({ 'Sage, what do you think?': { addressed: 'sage' } });
       const { served, respond, respondSpy, handlers } = await boot(['Sage', 'Rex']);
-      expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
-      expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>)[1].prompt).toContain('You are Sage');
+      expect(
+        (handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map(
+          (p) => p.id,
+        ),
+      ).toEqual(['echo', 'sage', 'rex']);
+      expect(
+        (handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>)[1].prompt,
+      ).toContain('You are Sage');
 
-      await respond({ requestId: 'r1', text: 'Sage, what do you think?', instructions: 'You are Echo.' });
-      expect(served).toEqual([expect.objectContaining({ avatarId: 'sage', requestId: 'r1', instructions: expect.stringContaining('You are Sage') })]);
+      await respond({
+        requestId: 'r1',
+        text: 'Sage, what do you think?',
+        instructions: 'You are Echo.',
+      });
+      expect(served).toEqual([
+        expect.objectContaining({
+          avatarId: 'sage',
+          requestId: 'r1',
+          instructions: expect.stringContaining('You are Sage'),
+        }),
+      ]);
 
       // A system turn, a preview and an explicit avatar id never go through the floor.
       await respond({ requestId: 'r2', text: 'x', system: true });
       await respond({ requestId: 'r3', text: 'Rex, hi', preview: true });
       await respond({ requestId: 'r4', text: 'Sage, hi', avatarId: 'echo' });
-      expect(served.slice(1).map((s) => [s.avatarId, s.requestId])).toEqual([['echo', 'r2'], ['echo', 'r3'], ['echo', 'r4']]);
+      expect(served.slice(1).map((s) => [s.avatarId, s.requestId])).toEqual([
+        ['echo', 'r2'],
+        ['echo', 'r3'],
+        ['echo', 'r4'],
+      ]);
 
       respondSpy.mockRestore();
       restore();
@@ -1686,8 +1945,13 @@ describe('main process bootstrap', () => {
       const { respond, respondSpy, published } = await boot(['Sage']);
       await respond({ requestId: 'r1', text: 'Sage?' });
       const decision = published.find((event) => event.type === 'floor.decision');
-      expect(decision).toMatchObject({ txn: { id: 'turn:r1' }, payload: { speakers: [{ avatarId: 'sage', reason: 'addressed' }] } });
-      expect(published.map((event) => event.type)).toEqual(expect.arrayContaining(['floor.grant', 'floor.release']));
+      expect(decision).toMatchObject({
+        txn: { id: 'turn:r1' },
+        payload: { speakers: [{ avatarId: 'sage', reason: 'addressed' }] },
+      });
+      expect(published.map((event) => event.type)).toEqual(
+        expect.arrayContaining(['floor.grant', 'floor.release']),
+      );
       respondSpy.mockRestore();
       restore();
     });
@@ -1695,10 +1959,16 @@ describe('main process bootstrap', () => {
     it('lets the other avatars overhear a turn that names an avatar directly', async () => {
       const { respond, respondSpy } = await boot(['Sage', 'Rex']);
       const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
-      respondSpy.mockImplementation(async (request) => ({ requestId: request.requestId, text: 'Fine by me.', cancelled: false }));
-      const overheard = vi.spyOn(LocalVoiceService.prototype, 'overhear').mockImplementation(function (this: { avatarId: string }, line) {
-        heard.push(`${this.avatarId}<${line.from}: ${line.text}`);
-      });
+      respondSpy.mockImplementation(async (request) => ({
+        requestId: request.requestId,
+        text: 'Fine by me.',
+        cancelled: false,
+      }));
+      const overheard = vi
+        .spyOn(LocalVoiceService.prototype, 'overhear')
+        .mockImplementation(function (this: { avatarId: string }, line) {
+          heard.push(`${this.avatarId}<${line.from}: ${line.text}`);
+        });
       const heard: string[] = [];
       await respond({ requestId: 'r1', text: 'how are you', avatarId: 'sage' });
       expect(heard).toEqual([
@@ -1731,5 +2001,4 @@ describe('main process bootstrap', () => {
       respondSpy.mockRestore();
     });
   });
-
 });

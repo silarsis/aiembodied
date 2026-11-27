@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { collectDefaultMetrics, Histogram, Registry } from 'prom-client';
-import type { LatencyMetricName } from './types.js';
+import type { LatencyMetricName } from '../shared/metrics/types.js';
 
 export interface PrometheusCollectorOptions {
   host?: string;
@@ -79,7 +79,10 @@ export class PrometheusCollector {
       }
 
       const requestUrl = request.url ?? this.path;
-      const url = new URL(requestUrl, `http://${request.headers.host ?? `${this.host}:${this.port}`}`);
+      const url = new URL(
+        requestUrl,
+        `http://${request.headers.host ?? `${this.host}:${this.port}`}`,
+      );
       if (url.pathname !== this.path) {
         response.statusCode = 404;
         response.setHeader('Content-Type', 'text/plain');

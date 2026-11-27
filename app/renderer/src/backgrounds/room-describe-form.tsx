@@ -36,17 +36,24 @@ export function RoomDescribeForm({
           {roomBuilding ? 'Building room…' : roomMaking ? 'Making objects…' : 'Build room'}
         </button>
         {roomBusy ? (
-          <button type="button" className="faces__submit" onClick={() => void backgrounds.cancelRoom()}>
+          <button
+            type="button"
+            className="faces__submit"
+            onClick={() => void backgrounds.cancelRoom()}
+          >
             Cancel
           </button>
         ) : null}
       </form>
       <p className="kiosk__helper">
-        Describe a room and a language model plans it. Furniture comes from the free Poly Haven library (downloaded the first time
-        it is needed). Anything not found is made on this PC from a generated picture when that is switched on below (it takes
-        minutes per object and the room is usable meanwhile), else it becomes a simple shape.
+        Describe a room and a language model plans it. Furniture comes from the free Poly Haven
+        library (downloaded the first time it is needed). Anything not found is made on this PC from
+        a generated picture when that is switched on below (it takes minutes per object and the room
+        is usable meanwhile), else it becomes a simple shape.
       </p>
-      {roomBuilding && backgrounds.roomProgress ? <p role="status">{backgrounds.roomProgress}</p> : null}
+      {roomBuilding && backgrounds.roomProgress ? (
+        <p role="status">{backgrounds.roomProgress}</p>
+      ) : null}
       {!roomBuilding && roomMaking ? <p role="status">{roomMaking.message}</p> : null}
       {backgrounds.roomWarnings.length > 0 ? (
         <ul className="kiosk__helper" aria-label="Notes about the new room">

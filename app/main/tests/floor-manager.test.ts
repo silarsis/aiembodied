@@ -20,7 +20,11 @@ import { parseBids } from '../src/floor/bid.js';
 const NAMES: Record<string, string> = { echo: 'Echo', sage: 'Sage', rex: 'Rex' };
 
 /** What the fake quick model says for a line; a line not listed makes it fail, so the floor falls to the default. */
-const intent = (addressed: string, wants: IntentResult['wants'] = 'answer', other: string | null = null): IntentResult => ({ addressed, wants, other });
+const intent = (
+  addressed: string,
+  wants: IntentResult['wants'] = 'answer',
+  other: string | null = null,
+): IntentResult => ({ addressed, wants, other });
 const SCRIPT: Record<string, IntentResult> = {
   'Sage, what do you think?': intent('sage'),
   'Sage, hello': intent('sage'),
@@ -36,10 +40,19 @@ const SCRIPT: Record<string, IntentResult> = {
   'Sage and Echo, what do you think?': intent('everyone'),
   'you two have a chat': intent('echo', 'converse', 'sage'),
   'have a chat': intent('echo', 'converse', 'sage'),
-  'thanks': intent('unclear'),
+  thanks: intent('unclear'),
 };
 
-function make(options: { script?: Record<string, IntentResult>; ids?: string[]; bids?: FloorBid[] | Error; hear?: boolean; scene?: Scene; addressee?: AddresseeResult | Error | 'hang' } = {}) {
+function make(
+  options: {
+    script?: Record<string, IntentResult>;
+    ids?: string[];
+    bids?: FloorBid[] | Error;
+    hear?: boolean;
+    scene?: Scene;
+    addressee?: AddresseeResult | Error | 'hang';
+  } = {},
+) {
   const ids = options.ids ?? ['echo', 'sage', 'rex'];
   const bid = vi.fn<BidFunction>(async () => {
     if (options.bids instanceof Error) throw options.bids;
@@ -69,19 +82,34 @@ function make(options: { script?: Record<string, IntentResult>; ids?: string[]; 
   return { manager, bid, addressee, quickIntent };
 }
 const kevin = (text: string, at = 1_000) => ({ from: 'person:kevin' as const, text, at });
-const avatar = (id: string, text: string, at = 1_000) => ({ from: `avatar:${id}` as const, text, at });
-const ids = (decision: { speakers: Array<{ avatarId: string }> }) => decision.speakers.map((s) => s.avatarId);
+const avatar = (id: string, text: string, at = 1_000) => ({
+  from: `avatar:${id}` as const,
+  text,
+  at,
+});
+const ids = (decision: { speakers: Array<{ avatarId: string }> }) =>
+  decision.speakers.map((s) => s.avatarId);
 
 describe('FloorManager: Kevin speaks', () => {
   it('sends the avatar the quick model names the turn', async () => {
-    const { manager, quickIntent } = make({ script: { 'what do you think, SAGE': intent('sage') } });
+    const { manager, quickIntent } = make({
+      script: { 'what do you think, SAGE': intent('sage') },
+    });
     const decision = await manager.route(kevin('what do you think, SAGE'));
     expect(decision.speakers).toEqual([{ avatarId: 'sage', reason: 'addressed' }]);
     expect(decision.channel).toBe('aloud');
     expect(decision.decidedBy).toBe('quick');
     expect(decision.trace.join(' ')).toContain('quick intent decided -> sage answer');
-    expect(quickIntent.mock.calls[0][0]).toMatchObject({ text: 'what do you think, SAGE', hostId: 'echo', partnerId: null });
-    expect(quickIntent.mock.calls[0][0].candidates.map((c) => c.avatarId)).toEqual(['echo', 'sage', 'rex']);
+    expect(quickIntent.mock.calls[0][0]).toMatchObject({
+      text: 'what do you think, SAGE',
+      hostId: 'echo',
+      partnerId: null,
+    });
+    expect(quickIntent.mock.calls[0][0].candidates.map((c) => c.avatarId)).toEqual([
+      'echo',
+      'sage',
+      'rex',
+    ]);
   });
 
   it('calls every avatar in scene order when the model says everyone', async () => {
@@ -104,9 +132,13 @@ describe('FloorManager: Kevin speaks', () => {
   });
 
   it('uses the host when nobody has talked yet, and the scene host when given', async () => {
-    expect((await make().manager.route(kevin('hello'))).speakers).toEqual([{ avatarId: 'echo', reason: 'host' }]);
+    expect((await make().manager.route(kevin('hello'))).speakers).toEqual([
+      { avatarId: 'echo', reason: 'host' },
+    ]);
     const scene: Scene = { id: 's', avatarIds: ['sage', 'rex'], hostId: 'rex' };
-    expect((await make({ scene }).manager.route(kevin('hello'))).speakers).toEqual([{ avatarId: 'rex', reason: 'host' }]);
+    expect((await make({ scene }).manager.route(kevin('hello'))).speakers).toEqual([
+      { avatarId: 'rex', reason: 'host' },
+    ]);
   });
 
   it('with one avatar always returns it without asking any model', async () => {
@@ -122,18 +154,36 @@ describe('FloorManager: Kevin speaks', () => {
 });
 
 describe('FloorManager: Kevin intent steps', () => {
-  const answer = (confidence: number, result: IntentResult = intent('sage')): QuickIntentFunction => async () => ({ ...result, confidence });
+  const answer =
+    (confidence: number, result: IntentResult = intent('sage')): QuickIntentFunction =>
+    async () => ({ ...result, confidence });
   const chat = (result: IntentResult = intent('rex')) => vi.fn<IntentFunction>(async () => result);
-  const build = (quickIntent: QuickIntentFunction | undefined, chatIntent: IntentFunction | undefined, extra: Record<string, unknown> = {}) =>
-    new FloorManager({ avatarIds: () => ['echo', 'sage', 'rex'], nameOf: (id) => NAMES[id], quickIntent, intent: chatIntent, quickIntentTimeoutMs: 40, intentTimeoutMs: 40, ...extra });
+  const build = (
+    quickIntent: QuickIntentFunction | undefined,
+    chatIntent: IntentFunction | undefined,
+    extra: Record<string, unknown> = {},
+  ) =>
+    new FloorManager({
+      avatarIds: () => ['echo', 'sage', 'rex'],
+      nameOf: (id) => NAMES[id],
+      quickIntent,
+      intent: chatIntent,
+      quickIntentTimeoutMs: 40,
+      intentTimeoutMs: 40,
+      ...extra,
+    });
 
   it('step 1: a confident quick answer decides and the chat model is not asked', async () => {
     const chatIntent = chat();
-    const decision = await build(answer(QUICK_INTENT_THRESHOLD), chatIntent).route(kevin('anything'));
+    const decision = await build(answer(QUICK_INTENT_THRESHOLD), chatIntent).route(
+      kevin('anything'),
+    );
     expect(decision.decidedBy).toBe('quick');
     expect(ids(decision)).toEqual(['sage']);
     expect(chatIntent).not.toHaveBeenCalled();
-    expect(decision.trace.join(' ')).toMatch(/quick intent decided -> sage answer \(confidence 0\.80, \d+ ms\)/);
+    expect(decision.trace.join(' ')).toMatch(
+      /quick intent decided -> sage answer \(confidence 0\.80, \d+ ms\)/,
+    );
   });
 
   it('step 2: an unsure, failing or slow quick model hands the line to the chat model', async () => {
@@ -168,7 +218,7 @@ describe('FloorManager: Kevin intent steps', () => {
     const two = new FloorManager({
       avatarIds: () => ['echo', 'sage'],
       nameOf: (id) => NAMES[id],
-      quickIntent: answer(0.95, intent("everyone", "converse")),
+      quickIntent: answer(0.95, intent('everyone', 'converse')),
     });
     const decision = await two.route(kevin('you two have a chat'));
     expect(ids(decision)).toEqual(['echo']);
@@ -188,7 +238,10 @@ describe('FloorManager: Kevin intent steps', () => {
     manager.listenTo('sage', 10);
     const second = await manager.route(kevin('anything', 1_000));
     expect(second.speakers).toEqual([{ avatarId: 'sage', reason: 'last-partner' }]);
-    expect(await build(undefined, undefined).route(kevin('anything'))).toMatchObject({ decidedBy: 'default', speakers: [{ avatarId: 'echo', reason: 'host' }] });
+    expect(await build(undefined, undefined).route(kevin('anything'))).toMatchObject({
+      decidedBy: 'default',
+      speakers: [{ avatarId: 'echo', reason: 'host' }],
+    });
   });
 
   it('drops a stale answer when Kevin speaks again, from either call', async () => {
@@ -204,7 +257,11 @@ describe('FloorManager: Kevin intent steps', () => {
         return intent('sage');
       };
       const unsure = answer(0.1);
-      const manager = build(stage === 'quick' ? slowQuick : unsure, stage === 'quick' ? undefined : slowChat, { quickIntentTimeoutMs: 1_000, intentTimeoutMs: 1_000 });
+      const manager = build(
+        stage === 'quick' ? slowQuick : unsure,
+        stage === 'quick' ? undefined : slowChat,
+        { quickIntentTimeoutMs: 1_000, intentTimeoutMs: 1_000 },
+      );
       const first = manager.route(kevin('first line', 0));
       await new Promise((resolve) => setTimeout(resolve, 10));
       // Kevin speaks again: the first answer is dropped.
@@ -224,12 +281,18 @@ describe('FloorManager: relay', () => {
     const decision = await manager.route(kevin("Sage, can you ask Echo what they're doing?"));
     expect(ids(decision)).toEqual(['sage']);
     expect(decision.relay).toEqual({ from: 'sage', to: 'echo' });
-    const passed = await manager.route({ ...avatar('sage', 'lenha, what are you up to right now?'), toPerson: true });
+    const passed = await manager.route({
+      ...avatar('sage', 'lenha, what are you up to right now?'),
+      toPerson: true,
+    });
     expect(ids(passed)).toEqual(['echo']);
     expect(passed.speakers[0].reason).toBe('addressed');
     expect(passed.channel).toBe('aloud');
     expect(passed.relay).toEqual({ from: 'sage', to: 'echo' });
-    const again = await manager.route({ ...avatar('sage', 'lenha, what are you up to right now?'), toPerson: true });
+    const again = await manager.route({
+      ...avatar('sage', 'lenha, what are you up to right now?'),
+      toPerson: true,
+    });
     expect(ids(again)).toEqual([]);
   });
 
@@ -256,7 +319,9 @@ describe('FloorManager: relay', () => {
     expect(late.relay).toBeUndefined();
     await manager.route(kevin('Sage, ask Echo something'));
     manager.bargeIn();
-    expect((await manager.route({ ...avatar('sage', 'Echo, hi'), toPerson: true })).relay).toBeUndefined();
+    expect(
+      (await manager.route({ ...avatar('sage', 'Echo, hi'), toPerson: true })).relay,
+    ).toBeUndefined();
   });
 });
 
@@ -268,13 +333,18 @@ describe('FloorManager: avatar chatter', () => {
     expect(decision.channel).toBe('back');
     expect(bid).not.toHaveBeenCalled();
     // Her own name does not count.
-    const self = await make({ bids: [] }).manager.route(avatar('echo', 'Echo is thinking out loud'));
+    const self = await make({ bids: [] }).manager.route(
+      avatar('echo', 'Echo is thinking out loud'),
+    );
     expect(self.speakers).toEqual([]);
   });
 
   it('keeps an answer to Kevin to itself unless it names an avatar or Kevin asked them to talk', async () => {
     const { manager, bid } = make({ bids: [{ avatarId: 'rex', want: 0.9, reason: '' }] });
-    const quiet = await manager.route({ ...avatar('echo', 'Interesting question.'), toPerson: true });
+    const quiet = await manager.route({
+      ...avatar('echo', 'Interesting question.'),
+      toPerson: true,
+    });
     expect(quiet.speakers).toEqual([]);
     expect(quiet.trace).toEqual(['avatar: answer to Kevin; others only overhear']);
     expect(bid).not.toHaveBeenCalled();
@@ -285,7 +355,9 @@ describe('FloorManager: avatar chatter', () => {
   });
 
   it('reports the channel from the Hear avatar chatter setting', async () => {
-    expect((await make({ hear: true }).manager.route(avatar('echo', 'Sage?'))).channel).toBe('aloud');
+    expect((await make({ hear: true }).manager.route(avatar('echo', 'Sage?'))).channel).toBe(
+      'aloud',
+    );
   });
 
   it('asks for bids from the others only, with the recent lines, and picks the highest above the threshold', async () => {
@@ -310,42 +382,74 @@ describe('FloorManager: avatar chatter', () => {
   });
 
   it('breaks ties by scene order and accepts a bid exactly at the threshold', async () => {
-    const tie = make({ bids: [{ avatarId: 'rex', want: 0.7, reason: '' }, { avatarId: 'sage', want: 0.7, reason: '' }] });
+    const tie = make({
+      bids: [
+        { avatarId: 'rex', want: 0.7, reason: '' },
+        { avatarId: 'sage', want: 0.7, reason: '' },
+      ],
+    });
     expect(ids(await tie.manager.route(avatar('echo', 'hmm')))).toEqual(['sage']);
     const edge = make({ bids: [{ avatarId: 'rex', want: BID_THRESHOLD, reason: '' }] });
     expect(ids(await edge.manager.route(avatar('echo', 'hmm')))).toEqual(['rex']);
   });
 
   it('stays silent when every bid is below the threshold, there are none, or bidding fails', async () => {
-    expect((await make({ bids: [{ avatarId: 'sage', want: 0.49, reason: '' }] }).manager.route(avatar('echo', 'hmm'))).speakers).toEqual([]);
+    expect(
+      (
+        await make({ bids: [{ avatarId: 'sage', want: 0.49, reason: '' }] }).manager.route(
+          avatar('echo', 'hmm'),
+        )
+      ).speakers,
+    ).toEqual([]);
     expect((await make({ bids: [] }).manager.route(avatar('echo', 'hmm'))).speakers).toEqual([]);
-    const failed = await make({ bids: new Error('model down') }).manager.route(avatar('echo', 'hmm'));
+    const failed = await make({ bids: new Error('model down') }).manager.route(
+      avatar('echo', 'hmm'),
+    );
     expect(failed.speakers).toEqual([]);
     expect(failed.trace.join(' ')).toContain('bidding failed');
   });
 
   it('ignores bids for avatars outside the scene or from the speaker, and clamps wants', async () => {
-    const { manager } = make({ bids: [{ avatarId: 'ghost', want: 1, reason: '' }, { avatarId: 'echo', want: 1, reason: '' }, { avatarId: 'sage', want: 7, reason: '' }] });
+    const { manager } = make({
+      bids: [
+        { avatarId: 'ghost', want: 1, reason: '' },
+        { avatarId: 'echo', want: 1, reason: '' },
+        { avatarId: 'sage', want: 7, reason: '' },
+      ],
+    });
     expect(ids(await manager.route(avatar('echo', 'hmm')))).toEqual(['sage']);
   });
 
   it('gives up on a bid that never answers', async () => {
     const hang: BidFunction = () => new Promise(() => undefined);
-    const manager = new FloorManager({ avatarIds: () => ['echo', 'sage'], nameOf: (id) => NAMES[id] ?? id, bid: hang, bidTimeoutMs: 20 });
+    const manager = new FloorManager({
+      avatarIds: () => ['echo', 'sage'],
+      nameOf: (id) => NAMES[id] ?? id,
+      bid: hang,
+      bidTimeoutMs: 20,
+    });
     const decision = await manager.route(avatar('echo', 'hmm'));
     expect(decision.speakers).toEqual([]);
     expect(decision.trace.join(' ')).toContain('timed out');
   });
 
   it('does nothing from a lone avatar or one outside the scene', async () => {
-    expect((await make({ ids: ['echo'] }).manager.route(avatar('echo', 'Sage?'))).speakers).toEqual([]);
+    expect((await make({ ids: ['echo'] }).manager.route(avatar('echo', 'Sage?'))).speakers).toEqual(
+      [],
+    );
     expect((await make().manager.route(avatar('ghost', 'Sage?'))).speakers).toEqual([]);
   });
 
   it('has no turn cap on spontaneous chatter', async () => {
     const { manager } = make();
     for (let turn = 0; turn < 40; turn += 1) {
-      const decision = await manager.route(avatar(turn % 2 ? 'sage' : 'echo', turn % 2 ? 'Echo, your move' : 'Sage, your move', 100 + turn));
+      const decision = await manager.route(
+        avatar(
+          turn % 2 ? 'sage' : 'echo',
+          turn % 2 ? 'Echo, your move' : 'Sage, your move',
+          100 + turn,
+        ),
+      );
       expect(ids(decision)).toEqual([turn % 2 ? 'echo' : 'sage']);
       expect(decision.budget).toBeUndefined();
     }
@@ -353,15 +457,24 @@ describe('FloorManager: avatar chatter', () => {
 
   it('caps spontaneous chatter by time since it started (5 minutes by default)', async () => {
     expect(CHATTER_MAX_MS).toBe(5 * 60_000);
-    const custom = new FloorManager({ avatarIds: () => ['echo', 'sage'], nameOf: (id) => NAMES[id] ?? id, chatterMaxMs: 1_000 });
+    const custom = new FloorManager({
+      avatarIds: () => ['echo', 'sage'],
+      nameOf: (id) => NAMES[id] ?? id,
+      chatterMaxMs: 1_000,
+    });
     await custom.route(avatar('echo', 'Sage?', 0));
-    expect((await custom.route(avatar('sage', 'Echo?', 1_000))).budget).toEqual({ kind: 'time', ms: 1_000 });
+    expect((await custom.route(avatar('sage', 'Echo?', 1_000))).budget).toEqual({
+      kind: 'time',
+      ms: 1_000,
+    });
   });
 
   it('caps chatter by time since it started', async () => {
     const { manager } = make();
     expect(ids(await manager.route(avatar('echo', 'Sage?', 1_000)))).toEqual(['sage']);
-    expect(ids(await manager.route(avatar('sage', 'Echo?', 1_000 + CHATTER_MAX_MS - 1)))).toEqual(['echo']);
+    expect(ids(await manager.route(avatar('sage', 'Echo?', 1_000 + CHATTER_MAX_MS - 1)))).toEqual([
+      'echo',
+    ]);
     const cut = await manager.route(avatar('echo', 'Sage?', 1_000 + CHATTER_MAX_MS));
     expect(cut.speakers).toEqual([]);
     expect(cut.budget).toEqual({ kind: 'time', ms: CHATTER_MAX_MS });
@@ -406,10 +519,16 @@ describe('FloorManager: speaking slot', () => {
 });
 
 describe('parseBids', () => {
-  const candidates = [{ avatarId: 'sage', name: 'Sage' }, { avatarId: 'rex', name: 'Rex' }];
+  const candidates = [
+    { avatarId: 'sage', name: 'Sage' },
+    { avatarId: 'rex', name: 'Rex' },
+  ];
   it('reads bids by id or name, clamps wants, and tolerates fences and think blocks', () => {
     expect(
-      parseBids('<think>hm</think>```json\n{"bids":[{"avatar":"sage","want":0.8,"reason":"q"},{"avatar":"REX","want":"2"},{"avatar":"who","want":1}]}\n```', candidates),
+      parseBids(
+        '<think>hm</think>```json\n{"bids":[{"avatar":"sage","want":0.8,"reason":"q"},{"avatar":"REX","want":"2"},{"avatar":"who","want":1}]}\n```',
+        candidates,
+      ),
     ).toEqual([
       { avatarId: 'sage', want: 0.8, reason: 'q' },
       { avatarId: 'rex', want: 1, reason: '' },
@@ -431,7 +550,9 @@ describe('FloorManager: wake word and talking to each other', () => {
 
   it('"talk to each other" starts out loud, passes the turn on without bids, and ends when Kevin speaks', async () => {
     const { manager, bid } = make({ ids: ['echo', 'sage'] });
-    const start = await manager.route(kevin('Echo and Sage, talk to each other about dinner', 1_000));
+    const start = await manager.route(
+      kevin('Echo and Sage, talk to each other about dinner', 1_000),
+    );
     expect(ids(start)).toEqual(['echo']);
     const reply = await manager.route(avatar('echo', 'What do you fancy for dinner?', 2_000));
     expect(ids(reply)).toEqual(['sage']);
@@ -446,18 +567,21 @@ describe('FloorManager: wake word and talking to each other', () => {
     const { manager } = make({ ids: ['echo', 'sage'] });
     await manager.route(kevin('have a chat', 1_000));
     for (let i = 0; i < 30; i += 1) {
-      const decision = await manager.route(avatar(i % 2 ? 'sage' : 'echo', 'more', 2_000 + i * 600_000));
+      const decision = await manager.route(
+        avatar(i % 2 ? 'sage' : 'echo', 'more', 2_000 + i * 600_000),
+      );
       expect(ids(decision)).toEqual([i % 2 ? 'echo' : 'sage']);
       expect(decision.channel).toBe('aloud');
       expect(decision.budget).toBeUndefined();
     }
   });
-
 });
 
 describe('FloorManager: addressee check', () => {
   it('is not used for Kevin: his lines go to the quick intent', async () => {
-    const { manager, addressee, quickIntent } = make({ addressee: { avatarId: 'sage', confidence: 0.99 } });
+    const { manager, addressee, quickIntent } = make({
+      addressee: { avatarId: 'sage', confidence: 0.99 },
+    });
     await manager.route(kevin('Sage, hello'));
     await manager.route(kevin('Sage, ask Echo something'));
     await manager.route(kevin('Echo and Sage, talk to each other'));
@@ -470,23 +594,42 @@ describe('FloorManager: addressee check', () => {
     const decision = await manager.route(avatar('echo', 'what are you up to?'));
     expect(decision.speakers).toEqual([{ avatarId: 'rex', reason: 'addressed' }]);
     expect(decision.trace.join(' ')).toContain('addressee check -> rex');
-    expect(addressee.mock.calls[0][0]).toMatchObject({ speaker: 'avatar:echo', includePerson: true });
+    expect(addressee.mock.calls[0][0]).toMatchObject({
+      speaker: 'avatar:echo',
+      includePerson: true,
+    });
     expect(addressee.mock.calls[0][0].candidates.map((c) => c.avatarId)).toEqual(['sage', 'rex']);
     expect(bid).not.toHaveBeenCalled();
   });
 
   it('ends an avatar line aimed at Kevin when it was an answer to him, else goes on to bids', async () => {
     const toKevin = make({ addressee: { avatarId: 'person', confidence: 0.9 } });
-    expect((await toKevin.manager.route({ ...avatar('echo', 'Here you go.'), toPerson: true })).speakers).toEqual([]);
+    expect(
+      (await toKevin.manager.route({ ...avatar('echo', 'Here you go.'), toPerson: true })).speakers,
+    ).toEqual([]);
     expect(toKevin.bid).not.toHaveBeenCalled();
-    const chatter = make({ addressee: { avatarId: 'person', confidence: 0.9 }, bids: [{ avatarId: 'sage', want: 0.8, reason: 'x' }] });
-    expect(ids(await chatter.manager.route(avatar('echo', 'Kevin, what do you think?')))).toEqual(['sage']);
+    const chatter = make({
+      addressee: { avatarId: 'person', confidence: 0.9 },
+      bids: [{ avatarId: 'sage', want: 0.8, reason: 'x' }],
+    });
+    expect(ids(await chatter.manager.route(avatar('echo', 'Kevin, what do you think?')))).toEqual([
+      'sage',
+    ]);
     expect(chatter.bid).toHaveBeenCalled();
   });
 
   it('falls back to bids when unsure, failing, or when it names an avatar not in the scene', async () => {
-    for (const addressee of [{ avatarId: 'rex', confidence: 0.2 }, { avatarId: 'all', confidence: 0.9 }, { avatarId: 'ghost', confidence: 0.9 }, new Error('down'), 'hang' as const]) {
-      const { manager, bid } = make({ addressee, bids: [{ avatarId: 'sage', want: 0.8, reason: 'x' }] });
+    for (const addressee of [
+      { avatarId: 'rex', confidence: 0.2 },
+      { avatarId: 'all', confidence: 0.9 },
+      { avatarId: 'ghost', confidence: 0.9 },
+      new Error('down'),
+      'hang' as const,
+    ]) {
+      const { manager, bid } = make({
+        addressee,
+        bids: [{ avatarId: 'sage', want: 0.8, reason: 'x' }],
+      });
       const decision = await manager.route(avatar('echo', 'what are you up to?'));
       expect(ids(decision)).toEqual(['sage']);
       expect(decision.speakers[0].reason).toBe('bid');
@@ -510,26 +653,106 @@ describe('FloorManager: addressee check', () => {
 });
 
 describe('FloorManager: a conversation Kevin asks for', () => {
-  type Row = { say: IntentResult; line: string; partner?: 'echo' | 'sage'; wake?: boolean; starter: string; target: string; reason?: string };
+  type Row = {
+    say: IntentResult;
+    line: string;
+    partner?: 'echo' | 'sage';
+    wake?: boolean;
+    starter: string;
+    target: string;
+    reason?: string;
+  };
   const rows: Row[] = [
-    { line: 'strike up a conversation with Sage', say: intent('unclear', 'converse', 'sage'), partner: 'echo', starter: 'echo', target: 'sage', reason: 'last-partner' },
-    { line: 'strike up a conversation with Echo', say: intent('unclear', 'converse', 'echo'), partner: 'sage', starter: 'sage', target: 'echo', reason: 'last-partner' },
-    { line: 'strike up with Echo (partner is Echo)', say: intent('unclear', 'converse', 'echo'), partner: 'echo', starter: 'sage', target: 'echo', reason: 'host' },
-    { line: 'strike up with Echo (nobody yet)', say: intent('unclear', 'converse', 'echo'), starter: 'sage', target: 'echo', reason: 'host' },
-    { line: 'I would like you to talk to Sage', say: intent('unclear', 'converse', 'sage'), starter: 'echo', target: 'sage', reason: 'host' },
-    { line: 'Echo, talk to Sage', say: intent('echo', 'converse', 'sage'), starter: 'echo', target: 'sage', reason: 'addressed' },
-    { line: 'Hey Echo, talk to Sage (partner Sage)', say: intent('echo', 'converse', 'sage'), partner: 'sage', starter: 'echo', target: 'sage', reason: 'addressed' },
-    { line: 'talk to Sage (after the wake word)', say: intent('unclear', 'converse', 'sage'), wake: true, starter: 'echo', target: 'sage', reason: 'last-partner' },
-    { line: 'Sage, have a chat with Echo', say: intent('sage', 'converse', 'echo'), starter: 'sage', target: 'echo', reason: 'addressed' },
-    { line: 'Ask Sage to talk to Echo', say: intent('sage', 'converse', 'echo'), starter: 'sage', target: 'echo', reason: 'addressed' },
+    {
+      line: 'strike up a conversation with Sage',
+      say: intent('unclear', 'converse', 'sage'),
+      partner: 'echo',
+      starter: 'echo',
+      target: 'sage',
+      reason: 'last-partner',
+    },
+    {
+      line: 'strike up a conversation with Echo',
+      say: intent('unclear', 'converse', 'echo'),
+      partner: 'sage',
+      starter: 'sage',
+      target: 'echo',
+      reason: 'last-partner',
+    },
+    {
+      line: 'strike up with Echo (partner is Echo)',
+      say: intent('unclear', 'converse', 'echo'),
+      partner: 'echo',
+      starter: 'sage',
+      target: 'echo',
+      reason: 'host',
+    },
+    {
+      line: 'strike up with Echo (nobody yet)',
+      say: intent('unclear', 'converse', 'echo'),
+      starter: 'sage',
+      target: 'echo',
+      reason: 'host',
+    },
+    {
+      line: 'I would like you to talk to Sage',
+      say: intent('unclear', 'converse', 'sage'),
+      starter: 'echo',
+      target: 'sage',
+      reason: 'host',
+    },
+    {
+      line: 'Echo, talk to Sage',
+      say: intent('echo', 'converse', 'sage'),
+      starter: 'echo',
+      target: 'sage',
+      reason: 'addressed',
+    },
+    {
+      line: 'Hey Echo, talk to Sage (partner Sage)',
+      say: intent('echo', 'converse', 'sage'),
+      partner: 'sage',
+      starter: 'echo',
+      target: 'sage',
+      reason: 'addressed',
+    },
+    {
+      line: 'talk to Sage (after the wake word)',
+      say: intent('unclear', 'converse', 'sage'),
+      wake: true,
+      starter: 'echo',
+      target: 'sage',
+      reason: 'last-partner',
+    },
+    {
+      line: 'Sage, have a chat with Echo',
+      say: intent('sage', 'converse', 'echo'),
+      starter: 'sage',
+      target: 'echo',
+      reason: 'addressed',
+    },
+    {
+      line: 'Ask Sage to talk to Echo',
+      say: intent('sage', 'converse', 'echo'),
+      starter: 'sage',
+      target: 'echo',
+      reason: 'addressed',
+    },
   ];
 
   it.each(rows)('$line (partner $partner, wake $wake) -> $starter starts', async (row) => {
-    const { manager, bid, addressee } = make({ ids: ['echo', 'sage'], script: { [row.line]: row.say }, addressee: { avatarId: 'echo', confidence: 0.99 } });
-    if (row.partner) await manager.route(kevin(`${row.partner === 'echo' ? 'Echo' : 'Sage'}, hello`, 0));
+    const { manager, bid, addressee } = make({
+      ids: ['echo', 'sage'],
+      script: { [row.line]: row.say },
+      addressee: { avatarId: 'echo', confidence: 0.99 },
+    });
+    if (row.partner)
+      await manager.route(kevin(`${row.partner === 'echo' ? 'Echo' : 'Sage'}, hello`, 0));
     if (row.wake) manager.listenTo('echo', 500);
     const start = await manager.route(kevin(row.line, 1_000));
-    expect(start.speakers).toEqual([{ avatarId: row.starter, reason: row.reason ?? expect.any(String) }]);
+    expect(start.speakers).toEqual([
+      { avatarId: row.starter, reason: row.reason ?? expect.any(String) },
+    ]);
     expect(start.channel).toBe('aloud');
     expect(start.converse).toEqual({ starter: row.starter, target: row.target });
     expect(manager.state().talking).toBe(true);
@@ -538,8 +761,16 @@ describe('FloorManager: a conversation Kevin asks for', () => {
     let speaker = row.starter;
     for (let turn = 0; turn < 16; turn += 1) {
       const other = speaker === 'echo' ? 'sage' : 'echo';
-      const text = turn % 3 === 0 ? 'Nice weather.' : turn % 3 === 1 ? 'Rex, what do you think?' : `${speaker === 'echo' ? 'Echo' : 'Sage'} agrees.`;
-      const decision = await manager.route({ ...avatar(speaker, text, 2_000 + turn * 3_600_000), ...(turn === 0 ? { toPerson: true } : {}) });
+      const text =
+        turn % 3 === 0
+          ? 'Nice weather.'
+          : turn % 3 === 1
+            ? 'Rex, what do you think?'
+            : `${speaker === 'echo' ? 'Echo' : 'Sage'} agrees.`;
+      const decision = await manager.route({
+        ...avatar(speaker, text, 2_000 + turn * 3_600_000),
+        ...(turn === 0 ? { toPerson: true } : {}),
+      });
       expect(ids(decision)).toEqual([other]);
       expect(decision.channel).toBe('aloud');
       expect(decision.talk).toBe(true);
@@ -554,7 +785,10 @@ describe('FloorManager: a conversation Kevin asks for', () => {
   });
 
   it('treats an inconsistent converse answer as a plain answer', async () => {
-    const { manager } = make({ ids: ['echo', 'sage'], script: { 'talk to nobody': intent('sage', 'converse', 'sage') } });
+    const { manager } = make({
+      ids: ['echo', 'sage'],
+      script: { 'talk to nobody': intent('sage', 'converse', 'sage') },
+    });
     const decision = await manager.route(kevin('talk to nobody'));
     expect(ids(decision)).toEqual(['sage']);
     expect(decision.converse).toBeUndefined();
@@ -562,12 +796,23 @@ describe('FloorManager: a conversation Kevin asks for', () => {
   });
 
   it('with three avatars the third only overhears a pair conversation', async () => {
-    const { manager, bid } = make({ script: { 'Echo, talk to Sage': intent('echo', 'converse', 'sage') } });
+    const { manager, bid } = make({
+      script: { 'Echo, talk to Sage': intent('echo', 'converse', 'sage') },
+    });
     const start = await manager.route(kevin('Echo, talk to Sage'));
     expect(start.converse).toEqual({ starter: 'echo', target: 'sage' });
     // Lines that name Rex or are aimed at him do not pull him in.
-    expect(ids(await manager.route({ ...avatar('echo', 'Rex would like this too.', 2_000), toPerson: true }))).toEqual(['sage']);
-    expect(ids(await manager.route(avatar('sage', 'Rex, are you there?', 3_000)))).toEqual(['echo']);
+    expect(
+      ids(
+        await manager.route({
+          ...avatar('echo', 'Rex would like this too.', 2_000),
+          toPerson: true,
+        }),
+      ),
+    ).toEqual(['sage']);
+    expect(ids(await manager.route(avatar('sage', 'Rex, are you there?', 3_000)))).toEqual([
+      'echo',
+    ]);
     expect(ids(await manager.route(avatar('echo', 'Sure.', 4_000)))).toEqual(['sage']);
     // Rex speaking is not part of the chat: quiet, back channel, no pull on the pair.
     const rex = await manager.route(avatar('rex', 'Interesting.', 5_000));
@@ -577,14 +822,20 @@ describe('FloorManager: a conversation Kevin asks for', () => {
   });
 
   it('starts with the first other avatar when the host is the target and nobody else fits', async () => {
-    const { manager } = make({ ids: ['echo', 'sage', 'rex'], script: { 'talk to Echo': intent('unclear', 'converse', 'echo') } });
+    const { manager } = make({
+      ids: ['echo', 'sage', 'rex'],
+      script: { 'talk to Echo': intent('unclear', 'converse', 'echo') },
+    });
     const start = await manager.route(kevin('talk to Echo'));
     expect(start.speakers).toEqual([{ avatarId: 'sage', reason: 'host' }]);
     expect(start.converse).toEqual({ starter: 'sage', target: 'echo' });
   });
 
   it('ignores a last partner older than the window', async () => {
-    const { manager } = make({ ids: ['echo', 'sage', 'rex'], script: { 'talk to Sage': intent('unclear', 'converse', 'sage') } });
+    const { manager } = make({
+      ids: ['echo', 'sage', 'rex'],
+      script: { 'talk to Sage': intent('unclear', 'converse', 'sage') },
+    });
     await manager.route(kevin('Rex, hi', 0));
     const stale = await manager.route(kevin('talk to Sage', PARTNER_WINDOW_MS + 1));
     expect(stale.speakers).toEqual([{ avatarId: 'echo', reason: 'host' }]);

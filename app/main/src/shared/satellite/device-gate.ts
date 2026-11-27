@@ -29,7 +29,8 @@ export interface DeviceFacts {
 }
 
 /** Facts as callers may give them: the camera setting can be left out and then counts as off. */
-export type GateFacts = Omit<DeviceFacts, 'cameraEnabled'> & Partial<Pick<DeviceFacts, 'cameraEnabled'>>;
+export type GateFacts = Omit<DeviceFacts, 'cameraEnabled'> &
+  Partial<Pick<DeviceFacts, 'cameraEnabled'>>;
 
 export type DeviceLevel = 'off' | 'doorbell' | 'live';
 
@@ -77,12 +78,15 @@ function whyOff(facts: GateFacts): string {
 
 /** Why the camera is off while the mic is live, in words for Kevin. Empty while it is live or when the mic is off too. */
 export function cameraWhyOff(facts: GateFacts): string {
-  return whyOff(facts) === '' && facts.cameraEnabled !== true ? 'Camera presence is off for this room' : '';
+  return whyOff(facts) === '' && facts.cameraEnabled !== true
+    ? 'Camera presence is off for this room'
+    : '';
 }
 
 /** The result for a set of facts. Pure. */
 export function evaluateGate(facts: GateFacts, doorbellEnabled = false): DeviceGateState {
-  const others = facts.unlocked && facts.linkUp && facts.open && facts.noFullscreenApp && facts.notHeldOff;
+  const others =
+    facts.unlocked && facts.linkUp && facts.open && facts.noFullscreenApp && facts.notHeldOff;
   const micAllowed = facts.occupied && others;
   const doorbell = !facts.occupied && others && doorbellEnabled;
   // The camera needs everything the mic needs (an avatar is here, nothing blocks the room) and the room's own setting.
@@ -107,9 +111,17 @@ export function evaluateGate(facts: GateFacts, doorbellEnabled = false): DeviceG
 /** Avatars that stand at this place, from a places snapshot (in transit they are nowhere). Anything unreadable gives none. */
 export function avatarsHere(snapshot: unknown): string[] {
   if (!snapshot || typeof snapshot !== 'object') return [];
-  const { locations, transit, localPlaceId } = snapshot as { locations?: unknown; transit?: unknown; localPlaceId?: unknown };
+  const { locations, transit, localPlaceId } = snapshot as {
+    locations?: unknown;
+    transit?: unknown;
+    localPlaceId?: unknown;
+  };
   if (!locations || typeof locations !== 'object' || typeof localPlaceId !== 'string') return [];
-  const moving = new Set(Array.isArray(transit) ? transit.map((move) => (move as { avatarId?: unknown } | null)?.avatarId) : []);
+  const moving = new Set(
+    Array.isArray(transit)
+      ? transit.map((move) => (move as { avatarId?: unknown } | null)?.avatarId)
+      : [],
+  );
   return Object.entries(locations as Record<string, unknown>)
     .filter(([avatarId, placeId]) => placeId === localPlaceId && !moving.has(avatarId))
     .map(([avatarId]) => avatarId);
@@ -164,7 +176,9 @@ export class DeviceGate {
 
   /** Sets facts. Nothing happens when nothing changed. */
   update(patch: Partial<DeviceFacts>): DeviceGateState {
-    const changed = (Object.keys(patch) as Array<keyof DeviceFacts>).filter((key) => patch[key] !== undefined && patch[key] !== this.facts[key]);
+    const changed = (Object.keys(patch) as Array<keyof DeviceFacts>).filter(
+      (key) => patch[key] !== undefined && patch[key] !== this.facts[key],
+    );
     if (changed.length === 0) return this.state();
     const next: DeviceFacts = { ...this.facts };
     for (const key of changed) next[key] = patch[key] as boolean;
@@ -182,7 +196,9 @@ export class DeviceGate {
     const before = this.current;
     this.current = evaluateGate(this.facts, this.doorbellEnabled);
     // Closing the mic or the camera alone both need the page to confirm that its tracks stopped.
-    const closing = (this.allowedIn(before) && !this.allowedIn(this.current)) || (before.cameraAllowed && !this.current.cameraAllowed);
+    const closing =
+      (this.allowedIn(before) && !this.allowedIn(this.current)) ||
+      (before.cameraAllowed && !this.current.cameraAllowed);
     if (closing) this.armWatchdog();
     else if (this.allowedIn(this.current) && !this.allowedIn(before)) this.clearWatchdog();
     this.options.onChange?.(this.state(), changed);
@@ -210,7 +226,9 @@ export class DeviceGate {
       try {
         this.options.reloadRenderer();
       } catch (error) {
-        this.options.logger?.warn('Could not reload the page', { message: error instanceof Error ? error.message : String(error) });
+        this.options.logger?.warn('Could not reload the page', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }, this.options.captureTimeoutMs ?? CAPTURE_STOP_TIMEOUT_MS);
     this.watchdog.unref?.();
@@ -230,8 +248,21 @@ export class DeviceGate {
 
 /** The slice of Electron's `session` this uses. */
 export interface PermissionSession {
-  setPermissionRequestHandler(handler: ((webContents: unknown, permission: string, callback: (granted: boolean) => void, details?: unknown) => void) | null): void;
-  setPermissionCheckHandler(handler: ((webContents: unknown, permission: string, origin?: string, details?: unknown) => boolean) | null): void;
+  setPermissionRequestHandler(
+    handler:
+      | ((
+          webContents: unknown,
+          permission: string,
+          callback: (granted: boolean) => void,
+          details?: unknown,
+        ) => void)
+      | null,
+  ): void;
+  setPermissionCheckHandler(
+    handler:
+      | ((webContents: unknown, permission: string, origin?: string, details?: unknown) => boolean)
+      | null,
+  ): void;
 }
 
 const MEDIA_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture']);
@@ -240,9 +271,16 @@ const MEDIA_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture']);
 export function mediaKind(permission: string, details: unknown): 'audio' | 'video' | 'both' {
   if (permission === 'audioCapture') return 'audio';
   if (permission === 'videoCapture') return 'video';
-  const info = (details && typeof details === 'object' ? details : {}) as { mediaTypes?: unknown; mediaType?: unknown };
+  const info = (details && typeof details === 'object' ? details : {}) as {
+    mediaTypes?: unknown;
+    mediaType?: unknown;
+  };
   // A request lists `mediaTypes: ['video', 'audio']`; a check names one `mediaType`.
-  const types = Array.isArray(info.mediaTypes) ? info.mediaTypes : typeof info.mediaType === 'string' ? [info.mediaType] : [];
+  const types = Array.isArray(info.mediaTypes)
+    ? info.mediaTypes
+    : typeof info.mediaType === 'string'
+      ? [info.mediaType]
+      : [];
   const video = types.includes('video');
   const audio = types.includes('audio');
   if (video && audio) return 'both';
@@ -255,9 +293,14 @@ export function mediaKind(permission: string, details: unknown): 'audio' | 'vide
  * While the gate is closed the page cannot start a new capture: `getUserMedia` is refused at the source, the mic
  * and the camera each by their own rule. Every other permission is answered as before the gate existed (granted).
  */
-export function guardMediaPermissions(session: PermissionSession, gate: Pick<DeviceGate, 'allowsMedia'>): void {
+export function guardMediaPermissions(
+  session: PermissionSession,
+  gate: Pick<DeviceGate, 'allowsMedia'>,
+): void {
   session.setPermissionRequestHandler((_webContents, permission, callback, details) => {
-    callback(MEDIA_PERMISSIONS.has(permission) ? gate.allowsMedia(mediaKind(permission, details)) : true);
+    callback(
+      MEDIA_PERMISSIONS.has(permission) ? gate.allowsMedia(mediaKind(permission, details)) : true,
+    );
   });
   // The check is advisory (real capture goes through the request above) and may not say which device it means.
   session.setPermissionCheckHandler((_webContents, permission, _origin, details) => {

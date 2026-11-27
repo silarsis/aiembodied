@@ -18,8 +18,19 @@
  * uses it. This app never starts the controller: on bija it runs from the tray.
  */
 import path from 'node:path';
-import { Controller, ControllerError, type DownloadOptions, type DownloadSource, type Lease } from './client.js';
-import { BUILT_IN_SERVER_IDS, routeTargets, type ModelRouting, type RouteOverride } from '../shared/config/model-routing.js';
+import {
+  Controller,
+  ControllerError,
+  type DownloadOptions,
+  type DownloadSource,
+  type Lease,
+} from './client.js';
+import {
+  BUILT_IN_SERVER_IDS,
+  routeTargets,
+  type ModelRouting,
+  type RouteOverride,
+} from '../shared/config/model-routing.js';
 
 /** A model file on one machine, as GET /v1/models?scope=all lists it. */
 export interface ControllerModelEntry {
@@ -80,7 +91,8 @@ export type SharedBackend = typeof COMFY_BACKEND | typeof VISION_BACKEND;
 export const SHARED_IDLE_MS = 60_000;
 const CLIENT_NAME = 'aiembodied';
 
-export type EchoLeaseState = 'direct' | 'leasing' | 'leased' | 'paused' | 'coder' | 'released' | 'error';
+export type EchoLeaseState =
+  'direct' | 'leasing' | 'leased' | 'paused' | 'coder' | 'released' | 'error';
 
 /** `idle`: leased per use and not held now. `own`: the controller doesn't have it, the app runs its own server. */
 export type LeaseSummaryState = 'leased' | 'idle' | 'paused' | 'leasing' | 'own';
@@ -137,7 +149,9 @@ export interface EchoModelPick {
 /** A lease Echo's model picker wanted could not be made because the controller doesn't have the model. */
 export class ControllerModelMissing extends Error {
   constructor(alias: string) {
-    super(`The model controller doesn't have ${alias}; add its folder to the controller's model_store.`);
+    super(
+      `The model controller doesn't have ${alias}; add its folder to the controller's model_store.`,
+    );
     this.name = 'ControllerModelMissing';
   }
 }
@@ -278,7 +292,13 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     this.mode = parseControllerMode(env.AICONTROLLER_ENABLED);
     this.url = (env.AICONTROLLER_URL?.trim() || DEFAULT_CONTROLLER_URL).replace(/\/+$/, '');
     // Never autostart: the controller is the tray's business.
-    this.controller = new Controller({ url: this.url, client: CLIENT_NAME, autostart: false, fetch: options.fetchFn, token: env.AICONTROLLER_TOKEN });
+    this.controller = new Controller({
+      url: this.url,
+      client: CLIENT_NAME,
+      autostart: false,
+      fetch: options.fetchFn,
+      token: env.AICONTROLLER_TOKEN,
+    });
     this.watchMs = options.watchMs ?? 5000;
   }
 
@@ -292,11 +312,17 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
    * be read) and has not answered 404 for it. The app then starts and stops no server of its own for it.
    */
   listsBackend(backend: string): boolean {
-    return this.used && !this.unknownBackends.has(backend) && this.backendIds?.has(backend) === true;
+    return (
+      this.used && !this.unknownBackends.has(backend) && this.backendIds?.has(backend) === true
+    );
   }
 
   managesBackend(backend: string): boolean {
-    return this.used && !this.unknownBackends.has(backend) && (this.backendIds ? this.backendIds.has(backend) : true);
+    return (
+      this.used &&
+      !this.unknownBackends.has(backend) &&
+      (this.backendIds ? this.backendIds.has(backend) : true)
+    );
   }
 
   /** Looks for the controller and, if it is used, asks for Echo's lease in the background (the model may be loading). */
@@ -318,26 +344,42 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     } catch (error) {
       // Required: stay "in use" so no llama-server is started behind the controller's back, and turns say why they fail.
       this.used = this.mode === 'required';
-      this.failure = this.mode === 'required' ? `the model controller is required (AICONTROLLER_ENABLED=1) but does not answer at ${this.url}` : null;
-      this.logger.info(this.mode === 'required' ? 'Model controller required but not answering.' : 'Model controller not answering; using local servers directly.', {
-        url: this.url,
-        message: messageOf(error),
-      });
+      this.failure =
+        this.mode === 'required'
+          ? `the model controller is required (AICONTROLLER_ENABLED=1) but does not answer at ${this.url}`
+          : null;
+      this.logger.info(
+        this.mode === 'required'
+          ? 'Model controller required but not answering.'
+          : 'Model controller not answering; using local servers directly.',
+        {
+          url: this.url,
+          message: messageOf(error),
+        },
+      );
     }
   }
 
   /** Which backends the controller has; failing that, every lease is tried and a 404 means "not here". */
   private async readBackends(): Promise<void> {
     try {
-      const status = await this.controller.request<{ backends?: { id?: unknown }[] }>('GET', '/v1/status', { timeoutMs: 5000 });
-      const ids = (status.backends ?? []).map((entry) => entry.id).filter((id): id is string => typeof id === 'string');
+      const status = await this.controller.request<{ backends?: { id?: unknown }[] }>(
+        'GET',
+        '/v1/status',
+        { timeoutMs: 5000 },
+      );
+      const ids = (status.backends ?? [])
+        .map((entry) => entry.id)
+        .filter((id): id is string => typeof id === 'string');
       this.backendIds = ids.length > 0 ? new Set(ids) : null;
       for (const backend of [MOTION_BACKEND, COMFY_BACKEND, VISION_BACKEND]) {
         if (this.backendIds && !this.backendIds.has(backend)) this.noteUnknown(backend);
       }
     } catch (error) {
       this.backendIds = null;
-      this.logger.warn('Could not read the model controller’s backends.', { message: messageOf(error) });
+      this.logger.warn('Could not read the model controller’s backends.', {
+        message: messageOf(error),
+      });
     }
   }
 
@@ -345,7 +387,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private noteUnknown(backend: string): void {
     if (this.unknownBackends.has(backend)) return;
     this.unknownBackends.add(backend);
-    this.logger.warn(`The model controller has no ${backend} backend; the app runs its own server for it.`, { url: this.url });
+    this.logger.warn(
+      `The model controller has no ${backend} backend; the app runs its own server for it.`,
+      { url: this.url },
+    );
   }
 
   private async doStart(): Promise<void> {
@@ -357,14 +402,20 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     }
     if (this.used) {
       this.logger.info('Using aicontroller.', { url: this.url, mode: this.mode });
-      void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm yet.', { message: messageOf(error) }));
-      void this.leaseMotion().catch((error) => this.logger.warn('Could not lease motion yet.', { message: messageOf(error) }));
+      void this.leaseEcho().catch((error) =>
+        this.logger.warn('Could not lease echo-llm yet.', { message: messageOf(error) }),
+      );
+      void this.leaseMotion().catch((error) =>
+        this.logger.warn('Could not lease motion yet.', { message: messageOf(error) }),
+      );
     }
   }
 
   /** True while the controller runs Echo's model but Echo has no lease yet (the model is still loading). */
   echoWaiting(): boolean {
-    return this.used && this.want && !this.coderBusy && this.echoYield.size === 0 && !this.echoLease;
+    return (
+      this.used && this.want && !this.coderBusy && this.echoYield.size === 0 && !this.echoLease
+    );
   }
 
   /** The base URL of Echo's lease, or null without one. */
@@ -395,7 +446,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     // A per-use lease the controller took back while nothing used it is simply let go.
     for (const state of this.shared.values()) {
       const lease = state.lease;
-      if (lease && state.users === 0 && (lease.revoked || lease.lost)) void this.releaseShared(state);
+      if (lease && state.users === 0 && (lease.revoked || lease.lost))
+        void this.releaseShared(state);
     }
     this.retryEchoOwed();
     this.retryMotionOwed();
@@ -410,7 +462,9 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     }
     if (this.motionPending || Date.now() < this.motionAskedAt + this.echoRetryMs) return;
     if (this.controller.available === false) this.controller.available = null;
-    void this.leaseMotion().catch((error) => this.logger.warn('Could not lease motion again after waking.', { message: messageOf(error) }));
+    void this.leaseMotion().catch((error) =>
+      this.logger.warn('Could not lease motion again after waking.', { message: messageOf(error) }),
+    );
   }
 
   /** The backends whose leases hold this PC's GPU, for messages. */
@@ -435,13 +489,18 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       return;
     }
     if (this.echoPending || this.echoBlocker() !== null) return;
-    for (const state of this.shared.values()) if (state.lease || state.pending || state.users > 0) return;
+    for (const state of this.shared.values())
+      if (state.lease || state.pending || state.users > 0) return;
     if (Date.now() < this.echoRetryAt) return;
     this.echoRetryAt = Date.now() + this.echoRetryMs;
     // A health probe the controller missed makes the client refuse leases for a minute; look again now.
     if (this.controller.available === false) this.controller.available = null;
-    this.logger.info('Leasing echo-llm again: it was given back for another backend and not leased since.');
-    void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm again.', { message: messageOf(error) }));
+    this.logger.info(
+      'Leasing echo-llm again: it was given back for another backend and not leased since.',
+    );
+    void this.leaseEcho().catch((error) =>
+      this.logger.warn('Could not lease echo-llm again.', { message: messageOf(error) }),
+    );
   }
 
   /** Before a turn: makes sure Echo holds a lease again after a revoke. Throws the reason if it can't. */
@@ -455,7 +514,9 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       try {
         await this.ensureEchoLease(3);
       } catch {
-        throw new Error(`Echo's model is unloaded while ${this.yieldNames()} uses the GPU. Try again when it has finished (about a minute after the last job).`);
+        throw new Error(
+          `Echo's model is unloaded while ${this.yieldNames()} uses the GPU. Try again when it has finished (about a minute after the last job).`,
+        );
       }
       return;
     }
@@ -463,7 +524,11 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       await this.leaseEcho();
     } catch (error) {
       const why = messageOf(error);
-      throw new Error(this.paused ? `${this.paused}. Leasing it again failed: ${why}` : `Local LLM is not available from the model controller: ${why}`);
+      throw new Error(
+        this.paused
+          ? `${this.paused}. Leasing it again failed: ${why}`
+          : `Local LLM is not available from the model controller: ${why}`,
+      );
     }
   }
 
@@ -484,7 +549,11 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private async acquireEcho(waitS: number): Promise<void> {
     try {
       const model = await this.echoModelForLease();
-      const lease = await this.controller.lease(ECHO_BACKEND, { waitS, signal: this.abort.signal, ...(model ? { model } : {}) });
+      const lease = await this.controller.lease(ECHO_BACKEND, {
+        waitS,
+        signal: this.abort.signal,
+        ...(model ? { model } : {}),
+      });
       if (!this.want || this.coderBusy) {
         await lease.release(); // the app went to sleep, or a coding task took the GPU, while it loaded
         return;
@@ -493,11 +562,16 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       this.echoOwed = false;
       this.paused = null;
       this.failure = null;
-      this.logger.info('Leased echo-llm.', { lease: lease.id, url: lease.url, model: lease.model ?? undefined });
+      this.logger.info('Leased echo-llm.', {
+        lease: lease.id,
+        url: lease.url,
+        model: lease.model ?? undefined,
+      });
       await this.onChange?.();
     } catch (error) {
       if (this.abort.signal.aborted) return; // the app went to sleep or is quitting; nothing is left to report
-      const missing = isNotFound(error) && this.echoPick ? new ControllerModelMissing(this.echoPick.alias) : null;
+      const missing =
+        isNotFound(error) && this.echoPick ? new ControllerModelMissing(this.echoPick.alias) : null;
       this.failure = messageOf(missing ?? error);
       throw missing ?? error;
     }
@@ -513,7 +587,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
         this.echoModelId = null;
         if (pick) {
           this.echoModelId = await this.catalogId(pick).catch((error: unknown) => {
-            this.logger.warn('The picked Thinking model is not in the model controller; leasing its default model.', { model: pick.alias, message: messageOf(error) });
+            this.logger.warn(
+              'The picked Thinking model is not in the model controller; leasing its default model.',
+              { model: pick.alias, message: messageOf(error) },
+            );
             return null;
           });
         }
@@ -529,7 +606,9 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     const file = path.posix.basename(wanted);
     const hit =
       models.find((entry) => typeof entry.path === 'string' && normalPath(entry.path) === wanted) ??
-      models.find((entry) => typeof entry.file_name === 'string' && entry.file_name.toLowerCase() === file);
+      models.find(
+        (entry) => typeof entry.file_name === 'string' && entry.file_name.toLowerCase() === file,
+      );
     if (!hit || typeof hit.id !== 'string') throw new ControllerModelMissing(pick.alias);
     return hit.id;
   }
@@ -553,8 +632,15 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     await this.releaseEcho();
     await this.echoPending?.catch(() => undefined);
     await this.releaseEcho(); // a lease that was loading when we asked
-    this.logger.info('Leasing echo-llm with another model.', { model: pick?.alias ?? 'default', catalogId: id ?? undefined });
-    void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm with the picked model.', { message: messageOf(error) }));
+    this.logger.info('Leasing echo-llm with another model.', {
+      model: pick?.alias ?? 'default',
+      catalogId: id ?? undefined,
+    });
+    void this.leaseEcho().catch((error) =>
+      this.logger.warn('Could not lease echo-llm with the picked model.', {
+        message: messageOf(error),
+      }),
+    );
     return `The model controller is loading ${name} for Echo; loading takes a minute or more.`;
   }
 
@@ -574,8 +660,14 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       await this.releaseEcho();
       await this.echoPending?.catch(() => undefined);
       await this.releaseEcho(); // a lease that was loading when we asked
-      this.coderLease = await this.controller.lease(CODER_BACKEND, { waitS: this.leaseWaitS, signal: this.abort.signal });
-      this.logger.info('Leased coder-llm.', { lease: this.coderLease.id, url: this.coderLease.url });
+      this.coderLease = await this.controller.lease(CODER_BACKEND, {
+        waitS: this.leaseWaitS,
+        signal: this.abort.signal,
+      });
+      this.logger.info('Leased coder-llm.', {
+        lease: this.coderLease.id,
+        url: this.coderLease.url,
+      });
       return { url: this.coderLease.url };
     } catch (error) {
       this.coderBusy = false;
@@ -604,7 +696,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   setMotionWanted(wanted: boolean): void {
     if (this.motionWanted === wanted) return;
     this.motionWanted = wanted;
-    if (wanted) void this.leaseMotion().catch((error) => this.logger.warn('Could not lease motion yet.', { message: messageOf(error) }));
+    if (wanted)
+      void this.leaseMotion().catch((error) =>
+        this.logger.warn('Could not lease motion yet.', { message: messageOf(error) }),
+      );
     else void this.releaseMotion().catch(() => undefined);
   }
 
@@ -614,7 +709,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   }
 
   async leaseMotion(): Promise<void> {
-    if (!this.used || !this.want || !this.motionWanted || !this.managesBackend(MOTION_BACKEND)) return;
+    if (!this.used || !this.want || !this.motionWanted || !this.managesBackend(MOTION_BACKEND))
+      return;
     if (this.motionLease && !this.motionLease.revoked && !this.motionLease.lost) return;
     this.motionAskedAt = Date.now();
     this.motionPending ??= this.acquireMotion().finally(() => {
@@ -625,7 +721,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
 
   private async acquireMotion(): Promise<void> {
     try {
-      const lease = await this.controller.lease(MOTION_BACKEND, { waitS: this.leaseWaitS, signal: this.abort.signal });
+      const lease = await this.controller.lease(MOTION_BACKEND, {
+        waitS: this.leaseWaitS,
+        signal: this.abort.signal,
+      });
       if (!this.want || !this.motionWanted) {
         await lease.release();
         return;
@@ -651,14 +750,25 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   async ensureMotion(): Promise<void> {
     await this.starting;
     this.check();
-    if (this.motionLease || !this.used || !this.want || !this.motionWanted || !this.managesBackend(MOTION_BACKEND)) return;
+    if (
+      this.motionLease ||
+      !this.used ||
+      !this.want ||
+      !this.motionWanted ||
+      !this.managesBackend(MOTION_BACKEND)
+    )
+      return;
     // A request already waiting (queued at the controller) is not waited for again: callers poll, and the status says it waits.
     if (this.motionPending) return;
     try {
       await this.leaseMotion();
     } catch (error) {
       const why = messageOf(error);
-      throw new Error(this.motionPaused ? `${this.motionPaused}. Leasing it again failed: ${why}` : `Motion is not available from the model controller: ${why}`);
+      throw new Error(
+        this.motionPaused
+          ? `${this.motionPaused}. Leasing it again failed: ${why}`
+          : `Motion is not available from the model controller: ${why}`,
+      );
     }
   }
 
@@ -674,7 +784,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
 
   // ComfyUI and the vision model: leased per use, kept for a quiet spell so jobs in a row share one.
 
-  async acquire(backend: SharedBackend, options: SharedAcquireOptions = {}): Promise<SharedHandle | null> {
+  async acquire(
+    backend: SharedBackend,
+    options: SharedAcquireOptions = {},
+  ): Promise<SharedHandle | null> {
     await this.starting;
     if (!this.used || !this.managesBackend(backend)) return null;
     // One lease per set of needs: a job that routes to another machine must not reuse this PC's lease, nor the reverse.
@@ -682,7 +795,15 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     const key = needs.length ? `${backend}|${needs.join('|')}` : backend;
     let state = this.shared.get(key);
     if (!state) {
-      state = { backend, needs, yielding: false, lease: null, pending: null, users: 0, timer: null };
+      state = {
+        backend,
+        needs,
+        yielding: false,
+        lease: null,
+        pending: null,
+        users: 0,
+        timer: null,
+      };
       this.shared.set(key, state);
     }
     const held = state;
@@ -733,7 +854,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
           subfolder: typeof entry.subfolder === 'string' ? entry.subfolder : null,
           fileName: entry.file_name,
           sizeBytes: typeof entry.size_bytes === 'number' ? entry.size_bytes : null,
-          host: typeof entry.host === 'string' && entry.host ? entry.host : (this.localName ?? 'this PC'),
+          host:
+            typeof entry.host === 'string' && entry.host
+              ? entry.host
+              : (this.localName ?? 'this PC'),
           state: typeof entry.state === 'string' ? entry.state : 'installed',
         },
       ];
@@ -744,7 +868,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   async hostNames(): Promise<{ local: string | null; hosts: string[] }> {
     await this.starting;
     if (!this.used) return { local: null, hosts: [] };
-    const status = (await this.controller.status().catch(() => ({}))) as { name?: string; peers?: (string | { name?: string })[] };
+    const status = (await this.controller.status().catch(() => ({}))) as {
+      name?: string;
+      peers?: (string | { name?: string })[];
+    };
     const local = status.name ?? this.localName;
     const peers = (status.peers ?? []).flatMap((peer) => {
       const name = typeof peer === 'string' ? peer : peer?.name;
@@ -754,7 +881,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   }
 
   /** Starts a download on a machine (or "auto") through the controller; resolves with its job. */
-  async startDownload(source: DownloadSource, options: DownloadOptions): Promise<ControllerDownloadJob> {
+  async startDownload(
+    source: DownloadSource,
+    options: DownloadOptions,
+  ): Promise<ControllerDownloadJob> {
     await this.starting;
     if (!this.used) throw new Error('The model controller is not in use.');
     return toDownloadJob(await this.controller.download(source, options));
@@ -784,8 +914,18 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       const byHost = new Map<string, Set<string>>();
       for (const entry of await this.controller.models({ scope: 'all' })) {
         const host = typeof entry.host === 'string' ? entry.host : null;
-        const file = typeof entry.file_name === 'string' ? path.posix.basename(normalPath(entry.file_name)) : null;
-        if (!host || !file || host === this.localName || entry.state === 'offline' || entry.state === 'busy') continue;
+        const file =
+          typeof entry.file_name === 'string'
+            ? path.posix.basename(normalPath(entry.file_name))
+            : null;
+        if (
+          !host ||
+          !file ||
+          host === this.localName ||
+          entry.state === 'offline' ||
+          entry.state === 'busy'
+        )
+          continue;
         byHost.set(host, (byHost.get(host) ?? new Set()).add(file));
       }
       return [...byHost.values()].some((files) => wanted.every((name) => files.has(name)));
@@ -799,7 +939,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     state.yielding = true;
     this.echoYield.add(key);
     // Echo had (or was getting) a lease and not a revoke's pause: it is owed back once nothing else holds the GPU.
-    if (this.used && this.want && (this.echoLease || this.echoPending || !this.paused)) this.echoOwed = true;
+    if (this.used && this.want && (this.echoLease || this.echoPending || !this.paused))
+      this.echoOwed = true;
     await this.releaseEcho();
     await this.echoPending?.catch(() => undefined);
     await this.releaseEcho();
@@ -811,9 +952,17 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     const away = await this.routesAway(needs);
     try {
       if (!away) await this.yieldEcho(key, state);
-      state.lease = await this.controller.lease(backend, { waitS: this.leaseWaitS, signal: this.abort.signal, ...(needs.length ? { needs } : {}) });
+      state.lease = await this.controller.lease(backend, {
+        waitS: this.leaseWaitS,
+        signal: this.abort.signal,
+        ...(needs.length ? { needs } : {}),
+      });
       const host = this.remoteHost(state.lease);
-      this.logger.info(`Leased ${backend}.`, { lease: state.lease.id, url: state.lease.url, ...(host ? { host } : {}) });
+      this.logger.info(`Leased ${backend}.`, {
+        lease: state.lease.id,
+        url: state.lease.url,
+        ...(host ? { host } : {}),
+      });
       if (host && state.yielding) {
         // Routed away after all: Echo's GPU is not needed.
         state.yielding = false;
@@ -874,7 +1023,9 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       return;
     }
     this.echoRetryAt = Date.now() + this.echoRetryMs;
-    void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm again.', { message: messageOf(error) }));
+    void this.leaseEcho().catch((error) =>
+      this.logger.warn('Could not lease echo-llm again.', { message: messageOf(error) }),
+    );
   }
 
   /** Suspend and hibernate: give every lease back so the GPU is free while the PC sleeps. */
@@ -887,7 +1038,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     this.abort.abort();
     await this.releaseCoder().catch(() => undefined);
     await this.releaseMotion().catch(() => undefined);
-    for (const state of this.shared.values()) await this.releaseShared(state).catch(() => undefined);
+    for (const state of this.shared.values())
+      await this.releaseShared(state).catch(() => undefined);
     await this.releaseEcho().catch(() => undefined);
     await Promise.resolve(this.onChange?.()).catch(() => undefined);
   }
@@ -903,11 +1055,15 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       // or the network may still be coming up: a failed ask is retried every echoRetryMs, not left for a turn.
       void this.leaseEcho().catch((error) => {
         this.echoOwed = true;
-        this.logger.warn('Could not lease echo-llm after resume; asking again shortly.', { message: messageOf(error) });
+        this.logger.warn('Could not lease echo-llm after resume; asking again shortly.', {
+          message: messageOf(error),
+        });
       });
       void this.leaseMotion().catch((error) => {
         this.motionOwed = true;
-        this.logger.warn('Could not lease motion after resume; asking again shortly.', { message: messageOf(error) });
+        this.logger.warn('Could not lease motion after resume; asking again shortly.', {
+          message: messageOf(error),
+        });
       });
     }
   }
@@ -926,27 +1082,42 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     if (this.coderLease || this.coderBusy) out.push({ backend: CODER_BACKEND, state: 'leased' });
     else if (this.echoLease) out.push({ backend: ECHO_BACKEND, state: 'leased' });
     else if (this.paused) out.push({ backend: ECHO_BACKEND, state: 'paused' });
-    else if (!this.want || this.echoYield.size > 0) out.push({ backend: ECHO_BACKEND, state: 'idle' });
+    else if (!this.want || this.echoYield.size > 0)
+      out.push({ backend: ECHO_BACKEND, state: 'idle' });
     else out.push({ backend: ECHO_BACKEND, state: 'leasing' });
     if (this.motionWanted) {
-      if (this.unknownBackends.has(MOTION_BACKEND)) out.push({ backend: MOTION_BACKEND, state: 'own' });
+      if (this.unknownBackends.has(MOTION_BACKEND))
+        out.push({ backend: MOTION_BACKEND, state: 'own' });
       else if (this.motionLease) out.push({ backend: MOTION_BACKEND, state: 'leased' });
       else if (this.motionPaused) out.push({ backend: MOTION_BACKEND, state: 'paused' });
       else out.push({ backend: MOTION_BACKEND, state: this.want ? 'leasing' : 'idle' });
     }
     for (const backend of [COMFY_BACKEND, VISION_BACKEND] as const) {
       if (this.unknownBackends.has(backend)) out.push({ backend, state: 'own' });
-      else out.push({ backend, state: [...this.shared.values()].some((entry) => entry.backend === backend && entry.lease) ? 'leased' : 'idle' });
+      else
+        out.push({
+          backend,
+          state: [...this.shared.values()].some((entry) => entry.backend === backend && entry.lease)
+            ? 'leased'
+            : 'idle',
+        });
     }
     return out;
   }
 
   status(): ControllerStatus {
     const base = { mode: this.mode, inUse: this.used, url: this.url, leases: [] as LeaseSummary[] };
-    if (this.mode === 'off') return { ...base, echo: 'direct', line: 'Model controller: off (AICONTROLLER_ENABLED=0).' };
-    if (!this.used) return { ...base, echo: 'direct', line: `Model controller: not running at ${this.url}; the app runs its own servers.` };
+    if (this.mode === 'off')
+      return { ...base, echo: 'direct', line: 'Model controller: off (AICONTROLLER_ENABLED=0).' };
+    if (!this.used)
+      return {
+        ...base,
+        echo: 'direct',
+        line: `Model controller: not running at ${this.url}; the app runs its own servers.`,
+      };
     const leases = this.leaseSummary();
-    const names = (state: LeaseSummaryState) => leases.filter((entry) => entry.state === state).map((entry) => entry.backend);
+    const names = (state: LeaseSummaryState) =>
+      leases.filter((entry) => entry.state === state).map((entry) => entry.backend);
     const leased = names('leased');
     const idle = names('idle');
     const own = names('own');
@@ -968,12 +1139,24 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       notes.push(`echo-llm lease failed: ${this.failure}.`);
     } else {
       echo = 'leasing';
-      notes.push(this.echoYield.size > 0 ? `Echo’s model is unloaded while ${this.yieldNames()} uses the GPU.` : 'Leasing echo-llm (the model may be loading).');
+      notes.push(
+        this.echoYield.size > 0
+          ? `Echo’s model is unloaded while ${this.yieldNames()} uses the GPU.`
+          : 'Leasing echo-llm (the model may be loading).',
+      );
     }
     if (this.motionPaused) notes.push(`${this.motionPaused}.`);
-    else if (this.motionWanted && !this.motionLease && this.motionPending && Date.now() - this.motionAskedAt > MOTION_WAITING_MS) notes.push('motion waiting for memory on the controller.');
-    else if (this.motionFailure && !this.motionLease && this.motionWanted) notes.push(`motion lease failed: ${this.motionFailure}.`);
-    if (own.length > 0) notes.push(`${own.join(', ')} not on the controller: the app runs its own.`);
+    else if (
+      this.motionWanted &&
+      !this.motionLease &&
+      this.motionPending &&
+      Date.now() - this.motionAskedAt > MOTION_WAITING_MS
+    )
+      notes.push('motion waiting for memory on the controller.');
+    else if (this.motionFailure && !this.motionLease && this.motionWanted)
+      notes.push(`motion lease failed: ${this.motionFailure}.`);
+    if (own.length > 0)
+      notes.push(`${own.join(', ')} not on the controller: the app runs its own.`);
     const summary = `Model controller: in use, ${leased.length > 0 ? `${leased.join(', ')} leased` : 'nothing leased'}${idle.length > 0 ? `; ${idle.join(', ')} idle` : ''}.`;
     return { ...base, leases, echo, line: [summary, ...notes].join(' ') };
   }

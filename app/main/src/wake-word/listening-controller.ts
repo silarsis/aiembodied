@@ -1,4 +1,4 @@
-import type { WakeWordConfig } from '../config/config-manager.js';
+import type { WakeWordConfig } from '../shared/config/config-manager-types.js';
 
 interface Detector {
   dispose(): Promise<void>;

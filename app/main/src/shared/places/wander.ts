@@ -7,7 +7,7 @@
  * for a move marked as wandering, and the next-door tick asks it before it brings an avatar back. Pure: no
  * Electron, no timers; the clock is in the snapshot.
  */
-import type { PlacesSnapshot } from '../../places/place-manager.js';
+import type { PlacesSnapshot } from './place-manager-types.js';
 import { isPhonePlace } from './place-kind.js';
 
 /** An avatar that moved (for any reason) less than this long ago does not wander. */
@@ -28,17 +28,30 @@ export function normalisePlaceName(value: string): string {
 }
 
 /** The slice of a places snapshot the rules read. */
-export type WanderView = Pick<PlacesSnapshot, 'places' | 'locations' | 'transit'> & Partial<Pick<PlacesSnapshot, 'now' | 'movedAt' | 'activeAt'>>;
+export type WanderView = Pick<PlacesSnapshot, 'places' | 'locations' | 'transit'> &
+  Partial<Pick<PlacesSnapshot, 'now' | 'movedAt' | 'activeAt'>>;
 
 /** The place a name or id means, among the snapshot's places. */
-export function findPlace(view: Pick<WanderView, 'places'>, ref: string): WanderView['places'][number] | null {
+export function findPlace(
+  view: Pick<WanderView, 'places'>,
+  ref: string,
+): WanderView['places'][number] | null {
   const wanted = normalisePlaceName(ref);
   if (!wanted) return null;
-  return view.places.find((place) => normalisePlaceName(place.id) === wanted) ?? view.places.find((place) => normalisePlaceName(place.name) === wanted) ?? null;
+  return (
+    view.places.find((place) => normalisePlaceName(place.id) === wanted) ??
+    view.places.find((place) => normalisePlaceName(place.name) === wanted) ??
+    null
+  );
 }
 
 /** Someone used the PC at this place in the last `windowMs`. */
-export function activeWithin(view: WanderView, placeId: string, windowMs: number, now: number = view.now ?? Date.now()): boolean {
+export function activeWithin(
+  view: WanderView,
+  placeId: string,
+  windowMs: number,
+  now: number = view.now ?? Date.now(),
+): boolean {
   const at = view.activeAt?.[placeId];
   return typeof at === 'number' && now - at <= windowMs;
 }
@@ -66,7 +79,12 @@ export interface WanderContext {
  * (Kevin spoke with it in the last 2 minutes); (e) the target is not a phone room: nobody wanders into a phone by
  * themselves. Summons, a `{room:}` in a conversation turn and urgent news do not ask this function, so they still may.
  */
-export function wanderRefusal(view: WanderView, avatarId: string, targetRef: string, context: WanderContext = {}): string | null {
+export function wanderRefusal(
+  view: WanderView,
+  avatarId: string,
+  targetRef: string,
+  context: WanderContext = {},
+): string | null {
   const now = context.now ?? view.now ?? Date.now();
   const target = findPlace(view, targetRef);
   if (!target) return 'unknown place';
@@ -76,8 +94,13 @@ export function wanderRefusal(view: WanderView, avatarId: string, targetRef: str
   if (typeof movedAt === 'number' && now - movedAt < WANDER_COOLDOWN_MS) return 'moved recently';
   if (isPhonePlace(target)) return 'a phone is not for wandering';
   if (target.online === false || target.closed === true) return `${target.name} is closed`;
-  if (!activeWithin(view, target.id, ACTIVE_WINDOW_MS, now) && othersAt(view, target.id, avatarId).length === 0) return 'nobody is there';
+  if (
+    !activeWithin(view, target.id, ACTIVE_WINDOW_MS, now) &&
+    othersAt(view, target.id, avatarId).length === 0
+  )
+    return 'nobody is there';
   if (context.speaking) return 'speaking';
-  if (typeof context.talkedAgoMs === 'number' && context.talkedAgoMs < CONVERSATION_MS) return 'in conversation';
+  if (typeof context.talkedAgoMs === 'number' && context.talkedAgoMs < CONVERSATION_MS)
+    return 'in conversation';
   return null;
 }

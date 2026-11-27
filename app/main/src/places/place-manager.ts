@@ -14,12 +14,13 @@
  * was. The stored location only changes on arrival, so a crash in the hallway leaves the avatar at its old place.
  */
 import { EventEmitter } from 'node:events';
-import type { AvatarProfile } from '../avatars/avatar-registry.js';
+import type { AvatarProfile } from '../shared/avatars/avatar-registry-types.js';
 import { DEFAULT_DESKTOP_ROOM, defaultRoomFor } from '../shared/places/default-room.js';
 import { cleanPlaceKind, type PlaceKind } from '../shared/places/place-kind.js';
 import { normalisePlaceName } from '../shared/places/wander.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
+import type { PlacesSnapshot, Place } from '../shared/places/place-manager-types.js';
 
 export const PLACES_KEY = 'places.list';
 export const LOCATIONS_KEY = 'avatars.locations';
@@ -33,34 +34,6 @@ export const MOVE_DEADLINE_MS = 10_000;
 export const OFFLINE_GRACE_MS = 60_000;
 /** The same for a phone room: a phone leaves the foreground often, so it gets longer to come back (2 minutes). */
 export const PHONE_OFFLINE_GRACE_MS = 2 * 60_000;
-
-export interface Place {
-  id: string;
-  name: string;
-  /** 'local' is the screen of this PC, 'offscreen' a place nobody draws, anything else is the device id of the PC that draws it. */
-  node: 'local' | 'offscreen' | string;
-  /** Only on desktop rooms (a device id as `node`): whether that PC is connected. Absent means always online. */
-  online?: boolean;
-  /**
-   * Only on desktop rooms: the room that PC draws. A 3D room id (`room:builtin:studio-flat`, `room:<id>`) or a
-   * 2D background id. The local place shows whatever the stage is set to, so it has none.
-   */
-  room?: string;
-  /** Only on device places, saved only when it is not a desktop: a phone or a browser (place-kind.ts). Absent means a desktop. */
-  kind?: PlaceKind;
-  /**
-   * "Camera presence" for this place, saved only when Kevin changed it. Absent means the default: on for a desktop
-   * room, off for this PC, a phone and a browser (see camera-setting.ts).
-   */
-  camera?: boolean;
-  /**
-   * "Doorbell" for this place, saved only when changed. Absent means the default: on for this PC, off for a desktop
-   * room (see doorbell-setting.ts).
-   */
-  doorbell?: boolean;
-  /** Only in snapshots: Kevin closed this desktop room (the kill switch), so it takes nobody. */
-  closed?: boolean;
-}
 
 export { DEFAULT_DESKTOP_ROOM };
 
@@ -80,20 +53,6 @@ export interface PlaceMove {
 }
 
 export type StartMoveResult = { ok: true; state: PlaceMove } | { ok: false; reason: string };
-
-export interface PlacesSnapshot {
-  places: Place[];
-  /** The place of every avatar in the registry (its last place while it is in transit). */
-  locations: Record<string, string>;
-  transit: Array<{ avatarId: string; from: string; to: string }>;
-  localPlaceId: string;
-  /** bija's clock when the snapshot was made. The times below are on this clock, so a reader's own clock does not matter. */
-  now?: number;
-  /** When each avatar last arrived somewhere (since bija started). Absent for one that has not moved. */
-  movedAt?: Record<string, number>;
-  /** When someone last used the PC of each place (`powerMonitor` idle time under 60 s). Absent for a place never heard from. */
-  activeAt?: Record<string, number>;
-}
 
 export interface PlaceStore {
   getValue(key: string): string | null;
@@ -146,7 +105,8 @@ function parsePlaces(raw: string | null): Place[] {
   }
   // Built-ins are filled in when missing, and come first.
   const places = BUILT_IN_PLACES.map((place) => byId.get(place.id) ?? { ...place });
-  for (const place of byId.values()) if (!BUILT_IN_PLACES.some((builtIn) => builtIn.id === place.id)) places.push(place);
+  for (const place of byId.values())
+    if (!BUILT_IN_PLACES.some((builtIn) => builtIn.id === place.id)) places.push(place);
   return places;
 }
 
@@ -183,7 +143,13 @@ export class PlaceManager {
   private readonly closedPlaces = new Set<string>();
   private readonly graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly transit = new Map<string, Pending>();
-  private waiters: Array<{ avatarId: string; placeId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
+  private waiters: Array<{
+    avatarId: string;
+    placeId: string;
+    resolve: (arrived: boolean) => void;
+    timer: ReturnType<typeof setTimeout> | null;
+    sawMove: boolean;
+  }> = [];
   private serial = 0;
   private readonly arrivalListeners = new Set<(avatarId: string, placeId: string) => void>();
   /** When each avatar last arrived at a place (this run only): wandering keeps 10 minutes between moves. */
@@ -230,7 +196,13 @@ export class PlaceManager {
   list(): Place[] {
     // A desktop room always has a room: one saved before rooms could be picked gets the default.
     return this.stored().map((place) =>
-      this.isDevicePlace(place) ? { ...place, room: place.room ?? defaultRoomFor(place.kind), online: this.online.has(place.id) } : { ...place },
+      this.isDevicePlace(place)
+        ? {
+            ...place,
+            room: place.room ?? defaultRoomFor(place.kind),
+            online: this.online.has(place.id),
+          }
+        : { ...place },
     );
   }
 
@@ -295,14 +267,27 @@ export class PlaceManager {
   }
 
   /** Adds a place drawn by another device (`node` is that device's id). Null when the id is taken or invalid. */
-  addPlace(input: { id: string; name: string; node: string; room?: string; kind?: PlaceKind }): Place | null {
+  addPlace(input: {
+    id: string;
+    name: string;
+    node: string;
+    room?: string;
+    kind?: PlaceKind;
+  }): Place | null {
     const id = input.id.trim();
     const name = input.name.trim().slice(0, 80);
-    if (!id || !name || !input.node || input.node === 'local' || input.node === 'offscreen') return null;
+    if (!id || !name || !input.node || input.node === 'local' || input.node === 'offscreen')
+      return null;
     const places = this.stored();
     if (places.some((place) => place.id === id)) return null;
     const kind = cleanPlaceKind(input.kind);
-    places.push({ id, name, node: input.node, room: input.room?.trim() || defaultRoomFor(kind), ...(kind !== 'desktop' ? { kind } : {}) });
+    places.push({
+      id,
+      name,
+      node: input.node,
+      room: input.room?.trim() || defaultRoomFor(kind),
+      ...(kind !== 'desktop' ? { kind } : {}),
+    });
     this.persist(places);
     this.changed();
     return this.get(id);
@@ -322,7 +307,8 @@ export class PlaceManager {
       if (pending.to === placeId || pending.from === placeId) this.cancelMove(pending);
     }
     const locations = this.storedLocations();
-    for (const [avatarId, at] of Object.entries(locations)) if (at === placeId) delete locations[avatarId];
+    for (const [avatarId, at] of Object.entries(locations))
+      if (at === placeId) delete locations[avatarId];
     this.options.store.setValue(LOCATIONS_KEY, JSON.stringify(locations));
     this.closedPlaces.delete(placeId);
     this.persist(places.filter((candidate) => candidate.id !== placeId));
@@ -353,10 +339,13 @@ export class PlaceManager {
     if (!this.graceTimers.has(placeId)) {
       this.graceTimers.set(
         placeId,
-        this.timer(() => {
-          this.graceTimers.delete(placeId);
-          this.sendHome(placeId);
-        }, place.kind === 'phone' ? this.phoneGraceMs : this.graceMs),
+        this.timer(
+          () => {
+            this.graceTimers.delete(placeId);
+            this.sendHome(placeId);
+          },
+          place.kind === 'phone' ? this.phoneGraceMs : this.graceMs,
+        ),
       );
     }
     if (wasOnline) this.changed();
@@ -364,7 +353,8 @@ export class PlaceManager {
 
   /** At start-up no desktop room is connected yet: start the grace clock for each, so no avatar is stuck in one forever. */
   settleOffline(): void {
-    for (const place of this.stored()) if (this.isDevicePlace(place) && !this.online.has(place.id)) this.setOnline(place.id, false);
+    for (const place of this.stored())
+      if (this.isDevicePlace(place) && !this.online.has(place.id)) this.setOnline(place.id, false);
   }
 
   private clearGrace(placeId: string): void {
@@ -381,7 +371,8 @@ export class PlaceManager {
 
   /** Everyone at the place walks in at the local place, with `reason` journaled. */
   sendAllHome(placeId: string, reason: string): void {
-    for (const avatarId of this.avatarsAt(placeId)) this.startMove(avatarId, this.localPlaceId(), reason);
+    for (const avatarId of this.avatarsAt(placeId))
+      this.startMove(avatarId, this.localPlaceId(), reason);
   }
 
   /** Kevin closed this room on its PC (or opened it again). Closing sends everyone home and refuses moves into it until it opens. */
@@ -395,7 +386,8 @@ export class PlaceManager {
     const wasClosed = this.closedPlaces.has(placeId);
     this.closedPlaces.add(placeId);
     // Anyone still walking towards the room turns back: a closed room takes nobody.
-    for (const pending of [...this.transit.values()]) if (pending.to === placeId) this.cancelMove(pending, 'room closed');
+    for (const pending of [...this.transit.values()])
+      if (pending.to === placeId) this.cancelMove(pending, 'room closed');
     this.sendAllHome(placeId, 'room closed');
     if (!wasClosed) this.changed();
   }
@@ -409,7 +401,11 @@ export class PlaceManager {
     const wanted = normalise(ref);
     if (!wanted) return null;
     const places = this.list();
-    return places.find((place) => normalise(place.id) === wanted) ?? places.find((place) => normalise(place.name) === wanted) ?? null;
+    return (
+      places.find((place) => normalise(place.id) === wanted) ??
+      places.find((place) => normalise(place.name) === wanted) ??
+      null
+    );
   }
 
   // -- Who is where -----------------------------------------------------------------------------
@@ -434,12 +430,18 @@ export class PlaceManager {
 
   /** The avatars at a place, in registry order. Avatars in transit are nowhere. */
   avatarsAt(placeId: string): string[] {
-    return this.avatarIds().filter((avatarId) => !this.transit.has(avatarId) && this.locationOf(avatarId) === placeId);
+    return this.avatarIds().filter(
+      (avatarId) => !this.transit.has(avatarId) && this.locationOf(avatarId) === placeId,
+    );
   }
 
   /** At the place (this PC's by default), and not walking between places. */
   isPresent(avatarId: string, placeId: string = this.localPlaceId()): boolean {
-    return this.avatarIds().includes(avatarId) && !this.transit.has(avatarId) && this.locationOf(avatarId) === placeId;
+    return (
+      this.avatarIds().includes(avatarId) &&
+      !this.transit.has(avatarId) &&
+      this.locationOf(avatarId) === placeId
+    );
   }
 
   /** Avatars (registry order) that are somewhere else or on their way, for the floor to offer as candidates. */
@@ -454,19 +456,30 @@ export class PlaceManager {
   /** Who is where. `forPlaceId` is the place the reader draws: this PC passes nothing, a desktop room passes its own place. */
   snapshot(forPlaceId: string = this.localPlaceId()): PlacesSnapshot {
     const stored = this.storedLocations();
-    const places = this.list().map((place) => (this.closedPlaces.has(place.id) ? { ...place, closed: true } : place));
+    const places = this.list().map((place) =>
+      this.closedPlaces.has(place.id) ? { ...place, closed: true } : place,
+    );
     const locations: Record<string, string> = {};
     for (const avatarId of this.avatarIds()) {
       const placeId = stored[avatarId];
-      locations[avatarId] = placeId && places.some((place) => place.id === placeId) ? placeId : HOME_PLACE_ID;
+      locations[avatarId] =
+        placeId && places.some((place) => place.id === placeId) ? placeId : HOME_PLACE_ID;
     }
     return {
       places,
       locations,
-      transit: [...this.transit.values()].map((move) => ({ avatarId: move.avatarId, from: move.from, to: move.to })),
+      transit: [...this.transit.values()].map((move) => ({
+        avatarId: move.avatarId,
+        from: move.from,
+        to: move.to,
+      })),
       localPlaceId: forPlaceId,
       now: this.now(),
-      movedAt: Object.fromEntries(this.avatarIds().flatMap((avatarId) => (this.movedAt.has(avatarId) ? [[avatarId, this.movedAt.get(avatarId) as number]] : []))),
+      movedAt: Object.fromEntries(
+        this.avatarIds().flatMap((avatarId) =>
+          this.movedAt.has(avatarId) ? [[avatarId, this.movedAt.get(avatarId) as number]] : [],
+        ),
+      ),
       activeAt: Object.fromEntries(
         places.flatMap((place) => {
           const at = this.options.activeAt?.(place.id);
@@ -488,7 +501,9 @@ export class PlaceManager {
     try {
       this.emitter.emit('changed', this.snapshot());
     } catch (error) {
-      this.options.logger?.warn('Places: a change listener threw', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Places: a change listener threw', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
     this.releaseWaiters();
   }
@@ -500,12 +515,20 @@ export class PlaceManager {
     if (!this.avatarIds().includes(avatarId)) return { ok: false, reason: 'unknown avatar' };
     const target = this.get(toPlaceId);
     if (!target) return { ok: false, reason: 'unknown place' };
-    if (target.online === false || this.closedPlaces.has(target.id)) return { ok: false, reason: `${target.name} is closed` };
+    if (target.online === false || this.closedPlaces.has(target.id))
+      return { ok: false, reason: `${target.name} is closed` };
     if (this.transit.has(avatarId)) return { ok: false, reason: 'already moving' };
     const from = this.locationOf(avatarId);
     if (from === target.id) return { ok: false, reason: 'already there' };
     const startedAt = this.now();
-    const state: PlaceMove = { avatarId, from, to: target.id, reason, txn: `move:${avatarId}:${startedAt}:${++this.serial}`, startedAt };
+    const state: PlaceMove = {
+      avatarId,
+      from,
+      to: target.id,
+      reason,
+      txn: `move:${avatarId}:${startedAt}:${++this.serial}`,
+      startedAt,
+    };
     const pending: Pending = { ...state, timers: [] };
     this.transit.set(avatarId, pending);
     if (target.node === 'offscreen') {
@@ -526,10 +549,20 @@ export class PlaceManager {
   }
 
   /** Resolves true once the avatar is present at the place (the local one by default), false when it is not there after `timeoutMs` or the move failed. */
-  waitForArrival(avatarId: string, timeoutMs: number, placeId: string = this.localPlaceId()): Promise<boolean> {
+  waitForArrival(
+    avatarId: string,
+    timeoutMs: number,
+    placeId: string = this.localPlaceId(),
+  ): Promise<boolean> {
     if (this.isPresent(avatarId, placeId)) return Promise.resolve(true);
     return new Promise<boolean>((resolve) => {
-      const waiter: (typeof this.waiters)[number] = { avatarId, placeId, resolve, timer: null, sawMove: this.transit.has(avatarId) };
+      const waiter: (typeof this.waiters)[number] = {
+        avatarId,
+        placeId,
+        resolve,
+        timer: null,
+        sawMove: this.transit.has(avatarId),
+      };
       waiter.timer = this.timer(() => {
         this.waiters = this.waiters.filter((candidate) => candidate !== waiter);
         resolve(this.isPresent(avatarId, placeId));
@@ -572,8 +605,16 @@ export class PlaceManager {
     this.clearTimers(pending);
     this.transit.delete(avatarId);
     this.movedAt.set(avatarId, this.now());
-    this.options.store.setValue(LOCATIONS_KEY, JSON.stringify({ ...this.storedLocations(), [avatarId]: pending.to }));
-    this.journal(pending, 'done', { avatarId, from: pending.from, to: pending.to, reason: pending.reason });
+    this.options.store.setValue(
+      LOCATIONS_KEY,
+      JSON.stringify({ ...this.storedLocations(), [avatarId]: pending.to }),
+    );
+    this.journal(pending, 'done', {
+      avatarId,
+      from: pending.from,
+      to: pending.to,
+      reason: pending.reason,
+    });
     this.changed();
     this.announceArrival(avatarId, pending.to);
   }
@@ -584,7 +625,9 @@ export class PlaceManager {
       try {
         listener(avatarId, placeId);
       } catch (error) {
-        this.options.logger?.warn('Places: an arrival listener threw', { message: error instanceof Error ? error.message : String(error) });
+        this.options.logger?.warn('Places: an arrival listener threw', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -601,7 +644,12 @@ export class PlaceManager {
   private cancelMove(pending: Pending, reason = 'place removed'): void {
     this.clearTimers(pending);
     this.transit.delete(pending.avatarId);
-    this.journal(pending, 'failed', { avatarId: pending.avatarId, from: pending.from, to: pending.to, reason });
+    this.journal(pending, 'failed', {
+      avatarId: pending.avatarId,
+      from: pending.from,
+      to: pending.to,
+      reason,
+    });
   }
 
   private fail(avatarId: string, txn: string): void {
@@ -609,13 +657,26 @@ export class PlaceManager {
     if (!pending || pending.txn !== txn) return;
     this.clearTimers(pending);
     this.transit.delete(avatarId);
-    this.options.logger?.warn('Places: a move was not confirmed in time; the avatar goes back', { avatarId, from: pending.from, to: pending.to });
-    this.journal(pending, 'failed', { avatarId, from: pending.from, to: pending.to, reason: 'not confirmed in time' });
+    this.options.logger?.warn('Places: a move was not confirmed in time; the avatar goes back', {
+      avatarId,
+      from: pending.from,
+      to: pending.to,
+    });
+    this.journal(pending, 'failed', {
+      avatarId,
+      from: pending.from,
+      to: pending.to,
+      reason: 'not confirmed in time',
+    });
     this.changed();
   }
 
   /** Fire-and-forget; never throws. One transaction per move. */
-  private journal(move: PlaceMove, state: 'open' | 'done' | 'failed', payload: Record<string, unknown>): void {
+  private journal(
+    move: PlaceMove,
+    state: 'open' | 'done' | 'failed',
+    payload: Record<string, unknown>,
+  ): void {
     try {
       const bus = this.options.bus?.();
       if (!bus) return;
@@ -641,7 +702,17 @@ export class PlaceManager {
  */
 export type ScopedPlaces = Pick<
   PlaceManager,
-  'list' | 'get' | 'localPlaceId' | 'avatarsAt' | 'awayFromLocal' | 'isPresent' | 'waitForArrival' | 'startMove' | 'inTransit' | 'snapshot' | 'onChanged'
+  | 'list'
+  | 'get'
+  | 'localPlaceId'
+  | 'avatarsAt'
+  | 'awayFromLocal'
+  | 'isPresent'
+  | 'waitForArrival'
+  | 'startMove'
+  | 'inTransit'
+  | 'snapshot'
+  | 'onChanged'
 >;
 
 export function scopedPlaces(places: PlaceManager, placeId: string): ScopedPlaces {
@@ -664,7 +735,10 @@ export function scopedPlaces(places: PlaceManager, placeId: string): ScopedPlace
  * The paragraph every avatar's prompt ends with: where it is, who is where, and how to walk to another
  * place. Null when there is only one place (nothing to say) or this is a preview.
  */
-export function placesNote(manager: Pick<PlaceManager, 'list' | 'get' | 'localPlaceId' | 'avatarsAt'>, nameOf: (avatarId: string) => string): string | null {
+export function placesNote(
+  manager: Pick<PlaceManager, 'list' | 'get' | 'localPlaceId' | 'avatarsAt'>,
+  nameOf: (avatarId: string) => string,
+): string | null {
   const places = manager.list();
   if (places.length < 2) return null;
   const here = manager.get(manager.localPlaceId());
@@ -674,7 +748,11 @@ export function placesNote(manager: Pick<PlaceManager, 'list' | 'get' | 'localPl
     .map((place) => {
       const names = manager.avatarsAt(place.id).map(nameOf);
       const who =
-        names.length === 0 ? 'nobody is there' : names.length === 1 ? `${names[0]} is there` : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are there`;
+        names.length === 0
+          ? 'nobody is there'
+          : names.length === 1
+            ? `${names[0]} is there`
+            : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are there`;
       return `${place.name} (${who})`;
     });
   return `You are in ${here.name}. Other places: ${others.join('; ')}. To go to another place, write {room:<place name>} at the end of what you say: you finish speaking, walk out, and arrive a few seconds later. You only hear and see what happens in the place you are in.`;

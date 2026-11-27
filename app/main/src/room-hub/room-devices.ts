@@ -8,15 +8,13 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { DeviceKind } from '../shared/room-hub/room-devices-types.js';
 
 export const PAIRING_CODE_TTL_MS = 5 * 60_000;
 export const LOCKOUT_ATTEMPTS = 10;
 export const LOCKOUT_WINDOW_MS = 60_000;
 export const LOCKOUT_REFUSAL_MS = 60_000;
 const MAX_DEVICES = 20;
-
-/** What kind of thing a paired device is. Only shown for now; later PRs give a phone and a browser their own rules. */
-export type DeviceKind = 'desktop' | 'phone' | 'browser';
 export const DEVICE_KINDS: readonly DeviceKind[] = ['desktop', 'phone', 'browser'];
 
 /** The kind a pair request asked for; anything else (or nothing) is a desktop. */
@@ -65,7 +63,14 @@ export function makeToken(): string {
 }
 
 function cleanName(value: unknown, fallback: string): string {
-  const name = typeof value === 'string' ? [...value].filter((char) => char >= ' ' && char !== '\u007f').join('').trim().slice(0, 60) : '';
+  const name =
+    typeof value === 'string'
+      ? [...value]
+          .filter((char) => char >= ' ' && char !== '\u007f')
+          .join('')
+          .trim()
+          .slice(0, 60)
+      : '';
   return name || fallback;
 }
 
@@ -135,7 +140,11 @@ export class RoomDeviceRegistry {
     if (!this.filePath) return;
     try {
       const raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as { devices?: unknown };
-      this.devices = Array.isArray(raw.devices) ? raw.devices.filter(isDevice).map((device) => ({ ...device, kind: cleanKind((device as { kind?: unknown }).kind) })) : [];
+      this.devices = Array.isArray(raw.devices)
+        ? raw.devices
+            .filter(isDevice)
+            .map((device) => ({ ...device, kind: cleanKind((device as { kind?: unknown }).kind) }))
+        : [];
     } catch {
       this.devices = [];
     }
@@ -145,7 +154,10 @@ export class RoomDeviceRegistry {
     if (!this.filePath) return;
     mkdirSync(path.dirname(this.filePath), { recursive: true });
     const temp = `${this.filePath}.tmp`;
-    writeFileSync(temp, JSON.stringify({ devices: this.devices }, null, 2), { encoding: 'utf8', mode: 0o600 });
+    writeFileSync(temp, JSON.stringify({ devices: this.devices }, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
     renameSync(temp, this.filePath);
   }
 
@@ -153,7 +165,10 @@ export class RoomDeviceRegistry {
 
   /** Devices that are not revoked, newest connection first. */
   list(): RoomDevice[] {
-    return this.devices.filter((device) => !device.revoked).sort((a, b) => b.lastSeen - a.lastSeen).map((device) => ({ ...device }));
+    return this.devices
+      .filter((device) => !device.revoked)
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+      .map((device) => ({ ...device }));
   }
 
   get(id: string): RoomDevice | null {
@@ -176,7 +191,8 @@ export class RoomDeviceRegistry {
     const hash = hashToken(token);
     let found: RoomDevice | null = null;
     // Every device is compared, so the time does not say which one matched.
-    for (const device of this.devices) if (!device.revoked && safeEqual(hash, device.tokenHash) && !found) found = device;
+    for (const device of this.devices)
+      if (!device.revoked && safeEqual(hash, device.tokenHash) && !found) found = device;
     return found ? { ...found } : null;
   }
 
@@ -197,7 +213,14 @@ export class RoomDeviceRegistry {
   }
 
   /** Adds a device and returns it with its token (the only time the token exists in the clear). */
-  addDevice(input: { id: string; name: string; kind?: DeviceKind; placeId: string; tailscaleNode: string | null; tailscaleLogin: string | null }): { device: RoomDevice; token: string } {
+  addDevice(input: {
+    id: string;
+    name: string;
+    kind?: DeviceKind;
+    placeId: string;
+    tailscaleNode: string | null;
+    tailscaleLogin: string | null;
+  }): { device: RoomDevice; token: string } {
     const token = makeToken();
     const time = this.now();
     const device: RoomDevice = {
@@ -213,7 +236,8 @@ export class RoomDeviceRegistry {
     };
     // Revoked records are dropped the next time a device is added.
     const kept = this.devices.filter((candidate) => !candidate.revoked);
-    if (kept.length >= MAX_DEVICES) throw new Error(`At most ${MAX_DEVICES} desktop rooms can be paired.`);
+    if (kept.length >= MAX_DEVICES)
+      throw new Error(`At most ${MAX_DEVICES} desktop rooms can be paired.`);
     this.devices = [...kept, device];
     this.save();
     return { device: { ...device }, token };

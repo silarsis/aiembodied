@@ -8,7 +8,13 @@ const selection: AvatarImageModelSelection = {
   selectedModelId: 'checkpoints:xl.safetensors',
   modelFamilies: { 'checkpoints:xl.safetensors': 'sdxl' },
   loras: [
-    { name: 'neon.safetensors', title: 'Neon', family: 'sdxl', baseModel: 'SDXL 1.0', triggerWords: ['neon'] },
+    {
+      name: 'neon.safetensors',
+      title: 'Neon',
+      family: 'sdxl',
+      baseModel: 'SDXL 1.0',
+      triggerWords: ['neon'],
+    },
     { name: 'cyberpunk.safetensors', title: 'Cyberpunk', family: 'sd1', baseModel: 'SD 1.5' },
     { name: 'mystery.safetensors' },
   ],
@@ -32,13 +38,32 @@ describe('LoRA picker', () => {
 
   it('says which machines have a LoRA when the model controller lists them', () => {
     const loras = [{ ...selection.loras![0], location: 'on bija, acrasia' }];
-    render(<LoraPicker api={{} as AvatarBridge} selection={{ ...selection, loras: [{ ...loras[0], location: 'on acrasia', offline: true }] }} disabled={false} onChange={vi.fn()} onRefresh={vi.fn()} />);
+    render(
+      <LoraPicker
+        api={{} as AvatarBridge}
+        selection={{
+          ...selection,
+          loras: [{ ...loras[0], location: 'on acrasia', offline: true }],
+        }}
+        disabled={false}
+        onChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
     expect(screen.getByText(/on acrasia \(offline\)/)).toBeTruthy();
   });
 
   it('turns on a LoRA of the model’s family and sets its strength', () => {
     const onChange = vi.fn();
-    const { rerender } = render(<LoraPicker api={{} as AvatarBridge} selection={selection} disabled={false} onChange={onChange} onRefresh={vi.fn()} />);
+    const { rerender } = render(
+      <LoraPicker
+        api={{} as AvatarBridge}
+        selection={selection}
+        disabled={false}
+        onChange={onChange}
+        onRefresh={vi.fn()}
+      />,
+    );
     expect(screen.getByText('Adds to the prompt: neon')).toBeTruthy();
     // Only LoRAs for the chosen (SDXL) model are listed; the others are behind a link.
     expect(screen.queryByLabelText(/Cyberpunk/)).toBeNull();
@@ -64,7 +89,9 @@ describe('LoRA picker', () => {
   });
 
   it('suggests base models for a LoRA with none on the server and downloads one', async () => {
-    let downloads = [{ id: 'd1', filename: 'm.safetensors', state: 'downloading' as const, received: 1, total: 2 }];
+    let downloads = [
+      { id: 'd1', filename: 'm.safetensors', state: 'downloading' as const, received: 1, total: 2 },
+    ];
     const api = {
       suggestBaseModels: vi.fn(async () => ({
         serverId: 'mutiara',
@@ -72,18 +99,46 @@ describe('LoRA picker', () => {
         baseModel: 'SD 1.5',
         vramBytes: 8 * 1024 ** 3,
         suggestions: [
-          { ref: '1@10', modelId: 1, versionId: 10, name: 'Small · v1', baseModel: 'SD 1.5', sizeKB: 2_000_000, downloads: 5, fits: true },
-          { ref: '2@20', modelId: 2, versionId: 20, name: 'Huge · v1', baseModel: 'SD 1.5', sizeKB: 9_000_000, downloads: 4, fits: false },
+          {
+            ref: '1@10',
+            modelId: 1,
+            versionId: 10,
+            name: 'Small · v1',
+            baseModel: 'SD 1.5',
+            sizeKB: 2_000_000,
+            downloads: 5,
+            fits: true,
+          },
+          {
+            ref: '2@20',
+            modelId: 2,
+            versionId: 20,
+            name: 'Huge · v1',
+            baseModel: 'SD 1.5',
+            sizeKB: 9_000_000,
+            downloads: 4,
+            fits: false,
+          },
         ],
       })),
       downloadBaseModel: vi.fn(async () => downloads[0]),
       listModelDownloads: vi.fn(async () => downloads),
     } as unknown as AvatarBridge;
     const onRefresh = vi.fn(async () => undefined);
-    render(<LoraPicker api={api} selection={selection} disabled={false} onChange={vi.fn()} onRefresh={onRefresh} />);
+    render(
+      <LoraPicker
+        api={api}
+        selection={selection}
+        disabled={false}
+        onChange={vi.fn()}
+        onRefresh={onRefresh}
+      />,
+    );
     fireEvent.click(screen.getByRole('button', { name: '2 more for other models' }));
     fireEvent.click(screen.getByRole('button', { name: 'Suggest a model' }));
-    expect(await screen.findByText(/Popular SD 1.5 models on Civitai, for Mutiara's 8.0 GB GPU/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Popular SD 1.5 models on Civitai, for Mutiara's 8.0 GB GPU/),
+    ).toBeTruthy();
     expect(screen.getByText('too big for the GPU')).toBeTruthy();
     expect(api.suggestBaseModels).toHaveBeenCalledWith({ baseModel: 'SD 1.5', family: 'sd1' });
     fireEvent.click(screen.getAllByRole('button', { name: 'Download' })[0]);

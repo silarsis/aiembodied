@@ -1,10 +1,18 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { ModelRoutingView, ModelServerView } from '../../../main/src/config/config-manager.js';
-import type { CodingBridge, CodingConfig, CodingStatus, CodingView } from '../../../main/src/coding/bridge-types.js';
+import type {
+  ModelRoutingView,
+  ModelServerView,
+} from '../../../main/src/shared/config/config-manager-types.js';
+import type {
+  CodingBridge,
+  CodingConfig,
+  CodingStatus,
+  CodingView,
+} from '../../../main/src/shared/coding/bridge-types.js';
 import { builtInServers, defaultRoutes } from '../../../main/src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../../main/src/shared/config/provider-settings.js';
-import type { ServerProbe } from '../../../main/src/config/model-server-probe.js';
+import type { ServerProbe } from '../../../main/src/shared/config/model-server-probe-types.js';
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { CodingStatusLine } from '../../src/status/coding-status.js';
 import { ModelsDialog } from '../../src/settings/models-dialog.js';
@@ -46,11 +54,18 @@ const status = (overrides: Partial<CodingStatus> = {}): CodingStatus => ({
 });
 
 function modelsBridge() {
-  const servers: ModelServerView[] = builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({ ...server, hasKey: false }));
+  const servers: ModelServerView[] = builtInServers({
+    providers: DEFAULT_PROVIDER_SETTINGS,
+    comfyUiBaseUrl: 'http://127.0.0.1:8188',
+  }).map((server) => ({ ...server, hasKey: false }));
   const view: ModelRoutingView = { servers, routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS) };
   return {
     get: vi.fn(async () => view),
-    probe: vi.fn(async (): Promise<ServerProbe> => ({ status: 'up', models: { chat: ['qwen3-coder-next'] }, checkedAt: 1 })),
+    probe: vi.fn(async (): Promise<ServerProbe> => ({
+      status: 'up',
+      models: { chat: ['qwen3-coder-next'] },
+      checkedAt: 1,
+    })),
     saveServer: vi.fn(),
     removeServer: vi.fn(),
     setRoute: vi.fn(async () => view),
@@ -77,13 +92,24 @@ function codingBridge(initial: CodingConfig) {
 
 const seeded: CodingConfig = {
   runner: 'local-coder-runner',
-  workspaces: [{ id: 'aiembodied', name: 'aiembodied', path: 'C:\\src\\aiembodied', kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test' }],
+  workspaces: [
+    {
+      id: 'aiembodied',
+      name: 'aiembodied',
+      path: 'C:\\src\\aiembodied',
+      kind: 'self',
+      baseBranch: 'main',
+      checks: 'pnpm -w typecheck && pnpm test',
+    },
+  ],
 };
 
 async function openCoding(api: CodingBridge) {
   render(<ModelsDialog api={modelsBridge()} codingApi={api} onClose={vi.fn()} />);
   const rail = await screen.findByRole('navigation', { name: 'Model uses' });
-  fireEvent.click(await within(rail).findByText('Coding', { selector: '.modelsDialog__item > span' }));
+  fireEvent.click(
+    await within(rail).findByText('Coding', { selector: '.modelsDialog__item > span' }),
+  );
   await screen.findByText('Workspaces');
 }
 
@@ -95,16 +121,20 @@ describe('Coding page', () => {
     expect(screen.getByLabelText('Runner running')).toBeTruthy();
     expect(screen.getByText(/Detected: D:\\models\\Qwen3-Coder-Next/)).toBeTruthy();
     expect(screen.getByText('aiembodied', { selector: 'b' })).toBeTruthy();
-    expect(screen.getByText("Echo’s own code")).toBeTruthy();
+    expect(screen.getByText('Echo’s own code')).toBeTruthy();
     expect(screen.getByText('Models: Not needed now.')).toBeTruthy();
   });
 
   it('picks the coder model file with a file dialog and saves it', async () => {
     const api = codingBridge(seeded);
     await openCoding(api);
-    const row = screen.getByLabelText('Qwen3-Coder-Next GGUF').closest('.modelsDialog__model') as HTMLElement;
+    const row = screen
+      .getByLabelText('Qwen3-Coder-Next GGUF')
+      .closest('.modelsDialog__model') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: 'Browse…' }));
-    await waitFor(() => expect(api.set).toHaveBeenCalledWith({ ...seeded, coderGguf: 'E:\\picked.gguf' }));
+    await waitFor(() =>
+      expect(api.set).toHaveBeenCalledWith({ ...seeded, coderGguf: 'E:\\picked.gguf' }),
+    );
     expect(await screen.findByDisplayValue('E:\\picked.gguf')).toBeTruthy();
   });
 
@@ -114,11 +144,19 @@ describe('Coding page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a workspace' }));
     const form = screen.getByRole('form', { name: 'New workspace' });
     fireEvent.click(within(form).getByRole('button', { name: 'Browse…' }));
-    await waitFor(() => expect((within(form).getByLabelText('Folder') as HTMLInputElement).value).toBe('C:\\src\\notes'));
+    await waitFor(() =>
+      expect((within(form).getByLabelText('Folder') as HTMLInputElement).value).toBe(
+        'C:\\src\\notes',
+      ),
+    );
     expect((within(form).getByLabelText('Name') as HTMLInputElement).value).toBe('notes');
-    fireEvent.change(within(form).getByLabelText('Protected paths'), { target: { value: 'db/\n\nsecrets/' } });
+    fireEvent.change(within(form).getByLabelText('Protected paths'), {
+      target: { value: 'db/\n\nsecrets/' },
+    });
     fireEvent.click(within(form).getByRole('button', { name: 'Suggest' }));
-    await waitFor(() => expect((within(form).getByLabelText('Checks') as HTMLInputElement).value).toBe('npm test'));
+    await waitFor(() =>
+      expect((within(form).getByLabelText('Checks') as HTMLInputElement).value).toBe('npm test'),
+    );
     // Suggest saved the row first, because the runner can only look at workspaces it knows.
     expect(api.set).toHaveBeenCalledTimes(1);
     expect(api.suggestChecks).toHaveBeenCalledWith('notes');
@@ -151,7 +189,11 @@ describe('Coding page', () => {
 
   it('shows why the runner refused the workspaces', async () => {
     const api = codingBridge(seeded);
-    api.get.mockResolvedValue({ coding: seeded, runnerId: 'local-coder-runner', status: status({ workspaceError: '"C:\\x" is not a git repository' }) });
+    api.get.mockResolvedValue({
+      coding: seeded,
+      runnerId: 'local-coder-runner',
+      status: status({ workspaceError: '"C:\\x" is not a git repository' }),
+    });
     await openCoding(api);
     expect(await screen.findByText(/The runner refused the workspaces/)).toBeTruthy();
   });
@@ -160,16 +202,33 @@ describe('Coding page', () => {
 describe('Coding status line', () => {
   it('shows the runner and the swap state', async () => {
     const api = {
-      status: vi.fn(async () => status({ runnerUp: false, swap: { phase: 'coder-loaded', message: 'The coder model is loaded.' } })),
+      status: vi.fn(async () =>
+        status({
+          runnerUp: false,
+          swap: { phase: 'coder-loaded', message: 'The coder model is loaded.' },
+        }),
+      ),
     } as unknown as CodingBridge;
     render(<CodingStatusLine api={api} active />);
-    await waitFor(() => expect(screen.getByTestId('coding-status').textContent).toBe('Coding: Runner down. The coder model is loaded.'));
+    await waitFor(() =>
+      expect(screen.getByTestId('coding-status').textContent).toBe(
+        'Coding: Runner down. The coder model is loaded.',
+      ),
+    );
   });
 
   it('shows the model controller line when there is one', async () => {
-    const api = { status: vi.fn(async () => status({ controller: 'Model controller: in use, echo-llm leased.' })) } as unknown as CodingBridge;
+    const api = {
+      status: vi.fn(async () =>
+        status({ controller: 'Model controller: in use, echo-llm leased.' }),
+      ),
+    } as unknown as CodingBridge;
     render(<CodingStatusLine api={api} active />);
-    await waitFor(() => expect(screen.getByTestId('controller-status').textContent).toBe('Model controller: in use, echo-llm leased.'));
+    await waitFor(() =>
+      expect(screen.getByTestId('controller-status').textContent).toBe(
+        'Model controller: in use, echo-llm leased.',
+      ),
+    );
   });
 
   it('asks nothing while the panel is closed', () => {

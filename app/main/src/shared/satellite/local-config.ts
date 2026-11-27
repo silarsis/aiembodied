@@ -3,8 +3,8 @@
  * (satellite.ts) and the web satellite (renderer/src/web-satellite). No Electron, no Node.
  */
 import { DEFAULT_PROVIDER_SETTINGS } from '../config/provider-settings.js';
-import type { RendererConfig } from '../../config/config-manager.js';
-import type { AudioDevicePreferences } from '../../config/preferences-store.js';
+import type { RendererConfig } from '../config/config-manager-types.js';
+import type { AudioDevicePreferences } from '../config/preferences-store-types.js';
 
 export const DEFAULT_KEYWORD = 'Hey Echo';
 
@@ -12,7 +12,11 @@ export const DEFAULT_KEYWORD = 'Hey Echo';
  * The config the page asks for on a satellite: no keys, no services, just enough for it to know what it is.
  * `keyword` is the wake word label bija sent in its welcome. `kind: 'browser'` marks a web page.
  */
-export function satelliteConfig(input: { keyword?: unknown; audioPreferences?: AudioDevicePreferences; kind?: 'browser' }): RendererConfig {
+export function satelliteConfig(input: {
+  keyword?: unknown;
+  audioPreferences?: AudioDevicePreferences;
+  kind?: 'browser';
+}): RendererConfig {
   const { keyword, audioPreferences = {}, kind } = input;
   const config = {
     role: 'satellite',
@@ -21,7 +25,12 @@ export function satelliteConfig(input: { keyword?: unknown; audioPreferences?: A
     providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
     hasRealtimeApiKey: false,
     featureFlags: {},
-    wakeWord: { model: 'hey_echo', keywordLabel: typeof keyword === 'string' && keyword ? keyword : DEFAULT_KEYWORD, threshold: 0.5, cooldownMs: 1500 },
+    wakeWord: {
+      model: 'hey_echo',
+      keywordLabel: typeof keyword === 'string' && keyword ? keyword : DEFAULT_KEYWORD,
+      threshold: 0.5,
+      cooldownMs: 1500,
+    },
     metrics: { enabled: false, host: '127.0.0.1', port: 9464, path: '/metrics' },
     ...audioPreferences,
   };

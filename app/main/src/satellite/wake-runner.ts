@@ -15,10 +15,10 @@
  * worker starts, so the model Kevin picked on bija is the one that listens. Everything Electron-specific comes in
  * from outside, so the tests run it with fakes.
  */
-import type { WakeWordConfig } from '../config/config-manager.js';
+import type { WakeWordConfig } from '../shared/config/config-manager-types.js';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
 import { WakeWordListeningController } from '../wake-word/listening-controller.js';
-import type { WakeWordDetectionEvent } from '../wake-word/types.js';
+import type { WakeWordDetectionEvent } from '../shared/wake-word/types.js';
 
 export type WakeMode = 'live' | 'doorbell';
 
@@ -65,7 +65,9 @@ export class SatelliteWakeRunner {
   private retry: unknown = null;
 
   constructor(private readonly deps: WakeRunnerDeps) {
-    this.controller = new WakeWordListeningController((config) => deps.start(config, (event) => this.heard(event)));
+    this.controller = new WakeWordListeningController((config) =>
+      deps.start(config, (event) => this.heard(event)),
+    );
   }
 
   /** The worker is capturing right now (or about to). */
@@ -86,7 +88,11 @@ export class SatelliteWakeRunner {
         this.deps.logger?.info('Satellite wake word stopped: the gate is shut');
       }
       // The controller gates events at once and releases the microphone; a failed release is retried by the next off.
-      void this.controller.setEnabled(false).catch((error: unknown) => this.deps.logger?.warn('Could not stop the wake word', { message: describe(error) }));
+      void this.controller
+        .setEnabled(false)
+        .catch((error: unknown) =>
+          this.deps.logger?.warn('Could not stop the wake word', { message: describe(error) }),
+        );
       return;
     }
     if (!this.running && !this.starting) void this.begin();
@@ -113,7 +119,11 @@ export class SatelliteWakeRunner {
       this.running = true;
       // A gate that shuts while the worker starts has already queued its own off behind this on.
       await this.controller.setEnabled(true);
-      if (this.allowed(token)) this.deps.logger?.info('Satellite wake word listening', { mode: this.mode, keyword: config.keywordLabel });
+      if (this.allowed(token))
+        this.deps.logger?.info('Satellite wake word listening', {
+          mode: this.mode,
+          keyword: config.keywordLabel,
+        });
     } catch (error) {
       this.deps.logger?.warn('Satellite wake word could not start', { message: describe(error) });
       // Only this start's own state is undone; a newer start (the gate shut and opened again) is left alone.
@@ -131,7 +141,14 @@ export class SatelliteWakeRunner {
   private async configFor(shared: SharedWakeWord | null): Promise<WakeWordConfig | null> {
     if (!shared) return null;
     const { keywordLabel, threshold, cooldownMs } = shared;
-    if (typeof keywordLabel !== 'string' || typeof threshold !== 'number' || typeof cooldownMs !== 'number' || !(threshold > 0 && threshold <= 1) || !(cooldownMs >= 0)) return null;
+    if (
+      typeof keywordLabel !== 'string' ||
+      typeof threshold !== 'number' ||
+      typeof cooldownMs !== 'number' ||
+      !(threshold > 0 && threshold <= 1) ||
+      !(cooldownMs >= 0)
+    )
+      return null;
     if (shared.bytes !== undefined) {
       if (!(shared.bytes instanceof Uint8Array) || shared.bytes.byteLength === 0) return null;
       const model = await this.deps.storeModel(shared.model, shared.bytes);
@@ -159,7 +176,9 @@ export class SatelliteWakeRunner {
 
   private clearRetry(): void {
     if (this.retry === null) return;
-    (this.deps.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)))(this.retry);
+    (this.deps.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)))(
+      this.retry,
+    );
     this.retry = null;
   }
 

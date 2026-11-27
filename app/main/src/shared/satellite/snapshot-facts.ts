@@ -11,9 +11,14 @@ export function cameraSettingHere(snapshot: unknown): boolean {
   if (!snapshot || typeof snapshot !== 'object') return false;
   const { places, localPlaceId } = snapshot as { places?: unknown; localPlaceId?: unknown };
   if (!Array.isArray(places) || typeof localPlaceId !== 'string') return false;
-  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as { node?: unknown; kind?: unknown; camera?: unknown } | undefined;
+  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as
+    { node?: unknown; kind?: unknown; camera?: unknown } | undefined;
   if (!here || typeof here.node !== 'string') return false;
-  return cameraPresenceOn({ node: here.node, kind: cleanPlaceKind(here.kind), camera: typeof here.camera === 'boolean' ? here.camera : undefined });
+  return cameraPresenceOn({
+    node: here.node,
+    kind: cleanPlaceKind(here.kind),
+    camera: typeof here.camera === 'boolean' ? here.camera : undefined,
+  });
 }
 
 /**
@@ -24,7 +29,11 @@ export function doorbellSettingHere(snapshot: unknown): boolean {
   if (!snapshot || typeof snapshot !== 'object') return false;
   const { places, localPlaceId } = snapshot as { places?: unknown; localPlaceId?: unknown };
   if (!Array.isArray(places) || typeof localPlaceId !== 'string') return false;
-  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as { node?: unknown; doorbell?: unknown } | undefined;
+  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as
+    { node?: unknown; doorbell?: unknown } | undefined;
   if (!here || typeof here.node !== 'string') return false;
-  return doorbellOn({ node: here.node, doorbell: typeof here.doorbell === 'boolean' ? here.doorbell : undefined });
+  return doorbellOn({
+    node: here.node,
+    doorbell: typeof here.doorbell === 'boolean' ? here.doorbell : undefined,
+  });
 }

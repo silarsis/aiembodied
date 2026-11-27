@@ -7,7 +7,17 @@ import { LIGHTING_PRESETS, type LightingPreset } from './room-palette.js';
 
 export const WALL_NAMES = ['north', 'south', 'east', 'west'] as const;
 export type WallSide = (typeof WALL_NAMES)[number];
-export const OBJECT_CATEGORIES = ['seat', 'table', 'storage', 'bed', 'lamp', 'decor', 'plant', 'prop', 'appliance'] as const;
+export const OBJECT_CATEGORIES = [
+  'seat',
+  'table',
+  'storage',
+  'bed',
+  'lamp',
+  'decor',
+  'plant',
+  'prop',
+  'appliance',
+] as const;
 export type ObjectCategory = (typeof OBJECT_CATEGORIES)[number];
 export const MAX_LAYOUT_OBJECTS = 14;
 
@@ -17,23 +27,136 @@ export const MAX_LAYOUT_OBJECTS = 14;
  * Anything else becomes a "prop": placed freely, searched in the whole library, drawn as a box.
  */
 const CATEGORY_WORDS: Array<[ObjectCategory, string[]]> = [
-  ['seat', ['seat', 'seating', 'chair', 'armchair', 'sofa', 'couch', 'settee', 'loveseat', 'stool', 'bench', 'ottoman', 'pouf', 'beanbag', 'recliner']],
+  [
+    'seat',
+    [
+      'seat',
+      'seating',
+      'chair',
+      'armchair',
+      'sofa',
+      'couch',
+      'settee',
+      'loveseat',
+      'stool',
+      'bench',
+      'ottoman',
+      'pouf',
+      'beanbag',
+      'recliner',
+    ],
+  ],
   ['bed', ['bed', 'futon', 'cot', 'bunk', 'daybed', 'mattress', 'crib', 'hammock']],
   ['table', ['table', 'desk', 'counter', 'workbench', 'nightstand', 'bar', 'island', 'surface']],
-  ['storage', ['storage', 'shelf', 'shelves', 'shelving', 'bookshelf', 'bookcase', 'cabinet', 'cupboard', 'wardrobe', 'dresser', 'drawers', 'chest', 'sideboard', 'closet', 'rack', 'locker', 'trunk']],
+  [
+    'storage',
+    [
+      'storage',
+      'shelf',
+      'shelves',
+      'shelving',
+      'bookshelf',
+      'bookcase',
+      'cabinet',
+      'cupboard',
+      'wardrobe',
+      'dresser',
+      'drawers',
+      'chest',
+      'sideboard',
+      'closet',
+      'rack',
+      'locker',
+      'trunk',
+    ],
+  ],
   ['lamp', ['lamp', 'light', 'lighting', 'lantern', 'chandelier', 'sconce', 'candle']],
-  ['plant', ['plant', 'plants', 'flower', 'flowers', 'tree', 'cactus', 'fern', 'succulent', 'bonsai', 'greenery', 'houseplant', 'planter']],
-  ['appliance', ['appliance', 'electronics', 'electronic', 'device', 'tv', 'television', 'fridge', 'refrigerator', 'oven', 'stove', 'microwave', 'computer', 'monitor', 'speaker', 'washer', 'dishwasher', 'fireplace', 'heater', 'fan']],
-  ['decor', ['decor', 'decoration', 'decorative', 'art', 'artwork', 'painting', 'poster', 'picture', 'frame', 'rug', 'carpet', 'mat', 'curtain', 'curtains', 'mirror', 'clock', 'vase', 'sculpture', 'statue', 'ornament', 'tapestry', 'cushion', 'pillow', 'throw']],
-  ];
+  [
+    'plant',
+    [
+      'plant',
+      'plants',
+      'flower',
+      'flowers',
+      'tree',
+      'cactus',
+      'fern',
+      'succulent',
+      'bonsai',
+      'greenery',
+      'houseplant',
+      'planter',
+    ],
+  ],
+  [
+    'appliance',
+    [
+      'appliance',
+      'electronics',
+      'electronic',
+      'device',
+      'tv',
+      'television',
+      'fridge',
+      'refrigerator',
+      'oven',
+      'stove',
+      'microwave',
+      'computer',
+      'monitor',
+      'speaker',
+      'washer',
+      'dishwasher',
+      'fireplace',
+      'heater',
+      'fan',
+    ],
+  ],
+  [
+    'decor',
+    [
+      'decor',
+      'decoration',
+      'decorative',
+      'art',
+      'artwork',
+      'painting',
+      'poster',
+      'picture',
+      'frame',
+      'rug',
+      'carpet',
+      'mat',
+      'curtain',
+      'curtains',
+      'mirror',
+      'clock',
+      'vase',
+      'sculpture',
+      'statue',
+      'ornament',
+      'tapestry',
+      'cushion',
+      'pillow',
+      'throw',
+    ],
+  ],
+];
 const CATEGORY_BY_WORD = new Map<string, ObjectCategory>();
-for (const [category, words] of CATEGORY_WORDS) for (const word of words) CATEGORY_BY_WORD.set(word, category);
+for (const [category, words] of CATEGORY_WORDS)
+  for (const word of words) CATEGORY_BY_WORD.set(word, category);
 
 function categoryFromWords(value: string): ObjectCategory | null {
   // Last word first: "coffee table", "reading lamp", "floor cushion" name the thing at the end.
-  const words = value.toLowerCase().split(/[^a-z]+/).filter(Boolean).reverse();
+  const words = value
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean)
+    .reverse();
   for (const word of words) {
-    const found = CATEGORY_BY_WORD.get(word) ?? (word.length > 3 && word.endsWith('s') ? CATEGORY_BY_WORD.get(word.slice(0, -1)) : undefined);
+    const found =
+      CATEGORY_BY_WORD.get(word) ??
+      (word.length > 3 && word.endsWith('s') ? CATEGORY_BY_WORD.get(word.slice(0, -1)) : undefined);
     if (found) return found;
   }
   return null;
@@ -44,9 +167,13 @@ function categoryFromWords(value: string): ObjectCategory | null {
  * kept; other words (and, failing that, the object's name) are matched against a word table; the
  * rest become "prop". `label` keeps the model's own word when it was not a known category.
  */
-export function normaliseCategory(raw: unknown, name = ''): { category: ObjectCategory; label?: string } {
+export function normaliseCategory(
+  raw: unknown,
+  name = '',
+): { category: ObjectCategory; label?: string } {
   const word = typeof raw === 'string' ? raw.trim().toLowerCase().slice(0, 40) : '';
-  if ((OBJECT_CATEGORIES as readonly string[]).includes(word)) return { category: word as ObjectCategory };
+  if ((OBJECT_CATEGORIES as readonly string[]).includes(word))
+    return { category: word as ObjectCategory };
   // Vague words ("furniture", "item") match nothing here, so the name decides.
   const category = (word && categoryFromWords(word)) || categoryFromWords(name) || 'prop';
   return word ? { category, label: word } : { category };
@@ -155,7 +282,8 @@ export function validateLayout(raw: unknown, notes?: string[]): RoomLayout {
   const note = (problem: string) => notes?.push(problem);
   if (!isRecord(raw)) fail('the reply must be one JSON object');
   const shellRaw = raw.shell;
-  if (!isRecord(shellRaw)) fail('"shell" must be an object with width, depth, height, floor, walls');
+  if (!isRecord(shellRaw))
+    fail('"shell" must be an object with width, depth, height, floor, walls');
   const shell: RoomLayout['shell'] = {
     width: clamp(number(shellRaw.width, 'shell.width'), 3, 10),
     depth: clamp(number(shellRaw.depth, 'shell.depth'), 3, 10),
@@ -173,8 +301,14 @@ export function validateLayout(raw: unknown, notes?: string[]): RoomLayout {
         note(`shell.windows[${index}] skipped: needs a wall (north, south, east or west)`);
         return;
       }
-      const width = typeof entry.width === 'number' || typeof entry.width === 'string' ? Number(entry.width) : 1.4;
-      shell.windows.push({ wall: side, width: clamp(Number.isFinite(width) ? width : 1.4, 0.6, 3) });
+      const width =
+        typeof entry.width === 'number' || typeof entry.width === 'string'
+          ? Number(entry.width)
+          : 1.4;
+      shell.windows.push({
+        wall: side,
+        width: clamp(Number.isFinite(width) ? width : 1.4, 0.6, 3),
+      });
     });
   }
   if (isRecord(shellRaw.door)) {
@@ -183,7 +317,8 @@ export function validateLayout(raw: unknown, notes?: string[]): RoomLayout {
     else note('shell.door skipped: its wall is not north, south, east or west');
   }
 
-  if (!Array.isArray(raw.objects) || raw.objects.length === 0) fail('"objects" must be a list with at least one object');
+  if (!Array.isArray(raw.objects) || raw.objects.length === 0)
+    fail('"objects" must be a list with at least one object');
   const objects: LayoutObject[] = [];
   const ids = new Set<string>();
   const problems: string[] = [];
@@ -215,13 +350,14 @@ export function validateLayout(raw: unknown, notes?: string[]): RoomLayout {
     object.place.near = resolve(object.place.near, object.id);
     object.place.on = resolve(object.place.on, object.id);
     const facing = object.place.facing;
-    object.place.facing = facing && /^(center|centre|room)$/i.test(facing) ? 'center' : resolve(facing, object.id);
+    object.place.facing =
+      facing && /^(center|centre|room)$/i.test(facing) ? 'center' : resolve(facing, object.id);
     if (object.place.on) object.place.against = null;
   }
   // `on` chains must end at the floor: drop a link that would loop.
   for (const object of objects) {
     const seen = new Set([object.id]);
-    for (let next = object.place.on; next; ) {
+    for (let next = object.place.on; next;) {
       if (seen.has(next)) {
         object.place.on = null;
         break;
@@ -257,7 +393,8 @@ export function clampSeat(
   const maxWidth = BENCH_WORDS.test(name) ? BENCH_MAX_WIDTH : SEAT_MAX_WIDTH;
   return {
     size: [Math.min(size[0], maxWidth), size[1], Math.min(size[2], SEAT_MAX_DEPTH)],
-    seatHeight: seatHeight === null ? null : clamp(seatHeight, SEAT_HEIGHT_RANGE[0], SEAT_HEIGHT_RANGE[1]),
+    seatHeight:
+      seatHeight === null ? null : clamp(seatHeight, SEAT_HEIGHT_RANGE[0], SEAT_HEIGHT_RANGE[1]),
   };
 }
 
@@ -265,11 +402,18 @@ export function clampSeat(
 function readObject(entry: unknown, where: string, index: number, ids: Set<string>): LayoutObject {
   if (!isRecord(entry)) fail(`${where} must be an object`);
   const name = text(entry.name ?? entry.id, `${where}.name`, 60);
-  let id = slug(typeof entry.id === 'string' && entry.id.trim() ? entry.id : name) || `object-${index + 1}`;
+  let id =
+    slug(typeof entry.id === 'string' && entry.id.trim() ? entry.id : name) ||
+    `object-${index + 1}`;
   for (let n = 2; ids.has(id); n += 1) id = `${slug(name) || 'object'}-${n}`;
   const { category, label } = normaliseCategory(entry.category, name);
-  if (!Array.isArray(entry.size) || entry.size.length !== 3) fail(`${where}.size must be [width, height, depth] in metres`);
-  const size = entry.size.map((n, i) => clamp(number(n, `${where}.size[${i}]`), 0.03, 6)) as [number, number, number];
+  if (!Array.isArray(entry.size) || entry.size.length !== 3)
+    fail(`${where}.size must be [width, height, depth] in metres`);
+  const size = entry.size.map((n, i) => clamp(number(n, `${where}.size[${i}]`), 0.03, 6)) as [
+    number,
+    number,
+    number,
+  ];
   const placeRaw = isRecord(entry.place) ? entry.place : {};
   const place: LayoutPlace = {
     against: looseWall(placeRaw.against),
@@ -279,8 +423,16 @@ function readObject(entry: unknown, where: string, index: number, ids: Set<strin
     corner: placeRaw.corner === true,
   };
   const seatHeightRaw = entry.seat_height ?? entry.seatHeight;
-  const seatHeight = seatHeightRaw === undefined || seatHeightRaw === null || seatHeightRaw === '' ? NaN : Number(seatHeightRaw);
-  const fitted = clampSeat(category, name, size, Number.isFinite(seatHeight) ? clamp(seatHeight, 0.15, 0.9) : null);
+  const seatHeight =
+    seatHeightRaw === undefined || seatHeightRaw === null || seatHeightRaw === ''
+      ? NaN
+      : Number(seatHeightRaw);
+  const fitted = clampSeat(
+    category,
+    name,
+    size,
+    Number.isFinite(seatHeight) ? clamp(seatHeight, 0.15, 0.9) : null,
+  );
   return {
     id,
     name,

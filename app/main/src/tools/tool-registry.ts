@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import type { JSONSchema } from '../mcp/types.js';
+import type { JSONSchema } from '../shared/mcp/types.js';
+import type { OpenAIFunction } from '../shared/tools/tool-registry-types.js';
 
 /** Who is calling a tool. Tools that depend on the caller (an avatar's own notes) read it; the rest ignore it. */
 export interface ToolContext {
@@ -26,16 +27,6 @@ export interface RegisteredTool {
    * approval card), never by voice. Same effect as a 'block' tool that the card can approve.
    */
   cardOnly?: (params: unknown) => boolean | Promise<boolean>;
-}
-
-/**
- * OpenAI function definition format for Realtime API.
- */
-export interface OpenAIFunction {
-  type: 'function';
-  name: string;
-  description: string;
-  parameters: JSONSchema;
 }
 
 /**
@@ -105,7 +96,11 @@ export class ToolRegistry extends EventEmitter {
    * @returns Execution result with success status, data, and duration
    * @throws Error if tool not found or disabled
    */
-  async execute(toolId: string, params: unknown, context?: ToolContext): Promise<ToolExecutionResult> {
+  async execute(
+    toolId: string,
+    params: unknown,
+    context?: ToolContext,
+  ): Promise<ToolExecutionResult> {
     const tool = this.tools.get(toolId);
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`);

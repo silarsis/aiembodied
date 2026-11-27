@@ -30,8 +30,14 @@ import {
 import type { LimbEnd } from './contact-body.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { bakedRootPose, worldToMotion, type RootPose } from './scene-frames.js';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
-import { isMotionTraceEnabled, isSettleRetryEnabled, round, trace as defaultTrace, type TraceFn } from './motion-trace.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
+import {
+  isMotionTraceEnabled,
+  isSettleRetryEnabled,
+  round,
+  trace as defaultTrace,
+  type TraceFn,
+} from './motion-trace.js';
 
 export type { ClipEndAction };
 
@@ -215,7 +221,8 @@ export class SceneActionExecutor {
     this.now = options.now ?? (() => Date.now());
     this.newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10));
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+    this.clearTimer =
+      options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
 
   /** Writes a motion trace line; `build` runs only while tracing is on. */
@@ -424,7 +431,11 @@ export class SceneActionExecutor {
     }
   }
 
-  private async runPlan(item: Extract<QueueItem, { type: 'plan' }>, generation: number, epoch: number): Promise<void> {
+  private async runPlan(
+    item: Extract<QueueItem, { type: 'plan' }>,
+    generation: number,
+    epoch: number,
+  ): Promise<void> {
     const world = this.env?.planWorld();
     if (!world) return;
     let actions: SceneAction[];
@@ -441,7 +452,12 @@ export class SceneActionExecutor {
     return generation !== this.generation || epoch !== this.epoch;
   }
 
-  private async runAction(action: SceneAction, generation: number, epoch: number, depth: number): Promise<void> {
+  private async runAction(
+    action: SceneAction,
+    generation: number,
+    epoch: number,
+    depth: number,
+  ): Promise<void> {
     if (this.stale(generation, epoch)) return;
     const env = this.env;
     if (!env) return;
@@ -469,7 +485,8 @@ export class SceneActionExecutor {
         console.warn(`[scene-actions] giving up on ${action.kind}: too many steps to get ready`);
         return;
       }
-      for (const inserted of plan.actions) await this.runAction(inserted, generation, epoch, depth + 1);
+      for (const inserted of plan.actions)
+        await this.runAction(inserted, generation, epoch, depth + 1);
       await this.runAction(action, generation, epoch, depth + 1);
       return;
     }
@@ -523,7 +540,8 @@ export class SceneActionExecutor {
     try {
       for (let attempt = 0; ; attempt += 1) {
         await this.wait(CONTACT_SETTLE_MS);
-        if (this.stale(generation, epoch) || this.state.posture !== 'seated' || !this.state.seat) return;
+        if (this.stale(generation, epoch) || this.state.posture !== 'seated' || !this.state.seat)
+          return;
         const missing = this.legMisses(env, current);
         this.tr('settle.check', () => ({
           label: original.label,
@@ -534,7 +552,11 @@ export class SceneActionExecutor {
         if (missing.length === 0) return;
         for (const miss of missing) if (miss.objectId) blockers.set(miss.end, miss.objectId);
         if (attempt >= MAX_REPLANS) {
-          this.tr('settle.giveup', () => ({ label: original.label, attempts: attempt, misses: missing.map((miss) => this.describeMiss(miss)) }));
+          this.tr('settle.giveup', () => ({
+            label: original.label,
+            attempts: attempt,
+            misses: missing.map((miss) => this.describeMiss(miss)),
+          }));
           this.recordFailure(world, original.label, missing, blockers);
           return;
         }
@@ -554,7 +576,12 @@ export class SceneActionExecutor {
           await this.runStream(repair, generation, epoch);
         } catch (error) {
           console.warn('[scene-actions] the settle stream failed', error);
-          this.tr('settle.outcome', () => ({ label: original.label, attempt, outcome: 'error', message: String(error) }));
+          this.tr('settle.outcome', () => ({
+            label: original.label,
+            attempt,
+            outcome: 'error',
+            message: String(error),
+          }));
           return;
         }
         this.tr('settle.outcome', () => ({ label: original.label, attempt, outcome: 'played' }));
@@ -572,7 +599,11 @@ export class SceneActionExecutor {
     );
     return (env.contactMisses?.() ?? []).filter((miss) => {
       const joint = LEG_JOINT[miss.end];
-      return joint !== undefined && miss.distance > REPAIR_MISS_DISTANCE && (aimed.has(joint) || miss.seconds > UNTARGETED_MISS_SECONDS);
+      return (
+        joint !== undefined &&
+        miss.distance > REPAIR_MISS_DISTANCE &&
+        (aimed.has(joint) || miss.seconds > UNTARGETED_MISS_SECONDS)
+      );
     });
   }
 
@@ -611,7 +642,10 @@ export class SceneActionExecutor {
       observed.height = y;
     }
     const holdFrom = settle.targets.reduce((least, target) => Math.min(least, target.t), Infinity);
-    const holdUntil = settle.targets.reduce((most, target) => Math.max(most, target.until ?? target.t), 0);
+    const holdUntil = settle.targets.reduce(
+      (most, target) => Math.max(most, target.until ?? target.t),
+      0,
+    );
     const jointTargets: AvatarMotionTarget[] = [...positions].map(([joint, position]) => ({
       t: holdFrom,
       until: holdUntil,
@@ -648,7 +682,12 @@ export class SceneActionExecutor {
   }
 
   /** The trace line for a planned action: the full stream request and, for a sit, the world inputs it was planned from. */
-  private describePlan(action: SceneAction, plan: ActionPlan, world: PlanWorld, depth: number): Record<string, unknown> {
+  private describePlan(
+    action: SceneAction,
+    plan: ActionPlan,
+    world: PlanWorld,
+    depth: number,
+  ): Record<string, unknown> {
     const base = { action, depth, planType: plan.type };
     if (plan.type === 'skip') return { ...base, reason: plan.reason };
     if (plan.type === 'insert') return { ...base, inserted: plan.actions };
@@ -661,7 +700,12 @@ export class SceneActionExecutor {
       frame: stream.frame,
       expectedEnd: stream.expectedEnd,
       outcome: stream.outcome,
-      events: stream.events.map((event) => ({ t: event.t, kind: event.kind, objectId: event.objectId, hand: event.hand })),
+      events: stream.events.map((event) => ({
+        t: event.t,
+        kind: event.kind,
+        objectId: event.objectId,
+        hand: event.hand,
+      })),
       settle: stream.settle ?? null,
       ...(seated
         ? {
@@ -678,8 +722,14 @@ export class SceneActionExecutor {
     };
   }
 
-  private recordFailure(world: PlanWorld, label: string, missing: ContactReport[], blockers: Map<LimbEnd, string>): void {
-    const nameOf = (id: string) => world.room.objects.find((object) => object.id === id)?.name ?? id;
+  private recordFailure(
+    world: PlanWorld,
+    label: string,
+    missing: ContactReport[],
+    blockers: Map<LimbEnd, string>,
+  ): void {
+    const nameOf = (id: string) =>
+      world.room.objects.find((object) => object.id === id)?.name ?? id;
     for (const miss of missing) {
       const blocker = miss.objectId ?? blockers.get(miss.end);
       const text = `couldn't reach its ${LIMB_NAME[miss.end]} target${blocker ? ` (blocked by ${nameOf(blocker)})` : ''}`;
@@ -692,7 +742,11 @@ export class SceneActionExecutor {
 
   // -- Streams --------------------------------------------------------------------------------
 
-  private async runStream(planned: PlannedStream, generation: number, epoch: number): Promise<void> {
+  private async runStream(
+    planned: PlannedStream,
+    generation: number,
+    epoch: number,
+  ): Promise<void> {
     // Only one avatar walks at a time; gestures, looks and in-place actions never wait.
     const occupancy = this.occupancy;
     let releaseWalk: (() => void) | null = null;
@@ -720,7 +774,9 @@ export class SceneActionExecutor {
       id,
       planned,
       interruptible:
-        planned.outcome.posture === 'standing' && planned.events.length === 0 && request.continueFrom === undefined,
+        planned.outcome.posture === 'standing' &&
+        planned.events.length === 0 &&
+        request.continueFrom === undefined,
       enqueued: 0,
       finished: 0,
       generationEnded: false,
@@ -777,14 +833,23 @@ export class SceneActionExecutor {
     }
   }
 
-  private generationEnded(stream: RunningStream, error: unknown, summary: AvatarMotionStreamResult | null): void {
+  private generationEnded(
+    stream: RunningStream,
+    error: unknown,
+    summary: AvatarMotionStreamResult | null,
+  ): void {
     if (stream.settled || stream.generationEnded) return;
     stream.generationEnded = true;
     if (error && !stream.cancelled) {
       stream.failed = true;
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[scene-actions] ${stream.planned.label} failed:`, message);
-      this.tr('stream.error', () => ({ streamId: stream.id, label: stream.planned.label, message, enqueued: stream.enqueued }));
+      this.tr('stream.error', () => ({
+        streamId: stream.id,
+        label: stream.planned.label,
+        message,
+        enqueued: stream.enqueued,
+      }));
       this.emit({ type: 'failed', id: stream.id, message });
     } else if (summary) {
       this.tr('stream.done', () => ({
@@ -793,7 +858,11 @@ export class SceneActionExecutor {
         chunks: summary.chunks,
         session: summary.session ?? null,
       }));
-      this.emit({ type: 'done', id: stream.id, detail: `${summary.chunks} chunk${summary.chunks === 1 ? '' : 's'}` });
+      this.emit({
+        type: 'done',
+        id: stream.id,
+        detail: `${summary.chunks} chunk${summary.chunks === 1 ? '' : 's'}`,
+      });
     }
     if (stream.finished >= stream.enqueued) this.finalize(stream);
   }
@@ -825,7 +894,8 @@ export class SceneActionExecutor {
     if (!env) return;
     try {
       if (event.kind === 'attach') {
-        if (env.attach(event.objectId, event.hand)) this.state = { ...this.state, held: { objectId: event.objectId, hand: event.hand } };
+        if (env.attach(event.objectId, event.hand))
+          this.state = { ...this.state, held: { objectId: event.objectId, hand: event.hand } };
         else console.warn(`[scene-actions] could not pick up ${event.objectId}`);
       } else {
         env.detach(event);
@@ -854,7 +924,8 @@ export class SceneActionExecutor {
     let verdict: ClipEndAction;
     const env = this.env;
     if (env && played) {
-      const endPose = stream.lastEndPose ?? (stream.cancelled || stream.failed ? undefined : planned.expectedEnd);
+      const endPose =
+        stream.lastEndPose ?? (stream.cancelled || stream.failed ? undefined : planned.expectedEnd);
       const { outcome } = planned;
       const session = stream.failed || stream.cancelled ? undefined : stream.session;
       this.tr('stream.final', () => ({
@@ -886,7 +957,9 @@ export class SceneActionExecutor {
         if (endPose) {
           env.setRootPose(bakedRootPose(planned.frame, endPose));
         } else {
-          console.warn('[scene-actions] the motion service reported no end pose; the avatar returns to where it started');
+          console.warn(
+            '[scene-actions] the motion service reported no end pose; the avatar returns to where it started',
+          );
         }
         this.state = { ...this.state, posture: 'standing', seat: undefined };
         env.clearSeat?.();
@@ -905,7 +978,9 @@ export class SceneActionExecutor {
     try {
       occupancy.releaseSpot();
       occupancy.keepOnly({
-        ...(this.state.posture === 'seated' && this.state.seat ? { seat: this.state.seat.objectId } : {}),
+        ...(this.state.posture === 'seated' && this.state.seat
+          ? { seat: this.state.seat.objectId }
+          : {}),
         ...(this.state.held ? { object: this.state.held.objectId } : {}),
       });
     } catch (error) {
@@ -916,7 +991,12 @@ export class SceneActionExecutor {
   private cancelStream(stream: RunningStream): void {
     if (stream.cancelled) return;
     stream.cancelled = true;
-    this.tr('stream.cancel', () => ({ streamId: stream.id, label: stream.planned.label, enqueued: stream.enqueued, generationEnded: stream.generationEnded }));
+    this.tr('stream.cancel', () => ({
+      streamId: stream.id,
+      label: stream.planned.label,
+      enqueued: stream.enqueued,
+      generationEnded: stream.generationEnded,
+    }));
     if (!stream.generationEnded) {
       try {
         this.bridge?.cancelMotion?.(stream.id);

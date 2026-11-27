@@ -19,9 +19,8 @@ async function resolveConfig(mode: Mode): Promise<UserConfig> {
     command: mode === 'development' ? 'serve' : 'build',
   };
 
-  const result = typeof config === 'function'
-    ? (config as ConfigFactory)(env)
-    : (config as ConfigValue);
+  const result =
+    typeof config === 'function' ? (config as ConfigFactory)(env) : (config as ConfigValue);
 
   return await Promise.resolve(result);
 }
@@ -36,10 +35,13 @@ describe('vite configuration', () => {
       build: { write: false, minify: false, reportCompressedSize: false },
     });
     const builds = Array.isArray(result) ? result : [result];
-    const chunks = builds.flatMap((output) => 'output' in output ? output.output : [])
+    const chunks = builds
+      .flatMap((output) => ('output' in output ? output.output : []))
       .filter((output) => output.type === 'chunk');
     const inspector = chunks.find((chunk) =>
-      Object.keys(chunk.modules).some((id) => id.replaceAll('\\', '/').endsWith('/avatar/model-review-scene.ts')),
+      Object.keys(chunk.modules).some((id) =>
+        id.replaceAll('\\', '/').endsWith('/avatar/model-review-scene.ts'),
+      ),
     );
     expect(inspector).toBeDefined();
     expect(inspector?.isDynamicEntry).toBe(false);

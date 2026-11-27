@@ -6,7 +6,12 @@
  * gets the problem once and tries again.
  */
 import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
-import { DEFAULT_OPENAI_MODELS, FailoverChatClient, type ChatClient, type ServerKeyLookup } from '../local-voice/voice-engines.js';
+import {
+  DEFAULT_OPENAI_MODELS,
+  FailoverChatClient,
+  type ChatClient,
+  type ServerKeyLookup,
+} from '../local-voice/voice-engines.js';
 import { LocalLlmClient, type ChatMessage } from '../local-voice/local-llm-client.js';
 import { LayoutError, validateLayout, type RoomLayout } from './room-layout.js';
 import { buildLayoutPrompt, buildRetryNote } from './room-layout-prompt.js';
@@ -26,7 +31,10 @@ export interface RoomLayoutOptions {
   makeClients?: (jsonObject: boolean) => ChatClient[];
 }
 
-function layoutClients({ routing, keyFor, fetchFn }: RoomLayoutOptions, jsonObject: boolean): ChatClient[] {
+function layoutClients(
+  { routing, keyFor, fetchFn }: RoomLayoutOptions,
+  jsonObject: boolean,
+): ChatClient[] {
   return routeTargets(routing, 'scenelayout').map(
     ({ server, model }): ChatClient =>
       new LocalLlmClient({
@@ -44,7 +52,10 @@ function layoutClients({ routing, keyFor, fetchFn }: RoomLayoutOptions, jsonObje
 
 /** Pulls the JSON object out of a reply that may have think blocks, fences or chatter around it. */
 export function extractJson(reply: string): unknown {
-  let body = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim();
+  let body = reply
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim();
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(body);
   if (fenced) body = fenced[1].trim();
   const start = body.indexOf('{');
@@ -53,13 +64,20 @@ export function extractJson(reply: string): unknown {
   try {
     return JSON.parse(body.slice(start, end + 1)) as unknown;
   } catch (error) {
-    throw new LayoutError(`the reply was not valid JSON (${error instanceof Error ? error.message : 'parse error'})`);
+    throw new LayoutError(
+      `the reply was not valid JSON (${error instanceof Error ? error.message : 'parse error'})`,
+    );
   }
 }
 
-async function complete(chat: ChatClient, messages: ChatMessage[], signal: AbortSignal): Promise<string> {
+async function complete(
+  chat: ChatClient,
+  messages: ChatMessage[],
+  signal: AbortSignal,
+): Promise<string> {
   let text = '';
-  for await (const part of chat.streamChat(messages, { signal })) if (part.type === 'text') text += part.text;
+  for await (const part of chat.streamChat(messages, { signal }))
+    if (part.type === 'text') text += part.text;
   return text;
 }
 
@@ -68,7 +86,10 @@ function rejectedRequest(error: unknown): boolean {
   return error instanceof Error && /HTTP 4\d\d/.test(error.message);
 }
 
-export async function generateRoomLayout(description: string, options: RoomLayoutOptions): Promise<RoomLayout> {
+export async function generateRoomLayout(
+  description: string,
+  options: RoomLayoutOptions,
+): Promise<RoomLayout> {
   const make = options.makeClients ?? ((json: boolean) => layoutClients(options, json));
   const build = (json: boolean): ChatClient | null => {
     const clients = make(json);
@@ -91,7 +112,10 @@ export async function generateRoomLayout(description: string, options: RoomLayou
     try {
       reply = await complete(chat, messages, signal);
     } catch (error) {
-      if (signal.aborted) throw options.signal?.aborted ? new Error('Cancelled.') : new Error('The room layout model took too long to answer.');
+      if (signal.aborted)
+        throw options.signal?.aborted
+          ? new Error('Cancelled.')
+          : new Error('The room layout model took too long to answer.');
       if (json && rejectedRequest(error)) {
         // The server does not take response_format: ask again without it.
         json = false;
@@ -99,23 +123,33 @@ export async function generateRoomLayout(description: string, options: RoomLayou
         try {
           reply = await complete(chat, messages, signal);
         } catch (second) {
-          throw new Error(`The room layout model could not be reached: ${second instanceof Error ? second.message : String(second)}`);
+          throw new Error(
+            `The room layout model could not be reached: ${second instanceof Error ? second.message : String(second)}`,
+          );
         }
       } else {
-        throw new Error(`The room layout model could not be reached: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+          `The room layout model could not be reached: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
     try {
       const notes: string[] = [];
       const layout = validateLayout(extractJson(reply), notes);
-      if (notes.length) options.logger?.warn('Room layout reply had parts that were left out.', { notes });
+      if (notes.length)
+        options.logger?.warn('Room layout reply had parts that were left out.', { notes });
       return layout;
     } catch (error) {
       if (!(error instanceof LayoutError)) throw error;
       problem = error.message;
       options.logger?.warn('Room layout reply was not usable.', { problem, attempt });
-      messages.push({ role: 'assistant', content: reply.slice(0, 6000) }, { role: 'user', content: buildRetryNote(problem) });
+      messages.push(
+        { role: 'assistant', content: reply.slice(0, 6000) },
+        { role: 'user', content: buildRetryNote(problem) },
+      );
     }
   }
-  throw new Error(`The room layout model did not return a usable layout (${problem}). Try again, or pick a stronger model for Room layout in Models and servers.`);
+  throw new Error(
+    `The room layout model did not return a usable layout (${problem}). Try again, or pick a stronger model for Room layout in Models and servers.`,
+  );
 }

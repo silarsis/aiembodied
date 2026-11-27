@@ -6,12 +6,25 @@
  * everything again when the event stream reconnects (`reset()`), and every minute asks which keys
  * the runner holds. Keys only travel in the request body and are never logged.
  */
-import { BUILT_IN_SERVER_IDS, DEFAULT_CODER_MODEL, routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
+import {
+  BUILT_IN_SERVER_IDS,
+  DEFAULT_CODER_MODEL,
+  routeTargets,
+  type ModelRouting,
+} from '../shared/config/model-routing.js';
 import { toRunnerWorkspace, type CodingConfig } from './config.js';
 import { CODER_CONTEXT_LENGTH } from '../shared/coding/types.js';
-import { RunnerError, type CodingRunnerClient, type RunnerKeys, type RunnerSettings } from './runner-client.js';
+import {
+  RunnerError,
+  type CodingRunnerClient,
+  type RunnerKeys,
+  type RunnerSettings,
+} from './runner-client.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface CodingSyncPayload {
   workspaces: Array<Record<string, unknown>>;
@@ -32,21 +45,40 @@ export function buildCodingSyncPayload(
   let settings: Partial<RunnerSettings> | undefined;
   if (target?.server.type === 'chat') {
     const model = target.model?.trim() || DEFAULT_CODER_MODEL;
-    settings = { local_llm_url: target.server.url, local_model: model,
+    settings = {
+      local_llm_url: target.server.url,
+      local_model: model,
       // Only the built-in coder server is started by this app with that context size.
-      ...(target.server.id === BUILT_IN_SERVER_IDS.coderLlm ? { local_context: CODER_CONTEXT_LENGTH } : {}),
-      default_model: { provider: 'local', id: model } };
-  } else if (target && (target.server.type === 'openai' || target.server.type === 'anthropic') && target.model?.trim()) {
+      ...(target.server.id === BUILT_IN_SERVER_IDS.coderLlm
+        ? { local_context: CODER_CONTEXT_LENGTH }
+        : {}),
+      default_model: { provider: 'local', id: model },
+    };
+  } else if (
+    target &&
+    (target.server.type === 'openai' || target.server.type === 'anthropic') &&
+    target.model?.trim()
+  ) {
     // The local model settings stay those of the built-in coder server; only the default changes.
     const local = routing.servers.find((server) => server.id === BUILT_IN_SERVER_IDS.coderLlm);
     settings = {
-      ...(local ? { local_llm_url: local.url, local_model: DEFAULT_CODER_MODEL, local_context: CODER_CONTEXT_LENGTH } : {}),
+      ...(local
+        ? {
+            local_llm_url: local.url,
+            local_model: DEFAULT_CODER_MODEL,
+            local_context: CODER_CONTEXT_LENGTH,
+          }
+        : {}),
       default_model: { provider: target.server.type, id: target.model.trim() },
     };
   }
   return {
     workspaces: coding.workspaces.map(toRunnerWorkspace),
-    keys: { openai: key(BUILT_IN_SERVER_IDS.openai), anthropic: key(BUILT_IN_SERVER_IDS.anthropic), github: key(BUILT_IN_SERVER_IDS.github) },
+    keys: {
+      openai: key(BUILT_IN_SERVER_IDS.openai),
+      anthropic: key(BUILT_IN_SERVER_IDS.anthropic),
+      github: key(BUILT_IN_SERVER_IDS.github),
+    },
     ...(settings ? { settings } : {}),
   };
 }
@@ -127,7 +159,10 @@ export class CodingSync {
     try {
       const held = await this.options.client.getKeys();
       const lost =
-        this.unreachable || (Object.entries(wanted.keys) as Array<[keyof RunnerKeys, string | null]>).some(([name, value]) => Boolean(value) && !held[name]);
+        this.unreachable ||
+        (Object.entries(wanted.keys) as Array<[keyof RunnerKeys, string | null]>).some(
+          ([name, value]) => Boolean(value) && !held[name],
+        );
       this.unreachable = false;
       if (lost) {
         this.options.logger.info('The coding runner lost its keys; sending them again.');
@@ -137,7 +172,9 @@ export class CodingSync {
     } catch (error) {
       // Down now; when it answers again it will have restarted and forgotten the keys.
       this.unreachable = true;
-      this.options.logger.warn('The coding runner did not answer the key check.', { message: errorMessage(error) });
+      this.options.logger.warn('The coding runner did not answer the key check.', {
+        message: errorMessage(error),
+      });
     }
   }
 
@@ -145,7 +182,15 @@ export class CodingSync {
     const wanted = this.wanted;
     if (this.stopped || !wanted) return;
     const parts: Array<[Part, unknown, () => Promise<unknown>]> = [
-      ...(wanted.settings ? ([['settings', wanted.settings, () => this.options.client.putSettings(wanted.settings as Partial<RunnerSettings>)]] as Array<[Part, unknown, () => Promise<unknown>]>) : []),
+      ...(wanted.settings
+        ? ([
+            [
+              'settings',
+              wanted.settings,
+              () => this.options.client.putSettings(wanted.settings as Partial<RunnerSettings>),
+            ],
+          ] as Array<[Part, unknown, () => Promise<unknown>]>)
+        : []),
       ['workspaces', wanted.workspaces, () => this.options.client.putWorkspaces(wanted.workspaces)],
       ['keys', wanted.keys, () => this.options.client.putKeys(wanted.keys)],
     ];
@@ -165,16 +210,21 @@ export class CodingSync {
           ...(part === 'keys' ? { keys: Object.values(wanted.keys).filter(Boolean).length } : {}),
         });
       } catch (error) {
-        const refused = error instanceof RunnerError && error.status !== undefined && error.status < 500;
+        const refused =
+          error instanceof RunnerError && error.status !== undefined && error.status < 500;
         if (refused) {
           // The runner understood and said no: sending the same again would not help.
           this.sent[part] = signature;
           if (part === 'workspaces') this.workspaceError = errorMessage(error);
-          this.options.logger.warn(`The coding runner refused the ${part}.`, { message: errorMessage(error) });
+          this.options.logger.warn(`The coding runner refused the ${part}.`, {
+            message: errorMessage(error),
+          });
         } else {
           retry = true;
           this.unreachable = true;
-          this.options.logger.warn(`The coding runner is not ready for the ${part}; will retry.`, { message: errorMessage(error) });
+          this.options.logger.warn(`The coding runner is not ready for the ${part}; will retry.`, {
+            message: errorMessage(error),
+          });
         }
       }
     }

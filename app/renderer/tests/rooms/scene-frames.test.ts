@@ -29,7 +29,11 @@ describe('motion frames', () => {
   });
 
   it('round-trips points, headings and heights', () => {
-    for (const [x, z] of [[0, 0], [3.2, -1.1], [-4, 5]] as const) {
+    for (const [x, z] of [
+      [0, 0],
+      [3.2, -1.1],
+      [-4, 5],
+    ] as const) {
       const [mx, mz] = worldToMotion(frame, x, z);
       const [bx, bz] = motionToWorld(frame, mx, mz);
       expect(bx).toBeCloseTo(x, 9);
@@ -45,7 +49,10 @@ describe('motion frames', () => {
   it('wraps angles into (-pi, pi]', () => {
     expect(wrapRadians(3 * Math.PI)).toBeCloseTo(-Math.PI, 9);
     expect(wrapRadians(-2.5 * Math.PI)).toBeCloseTo(-Math.PI / 2, 9);
-    expect(worldYawToMotion({ origin: { x: 0, z: 0, yaw: 3 }, scale: 1 }, -3)).toBeCloseTo(2 * Math.PI - 6, 9);
+    expect(worldYawToMotion({ origin: { x: 0, z: 0, yaw: 3 }, scale: 1 }, -3)).toBeCloseTo(
+      2 * Math.PI - 6,
+      9,
+    );
   });
 
   it('measures yaw as atan2(dx, dz)', () => {

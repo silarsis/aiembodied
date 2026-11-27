@@ -7,7 +7,7 @@ import type {
   ConversationRole,
   ConversationSession,
   ConversationSessionWithMessages,
-} from './types.js';
+} from '../shared/conversation/types.js';
 import type { MemoryStore, MessageRecord, SessionRecord } from '../memory/index.js';
 
 type ConversationEventMap = {
@@ -95,21 +95,33 @@ export class ConversationManager extends EventEmitter {
     this.store = options.store;
     this.logger = options.logger;
     this.maxSessions = Math.max(1, options.maxSessions ?? DEFAULT_MAX_SESSIONS);
-    this.maxMessagesPerSession = Math.max(1, options.maxMessagesPerSession ?? DEFAULT_MAX_MESSAGES_PER_SESSION);
+    this.maxMessagesPerSession = Math.max(
+      1,
+      options.maxMessagesPerSession ?? DEFAULT_MAX_MESSAGES_PER_SESSION,
+    );
 
     this.initializeCurrentSession();
     this.pruneSessions();
   }
 
-  override on<U extends keyof ConversationEventMap>(event: U, listener: ConversationEventMap[U]): this {
+  override on<U extends keyof ConversationEventMap>(
+    event: U,
+    listener: ConversationEventMap[U],
+  ): this {
     return super.on(event, listener);
   }
 
-  override once<U extends keyof ConversationEventMap>(event: U, listener: ConversationEventMap[U]): this {
+  override once<U extends keyof ConversationEventMap>(
+    event: U,
+    listener: ConversationEventMap[U],
+  ): this {
     return super.once(event, listener);
   }
 
-  override off<U extends keyof ConversationEventMap>(event: U, listener: ConversationEventMap[U]): this {
+  override off<U extends keyof ConversationEventMap>(
+    event: U,
+    listener: ConversationEventMap[U],
+  ): this {
     return super.off(event, listener);
   }
 
@@ -152,7 +164,9 @@ export class ConversationManager extends EventEmitter {
     id = randomUUID(),
     startedAt = Date.now(),
     title = null,
-  }: Partial<Omit<ConversationSession, 'startedAt'>> & { startedAt?: number } = {}): ConversationSession {
+  }: Partial<Omit<ConversationSession, 'startedAt'>> & {
+    startedAt?: number;
+  } = {}): ConversationSession {
     const session: SessionRecord = {
       id,
       startedAt,
@@ -163,7 +177,11 @@ export class ConversationManager extends EventEmitter {
     this.currentSessionId = session.id;
     this.store.setValue(CURRENT_SESSION_KEY, session.id);
     this.store.setValue(LAST_SESSION_KEY, session.id);
-    this.emit('session-started', { id: session.id, startedAt: session.startedAt, title: session.title });
+    this.emit('session-started', {
+      id: session.id,
+      startedAt: session.startedAt,
+      title: session.title,
+    });
 
     this.pruneSessions();
 
@@ -208,7 +226,10 @@ export class ConversationManager extends EventEmitter {
     if (this.currentSessionId) {
       const loaded = this.store.getSessionWithMessages(this.currentSessionId);
       if (loaded) {
-        const newest = loaded.messages.reduce((latest, message) => Math.max(latest, message.ts), loaded.startedAt);
+        const newest = loaded.messages.reduce(
+          (latest, message) => Math.max(latest, message.ts),
+          loaded.startedAt,
+        );
         if (now - newest <= maxIdleMs) {
           sessionId = loaded.id;
         }
@@ -237,7 +258,9 @@ export class ConversationManager extends EventEmitter {
   }
 
   private pruneSessions() {
-    const sessions = sortSessionsDescending(this.store.listSessions({ limit: Number.MAX_SAFE_INTEGER }));
+    const sessions = sortSessionsDescending(
+      this.store.listSessions({ limit: Number.MAX_SAFE_INTEGER }),
+    );
     if (sessions.length <= this.maxSessions) {
       return;
     }
@@ -282,4 +305,3 @@ export class ConversationManager extends EventEmitter {
     });
   }
 }
-

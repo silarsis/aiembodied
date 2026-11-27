@@ -31,21 +31,21 @@ Main process: `app/main/src/rooms/` (`types.ts`, `validate.ts`, `room-service.ts
 
 Renderer: `app/renderer/src/rooms/`.
 
-| File | Job |
-|---|---|
-| `room-builder.ts` | Turns a `RoomFile` into a three.js group; `dispose()` frees it. Has a `loadModel` hook for later. |
-| `room-geometry.ts` | Wall pieces around openings, shared by the builder and physics. |
-| `room-physics.ts` | Rapier world: static colliders, dynamic props, avatar capsule (radius 0.25, height 1.6). |
-| `room-navmesh.ts` | Recast navmesh (agent radius 0.3, height 1.7, max climb 0.15): `findPath`, `closestWalkable`, `isWalkable`, `debugMesh`. |
-| `room-stage.ts` | `RoomStage` ties these together without touching WebGL, so it runs in tests. If either WASM library fails to start the room still renders. |
-| `room-scene-controller.ts` | Switches the avatar renderer between 2D and room mode (canvas size, camera, avatar placement). Owns the `sceneEnv`. |
-| `scene-frames.ts` | World to motion frame maths and the root bake. |
-| `scene-actions.ts` | Tag object matching and the planner: scene action to motion stream request. Pure. |
-| `scene-executor.ts` | The action queue, stream tracking, events, bake and state. Runs against `SceneEnv` and `SceneBridge` interfaces. |
-| `scene-env.ts` | The real `SceneEnv`: avatar root pose, hand attach, grip, placing props. |
-| `grip-pose.ts` | Curls the finger bones of a hand around a held object. |
-| `scene-instructions.ts` | The room description and tag syntax added to the model's instructions. |
-| `room-thumbnail.ts` | Renders the selector's card images, or nothing where WebGL is missing. |
+| File                       | Job                                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `room-builder.ts`          | Turns a `RoomFile` into a three.js group; `dispose()` frees it. Has a `loadModel` hook for later.                                          |
+| `room-geometry.ts`         | Wall pieces around openings, shared by the builder and physics.                                                                            |
+| `room-physics.ts`          | Rapier world: static colliders, dynamic props, avatar capsule (radius 0.25, height 1.6).                                                   |
+| `room-navmesh.ts`          | Recast navmesh (agent radius 0.3, height 1.7, max climb 0.15): `findPath`, `closestWalkable`, `isWalkable`, `debugMesh`.                   |
+| `room-stage.ts`            | `RoomStage` ties these together without touching WebGL, so it runs in tests. If either WASM library fails to start the room still renders. |
+| `room-scene-controller.ts` | Switches the avatar renderer between 2D and room mode (canvas size, camera, avatar placement). Owns the `sceneEnv`.                        |
+| `scene-frames.ts`          | World to motion frame maths and the root bake.                                                                                             |
+| `scene-actions.ts`         | Tag object matching and the planner: scene action to motion stream request. Pure.                                                          |
+| `scene-executor.ts`        | The action queue, stream tracking, events, bake and state. Runs against `SceneEnv` and `SceneBridge` interfaces.                           |
+| `scene-env.ts`             | The real `SceneEnv`: avatar root pose, hand attach, grip, placing props.                                                                   |
+| `grip-pose.ts`             | Curls the finger bones of a hand around a held object.                                                                                     |
+| `scene-instructions.ts`    | The room description and tag syntax added to the model's instructions.                                                                     |
+| `room-thumbnail.ts`        | Renders the selector's card images, or nothing where WebGL is missing.                                                                     |
 
 The navmesh is built from the floor with every non-dynamic collider's footprint cut out, so furniture is never walkable on top. Paths therefore keep about 0.3 m from furniture and walls, and a target inside furniture (such as a sit position) snaps to the nearest floor beside it.
 
@@ -53,15 +53,15 @@ The navmesh is built from the floor with every non-dynamic collider's footprint 
 
 In a room, while the local motion service is ready, the assistant can walk to things, look at them, sit, stand, pick things up and put them down. It writes tags in its reply, next to any `{move:...}` tags:
 
-| Tag | What happens |
-|---|---|
-| `{go:X}` | Walk to X's `stand` tag, or the closest walkable point in front of X's face (the side facing the room centre), and face X. |
-| `{come}` | Walk back to the room's `home` spot and face its facing. |
-| `{look:X}` | Turn on the spot to X's `look` tag (or the middle of X). Skipped if already within 20 degrees. |
-| `{sit:X}` | X needs a `sit` tag. Walk to the point 0.45 m in front of the seat, turn around and sit. |
-| `{stand}` | Stand up from the seat. Does nothing when already standing. |
-| `{pick:X}` | X needs a `grab` tag and must be dynamic. Go near it if more than 0.7 m away, reach with the nearer hand, take it. |
-| `{put:X@S}` (or `{put:X on S}`) | Needs to be holding X and S needs a `surface` tag. Go near S if needed, reach to the top of S, put X down. |
+| Tag                             | What happens                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `{go:X}`                        | Walk to X's `stand` tag, or the closest walkable point in front of X's face (the side facing the room centre), and face X. |
+| `{come}`                        | Walk back to the room's `home` spot and face its facing.                                                                   |
+| `{look:X}`                      | Turn on the spot to X's `look` tag (or the middle of X). Skipped if already within 20 degrees.                             |
+| `{sit:X}`                       | X needs a `sit` tag. Walk to the point 0.45 m in front of the seat, turn around and sit.                                   |
+| `{stand}`                       | Stand up from the seat. Does nothing when already standing.                                                                |
+| `{pick:X}`                      | X needs a `grab` tag and must be dynamic. Go near it if more than 0.7 m away, reach with the nearer hand, take it.         |
+| `{put:X@S}` (or `{put:X on S}`) | Needs to be holding X and S needs a `surface` tag. Go near S if needed, reach to the top of S, put X down.                 |
 
 Object names match a room object's id or name, ignoring case, articles ("the") and a simple plural. A bare noun such as "table" works when exactly one object name ends with it. Unknown objects, missing tags, no path, or a room without navigation skip the action with a `console.warn` and the queue carries on. The tags are stripped from speech and from the transcript like `{move:}`; `{stand}` and `{come}` are reserved, so an animation with either slug cannot be played by the plain `{slug}` form (use `{anim:stand}`).
 
@@ -77,7 +77,7 @@ Object names match a room object's id or name, ignoring case, articles ("the") a
 - **Seat surface and contact fit.** The sit tag's height is only a guess (the layout model's `seat_height`, or 0.45 m), so `planSit` asks `PlanWorld.seatSurfaceY` for the real top: `RoomStage.surfaceHeightAt` casts a ray straight down at the sit anchor onto the seat object's own meshes, starting 0.25 m above the tag and rejecting hits more than 0.25 m below it (a backrest or arm cannot be chosen; an avatar on the seat is ignored); with no hit the tag height is used. Because ARDY reaches targets only approximately, `RoomSceneEnv` also fits the pose at run time (`rooms/seat-fit.ts`): once the sit clip is held the executor calls `setSeat(objectId)`, and each frame the env measures the hips bone, takes the lowest contact as 0.09 m below it (scaled by rest hips height / 0.95 and the avatar scale), measures the surface under the hips and eases a vertical offset (time constant about 0.15 s, clamped to 0.3 m either way) into the root's y as a delta. `clearSeat()` (stand-up starts, a stream ends standing, or the executor resets) eases it back to 0, so standing and walking use the plain floor. Seat sizes from the room generator are also clamped (seat height 0.35 to 0.55 m, depth 0.95 m, width 1.0 m, or 2.4 m for sofas, couches and benches).
 - **Body contact** (`rooms/contact-body.ts`): after the animation, grip and seat fit, every body capsule (pelvis, chest, arms, legs) is probed against the room's colliders and the whole body is moved out of what it sank into: one eased root shift, sideways up to 0.15 m (from any hit, walls included) and up to 0.08 m up (only the pelvis and thighs on furniture other than the seat being sat on, whose height belongs to seat fit). Joints are not bent to clear furniture; only grounded feet are planted again (two-bone IK) so a shifted body does not float. A limb still in furniture after the shift is a miss, which the sit settle can replan. When a standing stream's end pose is baked, the sideways shift is kept as where the avatar now stands.
 - **Joint limits** (`avatar/joint-limits.ts`): the last write before `vrm.update` every frame, for every avatar in 2D and 3D, clamps each humanoid bone's twist and swing to an anatomical range (VRM 0 models get the ranges mirrored), so no clip, pose blend or solver can show an impossible rotation; the head stays within about 125 degrees of yaw from the hips, knees and elbows cannot bend backwards. Hips, eyes, jaw and fingers are not limited. The pre-clamp rotation is put back at the start of the next frame so writers that compare with their own last write are not confused.
-**Reaching:** prompt "a person reaches out and picks something up from a table", a hand target (the demo's end-effector bundle is built by the service) at 1.5 to 1.8 s with the pelvis held. At 1.7 s the object is attached to the hand bone (it keeps its world transform and then follows the hand) and eases (about 0.2 s) so that its `grab` tag point, or the centre of its bounding box, sits in the palm (halfway from the hand bone to the middle-finger knuckle, hand bone if absent); its physics body goes kinematic, and the fingers curl (`rooms/grip-pose.ts`). A put detaches it at 1.7 s, sets it on the top of the surface at the hand's position (clamped 0.15 m inside the edge), makes it dynamic again and opens the hand.
+  **Reaching:** prompt "a person reaches out and picks something up from a table", a hand target (the demo's end-effector bundle is built by the service) at 1.5 to 1.8 s with the pelvis held. At 1.7 s the object is attached to the hand bone (it keeps its world transform and then follows the hand) and eases (about 0.2 s) so that its `grab` tag point, or the centre of its bounding box, sits in the palm (halfway from the hand bone to the middle-finger knuckle, hand bone if absent); its physics body goes kinematic, and the fingers curl (`rooms/grip-pose.ts`). A put detaches it at 1.7 s, sets it on the top of the surface at the hand's position (clamped 0.15 m inside the edge), makes it dynamic again and opens the hand.
 - **Frames** (`rooms/scene-frames.ts`): a fresh stream's origin is the avatar's root (the VRM scene's x/z and yaw). World points are translated, rotated by minus the yaw and **divided by the avatar's scale** (the scene scale, so world metres become the avatar's own metres, which is what the service expects). The hips tracks of the chunks are then already in the avatar's local frame, which is how the hips node moves under the VRM scene, so nothing is converted per frame.
 - **Root bake:** when the last chunk of a standing-ended stream has finished playing, the scene root is moved to the last chunk's `end_pose` (converted back to the world) and turned to its heading, and the clip is dropped in the same frame so the idle pose takes over at the local origin. Chunks end in an `onEnd` callback that answers `release` for this; the planned end is the fallback when the service reports no `end_pose`.
 
@@ -106,11 +106,11 @@ When nobody has talked for a while, the avatar in a 3D room does things on its o
 
 **Settings.** Controls → Backgrounds → 3D rooms → **When idle** (saved as `rooms.idle` in the memory store, read and written through `backgrounds.getIdleSettings` / `setIdleSettings`):
 
-- *Wander when nobody is talking*, on by default.
-- *Restlessness*: Calm, Normal (default) or Restless, a mean wait between idle actions of 180, 90 or 40 seconds. Each wait is drawn uniformly from 60 % to 140 % of the mean.
-- *When I start talking*: **Turn to me where it is** (default) or **Come back to me**.
+- _Wander when nobody is talking_, on by default.
+- _Restlessness_: Calm, Normal (default) or Restless, a mean wait between idle actions of 180, 90 or 40 seconds. Each wait is drawn uniformly from 60 % to 140 % of the mean.
+- _When I start talking_: **Turn to me where it is** (default) or **Come back to me**.
 
-**Idle habits.** Controls → Characters, in a character's card under *Edit*, has an *Idle habits* text (at most 500 characters) beside its prompt and voice, kept per avatar (`avatar:idle-habits:get` / `:set`, stored under `avatar.idleHabits.<model id>`, or `avatar.idleHabits.avatar:<id>` for an avatar that shares Echo's body). The idle director reads every avatar's own habits and personality through `avatars:idle-personas`. It goes into the idle prompt, e.g. "sits by the window with tea; tidies when bored".
+**Idle habits.** Controls → Characters, in a character's card under _Edit_, has an _Idle habits_ text (at most 500 characters) beside its prompt and voice, kept per avatar (`avatar:idle-habits:get` / `:set`, stored under `avatar.idleHabits.<model id>`, or `avatar.idleHabits.avatar:<id>` for an avatar that shares Echo's body). The idle director reads every avatar's own habits and personality through `avatars:idle-personas`. It goes into the idle prompt, e.g. "sits by the window with tea; tidies when bored".
 
 **When it acts** (`rooms/idle-director.ts`). The avatar counts as idle when there is no user speech, wake word, tap or push-to-talk, the assistant is not transcribing, thinking or responding, and no scene action is queued or running. The first idle action comes 45 s after the last activity; each later one after the restlessness interval, counted from the end of the previous idle action. Any conversation activity throws away a decision still being made and goes back to the 45 s rule.
 
@@ -118,7 +118,7 @@ When nobody has talked for a while, the avatar in a 3D room does things on its o
 
 **Visibility** (`rooms/room-visibility.ts`). `visibleObjects(room, aspect)` rebuilds the room camera with three.js (no renderer) and keeps objects whose middle and sit or stand spot are all inside the frustum with a 5 % margin. The aspect is the real canvas aspect, so a narrow window sees fewer objects. In the reading room at 16:9 the bookshelf is off to the left and is not offered; at 21:9 it is.
 
-**When talking starts.** The existing interrupt cancels walks and turns. If the avatar wandered since the user last talked, then 1.5 s after the last interrupt (a wake word is usually followed by speech) it queues, according to the setting: *Come back to me*: `{stand}` if seated, then `{come}`, when seated or more than 1.0 m from home; *Turn to me where it is*: a look at the camera position (`lookAtPoint` action, not exposed in the prompt), when standing and facing more than 30 degrees away. A seated avatar stays seated for *Turn to me*. The decision is made when the queued item's turn comes (`SceneActionExecutor.submitPlan`), from where the avatar is by then.
+**When talking starts.** The existing interrupt cancels walks and turns. If the avatar wandered since the user last talked, then 1.5 s after the last interrupt (a wake word is usually followed by speech) it queues, according to the setting: _Come back to me_: `{stand}` if seated, then `{come}`, when seated or more than 1.0 m from home; _Turn to me where it is_: a look at the camera position (`lookAtPoint` action, not exposed in the prompt), when standing and facing more than 30 degrees away. A seated avatar stays seated for _Turn to me_. The decision is made when the queued item's turn comes (`SceneActionExecutor.submitPlan`), from where the avatar is by then.
 
 **The conversation knows.** The director keeps the last 8 idle actions with their time (`recent()`) and `recentSummary()` gives those of the last 10 minutes, such as "walked to the bookshelf (browses the books); sat down on the armchair". The room part of the session instructions then ends with "Just before this, while idle, you: …". It is updated only when the summary changed and the assistant is not transcribing, thinking or responding.
 
@@ -170,8 +170,8 @@ When the Poly Haven library has no good match for an object, the app makes it on
 
 **Settings** (Controls → Backgrounds → 3D rooms → **New objects**, saved as `rooms.objects` in the memory store, read and written through `backgrounds.getObjectSettings` / `setObjectSettings`):
 
-- *Make missing objects*, on by default. The checkbox is hidden, with a hint to set up ComfyUI under Models and servers, when the **Concept image** or **3D model** job has no server.
-- *At most this many per room*: 0 to 8, default 3. Models that already exist in the generated library cost nothing and do not count.
+- _Make missing objects_, on by default. The checkbox is hidden, with a hint to set up ComfyUI under Models and servers, when the **Concept image** or **3D model** job has no server.
+- _At most this many per room_: 0 to 8, default 3. Models that already exist in the generated library cost nothing and do not count.
 
 **What happens**
 

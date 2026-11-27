@@ -6,7 +6,10 @@ import type { AvatarBridge } from './types.js';
  * The active character's idle habits: what they like to do when nobody is talking. Each avatar keeps
  * its own (saved by the main process), so the text reloads when the character changes.
  */
-export function useIdleHabits(avatarApi: Pick<AvatarBridge, 'getIdleHabits' | 'setIdleHabits'> | undefined, modelId: string | undefined) {
+export function useIdleHabits(
+  avatarApi: Pick<AvatarBridge, 'getIdleHabits' | 'setIdleHabits'> | undefined,
+  modelId: string | undefined,
+) {
   // The text belongs to the character it was loaded or typed for; another character shows nothing until its own arrives.
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
   useEffect(() => {
@@ -43,5 +46,11 @@ export function useIdleHabits(avatarApi: Pick<AvatarBridge, 'getIdleHabits' | 's
     }
   }, [avatarApi, modelId, habits]);
 
-  return { habits, setHabits, save, available: Boolean(modelId && avatarApi?.setIdleHabits), maxLength: MAX_IDLE_HABITS_LENGTH };
+  return {
+    habits,
+    setHabits,
+    save,
+    available: Boolean(modelId && avatarApi?.setIdleHabits),
+    maxLength: MAX_IDLE_HABITS_LENGTH,
+  };
 }

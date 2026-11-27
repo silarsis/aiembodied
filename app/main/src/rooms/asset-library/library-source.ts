@@ -28,7 +28,11 @@ export class PolyHavenSource implements ObjectSource {
   async resolve(object: LayoutObject, signal?: AbortSignal): Promise<ResolvedModel | null> {
     try {
       const catalog = await this.client.catalog(signal);
-      const match = findBestModel(catalog, { search: object.search, name: object.name, category: object.category });
+      const match = findBestModel(catalog, {
+        search: object.search,
+        name: object.name,
+        category: object.category,
+      });
       if (!match) return null;
       const local = await this.client.ensureModel(match.entry.id, signal);
       const bounds = gltfBounds(JSON.parse(await readFile(local.path, 'utf8')) as unknown);
@@ -37,14 +41,21 @@ export class PolyHavenSource implements ObjectSource {
       return { model: { asset: local.asset, file: local.file, scale }, size };
     } catch (error) {
       if (signal?.aborted) throw error;
-      this.logger?.warn('Could not get a library model.', { object: object.id, message: error instanceof Error ? error.message : String(error) });
+      this.logger?.warn('Could not get a library model.', {
+        object: object.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
 }
 
 /** The first source that has a model. */
-export async function resolveObject(sources: ObjectSource[], object: LayoutObject, signal?: AbortSignal): Promise<ResolvedModel | null> {
+export async function resolveObject(
+  sources: ObjectSource[],
+  object: LayoutObject,
+  signal?: AbortSignal,
+): Promise<ResolvedModel | null> {
   for (const source of sources) {
     const found = await source.resolve(object, signal);
     if (found) return found;

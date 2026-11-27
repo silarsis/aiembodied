@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { RoomObject } from '../../../main/src/rooms/types.js';
+import type { RoomObject } from '../../../main/src/shared/rooms/types.js';
 import { ASSET_SCHEME, resolveAssetUrl } from './asset-url.js';
 
 export { ASSET_SCHEME };
@@ -23,7 +23,9 @@ export function modelUrl(object: Pick<RoomObject, 'model'>): string | null {
  * The `loadModel` hook of the room builder: fetches a library model, applies `model.scale`, and
  * puts its footprint centre on the object origin with the bottom on the floor.
  */
-export function createModelLoader(deps: ModelLoaderDeps = {}): (object: RoomObject) => Promise<THREE.Object3D> {
+export function createModelLoader(
+  deps: ModelLoaderDeps = {},
+): (object: RoomObject) => Promise<THREE.Object3D> {
   // The manager lets the web satellite turn asset URLs (the model's own and its textures') into hub URLs; in Electron it changes nothing.
   const load =
     deps.load ??
@@ -42,7 +44,11 @@ export function createModelLoader(deps: ModelLoaderDeps = {}): (object: RoomObje
     inner.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(inner);
     if (box.isEmpty()) throw new Error(`Model for ${object.id} is empty.`);
-    inner.position.set(inner.position.x - (box.min.x + box.max.x) / 2, inner.position.y - box.min.y, inner.position.z - (box.min.z + box.max.z) / 2);
+    inner.position.set(
+      inner.position.x - (box.min.x + box.max.x) / 2,
+      inner.position.y - box.min.y,
+      inner.position.z - (box.min.z + box.max.z) / 2,
+    );
     const holder = new THREE.Group();
     holder.name = `model:${object.id}`;
     holder.add(inner);

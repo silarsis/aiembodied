@@ -7,6 +7,12 @@
  * supported; other platforms report `supported: false`.
  */
 import { execFile } from 'node:child_process';
+import type {
+  GpuMemorySnapshot,
+  GpuMemoryUse,
+  GpuMemoryServerUse,
+  GpuMemoryProcessUse,
+} from '../shared/diagnostics/gpu-memory-types.js';
 
 export interface GpuMemoryServer {
   id: string;
@@ -14,49 +20,11 @@ export interface GpuMemoryServer {
   port: number;
 }
 
-export interface GpuMemoryUse {
-  /** Bytes of dedicated (on-card or carved-out) GPU memory. */
-  dedicated: number;
-  /** Bytes of shared system memory the GPU has mapped. */
-  shared: number;
-}
-
-export interface GpuMemoryServerUse extends GpuMemoryUse {
-  id: string;
-  name: string;
-  port: number;
-  /** Process listening on the port, if any. */
-  pid?: number;
-  processName?: string;
-}
-
-export interface GpuMemoryProcessUse extends GpuMemoryUse {
-  pid: number;
-  name: string;
-}
-
-export interface GpuMemorySnapshot {
-  supported: boolean;
-  /** Why there are no numbers (unsupported platform, the read failed). */
-  reason?: string;
-  adapterName?: string;
-  /** Total dedicated memory, or null when the driver doesn't say. */
-  dedicatedTotal: number | null;
-  /** Shared memory limit (Windows allows half of system RAM), or null when unknown. */
-  sharedTotal: number | null;
-  /** Everything in use on the adapter, from the adapter counters. */
-  used: GpuMemoryUse;
-  servers: GpuMemoryServerUse[];
-  /** Other processes using the GPU, biggest first. */
-  others: GpuMemoryProcessUse[];
-  /** In use but not attributed to any listed process (the driver, rounding). */
-  unattributed: GpuMemoryUse;
-  takenAt: number;
-}
-
 /** What the PowerShell reader prints (one JSON object). */
 export interface RawGpuReading {
-  counters?: Array<{ path?: string; instance?: string; value?: number }> | { path?: string; instance?: string; value?: number };
+  counters?:
+    | Array<{ path?: string; instance?: string; value?: number }>
+    | { path?: string; instance?: string; value?: number };
   listen?: Array<{ port?: number; pid?: number }> | { port?: number; pid?: number };
   procs?: Array<{ pid?: number; name?: string }> | { pid?: number; name?: string };
   adapters?: Array<{ name?: string; memory?: number }> | { name?: string; memory?: number };
@@ -83,12 +51,17 @@ const zero = (): GpuMemoryUse => ({ dedicated: 0, shared: 0 });
 const total = (use: GpuMemoryUse) => use.dedicated + use.shared;
 
 /** Turn a raw reading into per-server use for the busiest GPU. */
-export function summariseGpuReading(raw: RawGpuReading, servers: GpuMemoryServer[], takenAt = Date.now()): GpuMemorySnapshot {
+export function summariseGpuReading(
+  raw: RawGpuReading,
+  servers: GpuMemoryServer[],
+  takenAt = Date.now(),
+): GpuMemorySnapshot {
   const adapters = new Map<string, GpuMemoryUse>();
   const processes = new Map<string, Map<number, GpuMemoryUse>>();
   for (const counter of list(raw.counters)) {
     const field = kind(counter.path);
-    const value = typeof counter.value === 'number' && Number.isFinite(counter.value) ? counter.value : 0;
+    const value =
+      typeof counter.value === 'number' && Number.isFinite(counter.value) ? counter.value : 0;
     const instance = (counter.instance ?? '').trim();
     if (!field) continue;
     const proc = PROCESS_INSTANCE.exec(instance);
@@ -123,17 +96,29 @@ export function summariseGpuReading(raw: RawGpuReading, servers: GpuMemoryServer
     if (luid === undefined || sizeOf(id) > sizeOf(luid)) luid = id;
   }
   const byPid = (luid && processes.get(luid)) || new Map<number, GpuMemoryUse>();
-  const processUse = [...byPid.values()].reduce((acc, use) => ({ dedicated: acc.dedicated + use.dedicated, shared: acc.shared + use.shared }), zero());
+  const processUse = [...byPid.values()].reduce(
+    (acc, use) => ({ dedicated: acc.dedicated + use.dedicated, shared: acc.shared + use.shared }),
+    zero(),
+  );
   const adapterUse = (luid && adapters.get(luid)) || processUse;
-  const used = { dedicated: Math.max(adapterUse.dedicated, processUse.dedicated), shared: Math.max(adapterUse.shared, processUse.shared) };
+  const used = {
+    dedicated: Math.max(adapterUse.dedicated, processUse.dedicated),
+    shared: Math.max(adapterUse.shared, processUse.shared),
+  };
 
   const names = new Map<number, string>();
   for (const proc of list(raw.procs)) {
-    if (typeof proc.pid === 'number' && typeof proc.name === 'string') names.set(proc.pid, proc.name);
+    if (typeof proc.pid === 'number' && typeof proc.name === 'string')
+      names.set(proc.pid, proc.name);
   }
   const portOwner = new Map<number, number>();
   for (const entry of list(raw.listen)) {
-    if (typeof entry.port === 'number' && typeof entry.pid === 'number' && entry.pid > 0 && !portOwner.has(entry.port)) {
+    if (
+      typeof entry.port === 'number' &&
+      typeof entry.pid === 'number' &&
+      entry.pid > 0 &&
+      !portOwner.has(entry.port)
+    ) {
       portOwner.set(entry.port, entry.pid);
     }
   }
@@ -258,7 +243,9 @@ export class GpuMemoryReader {
       const raw = JSON.parse(output.trim() || '{}') as RawGpuReading;
       return summariseGpuReading(raw, servers);
     } catch (error) {
-      return unsupported(`Couldn't read the GPU counters: ${error instanceof Error ? error.message : String(error)}`);
+      return unsupported(
+        `Couldn't read the GPU counters: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }
@@ -270,13 +257,15 @@ export function localPort(url: string | undefined): number | null {
     const parsed = new URL(url);
     const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
     if (!['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host)) return null;
-    const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : parsed.protocol === 'http:' ? 80 : NaN;
+    const port = parsed.port
+      ? Number(parsed.port)
+      : parsed.protocol === 'https:'
+        ? 443
+        : parsed.protocol === 'http:'
+          ? 80
+          : NaN;
     return Number.isFinite(port) && port > 0 ? port : null;
   } catch {
     return null;
   }
-}
-
-export interface GpuMemoryBridge {
-  read(): Promise<GpuMemorySnapshot>;
 }

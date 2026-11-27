@@ -1,15 +1,25 @@
 /** Switchboard in Status and diagnostics: is it connected, and which transactions are open. */
 import { useEffect, useState } from 'react';
-import type { SwitchboardBridge, SwitchboardDecision, SwitchboardOpenTxn, SwitchboardStatus } from '../../../main/src/switchboard/bridge-types.js';
+import type {
+  SwitchboardBridge,
+  SwitchboardDecision,
+  SwitchboardOpenTxn,
+  SwitchboardStatus,
+} from '../../../main/src/shared/switchboard/bridge-types.js';
 
 export const SWITCHBOARD_POLL_MS = 5000;
 const MAX_SHOWN = 10;
 const MAX_DECISIONS = 10;
 
-export function describeSwitchboard(status: SwitchboardStatus | null): { dot: 'connected' | 'down' | 'off' | 'checking'; label: string } {
+export function describeSwitchboard(status: SwitchboardStatus | null): {
+  dot: 'connected' | 'down' | 'off' | 'checking';
+  label: string;
+} {
   if (!status) return { dot: 'checking', label: 'Checking…' };
   if (!status.enabled) return { dot: 'off', label: 'Off' };
-  return status.connected ? { dot: 'connected', label: 'Connected' } : { dot: 'down', label: 'Down (working locally)' };
+  return status.connected
+    ? { dot: 'connected', label: 'Connected' }
+    : { dot: 'down', label: 'Down (working locally)' };
 }
 
 export function formatAge(updatedAt: string | null, now: number): string {
@@ -37,14 +47,32 @@ function describeDecision(decision: SwitchboardDecision, now: number): string {
 
 const DOT_COLOUR = { connected: '#34d399', down: '#f87171', off: '#64748b', checking: '#fbbf24' };
 
-export function SwitchboardView({ status, now }: { status: SwitchboardStatus | null; now: number }) {
+export function SwitchboardView({
+  status,
+  now,
+}: {
+  status: SwitchboardStatus | null;
+  now: number;
+}) {
   const { dot, label } = describeSwitchboard(status);
   const txns: SwitchboardOpenTxn[] = status?.openTxns ?? [];
   const decisions: SwitchboardDecision[] = status?.decisions ?? [];
   return (
     <div data-testid="switchboard-status">
       <p className="kiosk__helper">
-        <span data-testid="switchboard-dot" data-state={dot} aria-hidden style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', background: DOT_COLOUR[dot], marginRight: 6 }} />
+        <span
+          data-testid="switchboard-dot"
+          data-state={dot}
+          aria-hidden
+          style={{
+            display: 'inline-block',
+            width: 9,
+            height: 9,
+            borderRadius: '50%',
+            background: DOT_COLOUR[dot],
+            marginRight: 6,
+          }}
+        />
         <b>Switchboard</b>: {label}
       </p>
       {txns.length > 0 ? (
@@ -65,7 +93,9 @@ export function SwitchboardView({ status, now }: { status: SwitchboardStatus | n
           </p>
           <ul className="kiosk__helper" data-testid="switchboard-decisions">
             {decisions.slice(0, MAX_DECISIONS).map((decision) => (
-              <li key={`${decision.event}:${decision.avatarId}:${decision.at}`}>{describeDecision(decision, now)}</li>
+              <li key={`${decision.event}:${decision.avatarId}:${decision.at}`}>
+                {describeDecision(decision, now)}
+              </li>
             ))}
           </ul>
         </>
@@ -74,7 +104,13 @@ export function SwitchboardView({ status, now }: { status: SwitchboardStatus | n
   );
 }
 
-export function SwitchboardStatusLine({ api, active }: { api?: SwitchboardBridge; active: boolean }) {
+export function SwitchboardStatusLine({
+  api,
+  active,
+}: {
+  api?: SwitchboardBridge;
+  active: boolean;
+}) {
   const [status, setStatus] = useState<SwitchboardStatus | null>(null);
   const [readAt, setReadAt] = useState(0);
   useEffect(() => {
