@@ -19,10 +19,7 @@ function setup(runtime: Partial<MemoryEngineRuntime> | null, current: string | n
   };
   const leaveCurrentSession = vi.fn(() => order.push('leave'));
   registerMemoryEngineIpc({
-    ipcMain: {
-      handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) =>
-        handlers.set(channel, handler),
-    } as never,
+    handle: (channel, handler) => void handlers.set(channel, handler as never),
     runtime: () => runtime as MemoryEngineRuntime | null,
     store,
     currentSessionId: () => current,

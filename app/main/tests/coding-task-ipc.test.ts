@@ -32,7 +32,7 @@ describe('coding task IPC', () => {
     let listener: (e: RunnerEvent) => void = () => undefined;
     const broadcast = vi.fn();
     registerCodingTaskIpc({
-      ipcMain: ipc,
+      handle: ipc.handle,
       client: () => client as never,
       onRunnerEvent: (l) => {
         listener = l;
@@ -68,7 +68,7 @@ describe('coding task IPC', () => {
   it('fails clearly when the runner is not connected', () => {
     const ipc = fakeIpc();
     registerCodingTaskIpc({
-      ipcMain: ipc,
+      handle: ipc.handle,
       client: () => null,
       onRunnerEvent: () => () => undefined,
       broadcast: vi.fn(),
@@ -96,7 +96,7 @@ describe('approvals IPC', () => {
     registry.register(tool);
     const broker = new ApprovalBroker({ registry });
     const broadcast = vi.fn();
-    const off = registerApprovalsIpc({ ipcMain: ipc, broker, broadcast });
+    const off = registerApprovalsIpc({ handle: ipc.handle, broker, broadcast });
     const approval = await broker.request(tool, { secret: 'p' });
     expect(broadcast).toHaveBeenLastCalledWith('approvals:changed', [
       expect.objectContaining({ id: approval.id, cardOnly: true }),

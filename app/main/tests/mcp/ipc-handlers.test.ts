@@ -17,6 +17,9 @@ describe('MCP IPC Handlers', () => {
   let mockMCPManager: any;
   let mockToolRegistry: any;
   let handlers: Map<string, Function>;
+  const handle = (channel: string, handler: Function) => {
+    handlers.set(channel, handler);
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -54,7 +57,7 @@ describe('MCP IPC Handlers', () => {
       getOpenAIFunctionDefinitions: vi.fn().mockReturnValue([]),
     };
 
-    registerMCPHandlers(mockMCPManager, mockToolRegistry);
+    registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
   });
 
   describe('server management handlers', () => {
@@ -242,7 +245,7 @@ describe('MCP IPC Handlers', () => {
       const emitter = new EventEmitter();
       mockMCPManager.on = emitter.on.bind(emitter);
       mockMCPManager.emit = emitter.emit.bind(emitter);
-      registerMCPHandlers(mockMCPManager, mockToolRegistry);
+      registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
 
       // Emit event
       const event = { serverId: 'server-1', status: 'connected' as const };
@@ -265,7 +268,7 @@ describe('MCP IPC Handlers', () => {
       const emitter = new EventEmitter();
       mockMCPManager.on = emitter.on.bind(emitter);
       mockMCPManager.emit = emitter.emit.bind(emitter);
-      registerMCPHandlers(mockMCPManager, mockToolRegistry);
+      registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
 
       // Emit event
       emitter.emit('tools-discovered', 'server-1', 5);
@@ -283,7 +286,7 @@ describe('MCP IPC Handlers', () => {
       const emitter = new EventEmitter();
       mockMCPManager.on = emitter.on.bind(emitter);
       mockMCPManager.emit = emitter.emit.bind(emitter);
-      registerMCPHandlers(mockMCPManager, mockToolRegistry);
+      registerMCPHandlers({ handle, mcpManager: mockMCPManager, toolRegistry: mockToolRegistry });
 
       // Should not throw when emitting with no windows
       expect(() => {

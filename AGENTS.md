@@ -76,6 +76,7 @@ Document any deviations or extra checks in the PR description.
 
 ## Rules from experience
 - **Fast decisions**: a new fixed-option or yes/no judgement (routing, triage, gating an LLM call) goes through the Quick decisions route and `SystemOneClient` (`app/main/src/decide/system-one.ts`), not a new LLM prompt. Pick a threshold, keep a fallback, and never let it alone approve anything risky. See [quick-decisions.md](docs/features/quick-decisions.md).
+- **IPC handlers**: each feature registers its own in `app/main/src/<feature>/ipc.ts` (`registerXIpc({ handle, ...deps })`), where `handle` is the `HandleIpc` main.ts makes with `createHandleIpc(ipcMain)` (`app/main/src/ipc/handle-ipc.ts`; it also remembers the handler for satellites). main.ts only builds services and passes them in; don't call `ipcMain.handle` or add handlers to main.ts.
 - **Model jobs**: read servers from `routeTargets(config.models, use)`, not from provider settings. Server keys come from `ConfigManager.getServerKey(id)` and never reach the renderer or the logs.
 - **Local LLM calls** send `chat_template_kwargs: {enable_thinking: false}`.
 - **ComfyUI**: never call its `/free` endpoint (it crashes Comfy Desktop). Avatar, background and furniture jobs share one `ComfyUIClient`/`ComfyUIRuntime`.

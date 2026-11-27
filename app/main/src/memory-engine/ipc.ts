@@ -4,7 +4,7 @@
  * stored, and says so when the engine can't be reached.
  */
 import { randomUUID } from 'node:crypto';
-import type { IpcMain } from 'electron';
+import type { HandleIpc } from '../ipc/handle-ipc.js';
 import type { MemoryEngineFactPatch } from '../shared/memory-engine/client-types.js';
 import type { MemoryEngineRuntime } from './setup.js';
 import type { MemoryPanelStatus } from '../shared/memory-engine/ipc-types.js';
@@ -12,7 +12,7 @@ import type { MemoryPanelStatus } from '../shared/memory-engine/ipc-types.js';
 type Logger = { warn: (message: string, data?: Record<string, unknown>) => void };
 
 export interface MemoryIpcOptions {
-  ipcMain: Pick<IpcMain, 'handle'>;
+  handle: HandleIpc;
   runtime: () => MemoryEngineRuntime | null;
   /** The app's own copy of the conversation history, which forgetting clears too. */
   store: {
@@ -68,7 +68,7 @@ function patchFrom(value: unknown): MemoryEngineFactPatch {
 }
 
 export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
-  const { ipcMain } = options;
+  const { handle } = options;
 
   const engine = () => {
     const runtime = options.runtime();
@@ -76,7 +76,7 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     return runtime;
   };
 
-  ipcMain.handle('memory-engine:status', async (): Promise<MemoryPanelStatus> => {
+  handle('memory-engine:status', async (): Promise<MemoryPanelStatus> => {
     const runtime = options.runtime();
     if (!runtime) {
       return { enabled: false, url: null, reachable: false, health: null, pending: 0, error: null };
@@ -104,7 +104,7 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     }
   });
 
-  ipcMain.handle(
+  handle(
     'memory-engine:search',
     (_event, payload: { query?: unknown; from?: unknown; to?: unknown }) =>
       engine().client.search(text(payload?.query, 'a search', 2000), {
@@ -114,35 +114,32 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
       }),
   );
 
-  ipcMain.handle('memory-engine:timeline', (_event, payload: { from?: unknown; to?: unknown }) => {
+  handle('memory-engine:timeline', (_event, payload: { from?: unknown; to?: unknown }) => {
     const from = optionalIso(payload?.from);
     const to = optionalIso(payload?.to);
     if (!from || !to) throw new Error('a period is needed');
     return engine().client.timeline(from, to, { turns: 50, limit: TIMELINE_LIMIT });
   });
 
-  ipcMain.handle('memory-engine:memory', (_event, payload: { id?: unknown; around?: unknown }) =>
+  handle('memory-engine:memory', (_event, payload: { id?: unknown; around?: unknown }) =>
     engine().client.memory(
       id(payload?.id),
       typeof payload?.around === 'number' ? Math.max(0, Math.min(10, payload.around)) : 1,
     ),
   );
 
-  ipcMain.handle(
-    'memory-engine:facts',
-    (_event, payload: { status?: unknown; unreviewed?: unknown }) => {
-      const status = ['active', 'superseded', 'retracted', 'all'].includes(String(payload?.status))
-        ? (payload.status as 'active' | 'superseded' | 'retracted' | 'all')
-        : 'active';
-      return engine().client.listFacts({
-        status,
-        unreviewed: payload?.unreviewed === true,
-        limit: 500,
-      });
-    },
-  );
+  handle('memory-engine:facts', (_event, payload: { status?: unknown; unreviewed?: unknown }) => {
+    const status = ['active', 'superseded', 'retracted', 'all'].includes(String(payload?.status))
+      ? (payload.status as 'active' | 'superseded' | 'retracted' | 'all')
+      : 'active';
+    return engine().client.listFacts({
+      status,
+      unreviewed: payload?.unreviewed === true,
+      limit: 500,
+    });
+  });
 
-  ipcMain.handle(
+  handle(
     'memory-engine:add-fact',
     async (_event, payload: { text?: unknown; subject?: unknown; pinned?: unknown }) => {
       const factId = randomUUID();
@@ -159,13 +156,11 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     },
   );
 
-  ipcMain.handle(
-    'memory-engine:update-fact',
-    (_event, payload: { id?: unknown; patch?: unknown }) =>
-      engine().client.patchFact(id(payload?.id), patchFrom(payload?.patch)),
+  handle('memory-engine:update-fact', (_event, payload: { id?: unknown; patch?: unknown }) =>
+    engine().client.patchFact(id(payload?.id), patchFrom(payload?.patch)),
   );
 
-  ipcMain.handle('memory-engine:review-facts', async (_event, ids: unknown) => {
+  handle('memory-engine:review-facts', async (_event, ids: unknown) => {
     const list = Array.isArray(ids) ? ids.map((value) => id(value)) : [];
     const client = engine().client;
     for (const factId of list) {
@@ -174,11 +169,11 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     return { reviewed: list.length };
   });
 
-  ipcMain.handle('memory-engine:delete-fact', (_event, factId: unknown) =>
+  handle('memory-engine:delete-fact', (_event, factId: unknown) =>
     engine().client.deleteFact(id(factId)),
   );
 
-  ipcMain.handle('memory-engine:forget-session', async (_event, sessionId: unknown) => {
+  handle('memory-engine:forget-session', async (_event, sessionId: unknown) => {
     const target = id(sessionId, 'conversation id');
     const runtime = engine();
     if (options.currentSessionId?.() === target) options.leaveCurrentSession?.();
@@ -211,11 +206,11 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     return { forgotten: target, dropped };
   });
 
-  ipcMain.handle('memory-engine:recall-log', (_event, payload: { limit?: unknown }) =>
+  handle('memory-engine:recall-log', (_event, payload: { limit?: unknown }) =>
     engine().client.recallLog({
       limit: typeof payload?.limit === 'number' ? Math.max(1, Math.min(500, payload.limit)) : 50,
     }),
   );
 
-  ipcMain.handle('memory-engine:run-summaries', () => engine().client.runSummaries());
+  handle('memory-engine:run-summaries', () => engine().client.runSummaries());
 }

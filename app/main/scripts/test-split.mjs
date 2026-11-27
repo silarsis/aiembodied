@@ -70,6 +70,7 @@ runTests('tests/pursuits/*.test.ts', 'Pursuits');
 runTests('tests/presence-place.test.ts', 'Place Presence');
 runTests('tests/room-hub/*.test.ts', 'Room Hub');
 runTests('tests/satellite/*.test.ts', 'Satellite');
+runTests('tests/ipc/*.test.ts', 'IPC Registration');
 
 console.log('\n' + '='.repeat(70));
 console.log('✅ All test groups passed!');
