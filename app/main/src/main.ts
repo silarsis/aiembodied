@@ -2683,7 +2683,7 @@ app.whenReady().then(async () => {
         pick: (stage) => comfyPool.pick(stage),
         imageModel: () => {
           if (!avatarImageModels) throw new Error('Image models are unavailable.');
-          return avatarImageModels.resolve();
+          return avatarImageModels.resolveObjectModel();
         },
         geometryModel: () => {
           if (!avatarCharacterModels) throw new Error('3D models are unavailable.');
@@ -2718,7 +2718,7 @@ app.whenReady().then(async () => {
       pickComfy: (stage) => comfyPool.pick(stage),
       imageModel: () => {
         if (!avatarImageModels) throw new Error('Image models are unavailable.');
-        return avatarImageModels.resolve();
+        return avatarImageModels.resolveObjectModel();
       },
       geometryModel: () => {
         if (!avatarCharacterModels) throw new Error('3D models are unavailable.');

@@ -48,7 +48,7 @@ export interface GeneratedSourceOptions {
   library: GeneratedLibrary;
   /** The ComfyUI server of a Models and servers step, started if it is this PC's. */
   pickComfy: (stage: 'image' | 'mesh') => Promise<ObjectComfy>;
-  /** The image model the studio uses (its LoRAs are left out: they are meant for characters). */
+  /** The image model for objects: Qwen-Image when installed, else the studio's (never its LoRAs). */
   imageModel: () => Promise<ImageWorkflowModel>;
   geometryModel: () => Promise<GeometryModel>;
   seed?: () => number;
@@ -61,6 +61,8 @@ export interface MadeObject {
   resolved: ResolvedModel;
 }
 
+const CHARACTER_NEGATIVE = '1girl, 1boy, solo, character, humanoid, anthro, furry, figure';
+
 export function objectImageGraph(
   model: ImageWorkflowModel,
   prompt: string,
@@ -69,8 +71,11 @@ export function objectImageGraph(
   const graph = buildImageWorkflow({ ...model, loras: undefined }, prompt, seed);
   if (graph.encode?.class_type === 'TextEncodeQwenImage21')
     graph.encode.inputs.negative_prompt = OBJECT_IMAGE_NEGATIVE;
-  if (graph.negative?.class_type === 'CLIPTextEncode')
-    graph.negative.inputs.text = OBJECT_IMAGE_NEGATIVE;
+  // A checkpoint is often a character model that follows tags more than prose: "no humans" keeps it from adding one.
+  if (model.family === 'sdxl' || model.family === 'sd1') {
+    graph.positive.inputs.text = `no humans, object focus, still life, ${prompt}`;
+    graph.negative.inputs.text = `${OBJECT_IMAGE_NEGATIVE}, ${CHARACTER_NEGATIVE}`;
+  }
   if (graph.save?.class_type === 'SaveImage')
     graph.save.inputs.filename_prefix = 'aiembodied/room-object';
   return graph;
