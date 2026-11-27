@@ -1,4 +1,5 @@
 /** IPC for the task cards on the status panel: list, follow and control coding tasks. */
+import type { HandleIpc } from '../ipc/handle-ipc.js';
 import type { CodingRunnerClient } from './runner-client.js';
 import type {
   RunnerAnswer,
@@ -8,9 +9,7 @@ import type {
 } from '../shared/coding/runner-client-types.js';
 
 export interface CodingTaskIpcOptions {
-  ipcMain: {
-    handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void;
-  };
+  handle: HandleIpc;
   client: () => CodingRunnerClient | null;
   /** Subscribe to the runner's event stream. */
   onRunnerEvent: (listener: (event: RunnerEvent) => void) => () => void;
@@ -29,7 +28,7 @@ export function registerCodingTaskIpc(options: CodingTaskIpcOptions): () => void
     return current;
   };
   const on = (channel: string, fn: (...args: unknown[]) => unknown) =>
-    options.ipcMain.handle(channel, (_event, ...args) => fn(...args));
+    options.handle(channel, (_event, ...args) => fn(...args));
   on('coding:tasks', () => client().listTasks());
   on('coding:task', (id: unknown) => client().getTask(str(id, 'id')));
   on('coding:diff', (id: unknown) => client().taskDiff(str(id, 'id')));

@@ -34,7 +34,7 @@ import {
   encodeMessage,
   type Op,
 } from '../shared/room-hub/frames.js';
-import { getIpcHandler, type IpcHandler } from './ipc-registry.js';
+import { getIpcHandler, type IpcHandler } from '../ipc/handle-ipc.js';
 import { cleanKind, type RoomDeviceRegistry } from './room-devices.js';
 import type { TailscaleLookup } from './tailscale.js';
 import type { RoomHubStatus, PairingStart } from '../shared/room-hub/room-hub-types.js';
