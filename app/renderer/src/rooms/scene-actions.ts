@@ -16,6 +16,7 @@ import { degToRad } from './room-geometry.js';
 import type { WorldSeatGeometry } from './seat-geometry.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { worldTag } from './room-tags.js';
+import { hipsAboveSeat } from './seat-fit.js';
 import {
   heightToMotion,
   worldToMotion,
@@ -186,7 +187,6 @@ const TURN_LOOKAHEAD = 0.4;
 /** Seconds the walk waits after the turn has finished. */
 const TURN_SETTLE_S = 0.2;
 const SIT_APPROACH = 0.45;
-const SEAT_HEIGHT_OFFSET = 0.08;
 /** Radius of a thigh above the cushion, avatar metres: the knee joint sits this far above the seat top. */
 const THIGH_RADIUS = 0.07;
 /** Half the distance between the knees when seated, avatar metres. */
@@ -886,11 +886,13 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   const heading = worldYawToMotion(frame, facing);
   // The tag height is a guess (an LLM's, or a default); the rendered surface at the anchor is the truth.
   const surfaceY = world.seatSurfaceY?.(object.id, seat[0], seat[2]) ?? seat[1];
+  // The same hips-to-buttocks distance seat fit uses, so the planned pelvis is the one seat fit keeps.
+  const pelvisY = surfaceY + hipsAboveSeat(world.restHipsHeight, frame.scale);
   const target: AvatarMotionTarget = {
     t: roundMs(phaseStart + 2),
     until: roundMs(duration - 0.1),
     root,
-    height: heightToMotion(frame, surfaceY + SEAT_HEIGHT_OFFSET),
+    height: heightToMotion(frame, pelvisY),
     heading,
     revealS: phaseStart,
   };
@@ -903,7 +905,6 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   };
   const geometry = world.seatGeometry?.(object.id) ?? null;
   const legs = world.restLegLengths;
-  const pelvisY = surfaceY + SEAT_HEIGHT_OFFSET;
   const legTargets =
     geometry && legs
       ? sitLegTargets(frame, seat, facing, pelvisY, geometry, legs, {
