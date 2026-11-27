@@ -187,6 +187,7 @@ try {
           seed,
           start: startFor(plan, startName, seat, info.seatFacingDeg),
           ...(method.prompt ? { prompt: method.prompt } : {}),
+          ...(plan.jointTargets === false ? { jointTargets: false } : {}),
         };
         try {
           const result = await page.evaluate((t) => window.sitLab.runTrial(t), trial);

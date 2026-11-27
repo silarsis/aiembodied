@@ -41,6 +41,7 @@ export interface TrialResult {
   params: Params;
   seed: number;
   prompt: string | null;
+  jointTargets: boolean;
   start: { x: number; z: number; heading: number };
   label: string;
   metrics: TrialMetrics;
@@ -169,7 +170,11 @@ export async function runTrial(
   const dest = destinationFor(plan, spec.seatObjectId);
   const { rig } = world;
   const sitStartS = planned.request.phases?.[0]?.startS ?? 0;
-  const baseRequest = trial.prompt ? withSitPrompt(planned.request, trial.prompt) : planned.request;
+  const prompted = trial.prompt ? withSitPrompt(planned.request, trial.prompt) : planned.request;
+  const baseRequest =
+    trial.jointTargets === false
+      ? { ...prompted, targets: (prompted.targets ?? []).filter((t) => t.joint === undefined) }
+      : prompted;
   const measurer = new FrameMeasurer(
     rig,
     dest,
@@ -340,6 +345,7 @@ export async function runTrial(
     params,
     seed: trial.seed,
     prompt: trial.prompt ?? null,
+    jointTargets: trial.jointTargets !== false,
     start,
     label: planned.label,
     metrics,

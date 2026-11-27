@@ -52,6 +52,8 @@ Invoke-RestMethod http://127.0.0.1:8291/health
 
 It must say `ready: true` and a real backend (not `fake`). The motion URL is read from `"motionUrl"` in the plan file (default `http://127.0.0.1:8190`); it is not a flag of its own, but `--motion-url <url>` on `run.mjs` overrides the plan. The vite page server starts by itself when `run.mjs` runs, on port 5199.
 
+Set `"jointTargets": false` in a plan to drop the knee and ankle targets the app sends with every sit (they make ARDY turn the feet and head about 180 degrees near the end of the sit).
+
 ## 4. Smoke test (1 trial)
 
 ```powershell

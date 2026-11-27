@@ -43,6 +43,8 @@ export interface TrialSpec {
   prompt?: string;
   /** Replaces the spec's start for this trial. */
   start?: StartSpec;
+  /** False drops the knee and ankle targets the app plans for the sit (default true, as the app sends them). */
+  jointTargets?: boolean;
 }
 
 export type ViewName = 'front' | 'side' | 'threeQuarter' | 'room';
