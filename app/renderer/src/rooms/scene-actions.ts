@@ -195,6 +195,12 @@ const KNEE_HALF_SPACING = 0.09;
 const KNEE_PAST_EDGE = 0.03;
 /** The leg targets are held over the last stretch of the sit (seconds), inside the root target's span. */
 const LEG_HOLD_S = 0.5;
+/**
+ * When, after the sit phase starts, the pelvis is first held at the seat height (seconds). The full seat
+ * target only starts at 2 s; without this the motion model, which knows nothing of the seat, had already
+ * lowered the hips to about 0.26 m by then (sofa on bija, 2026-11-27) and had to climb back up.
+ */
+const SEAT_HEIGHT_HOLD_S = 1.2;
 /** The settle stream after a contact miss: long enough for one chunk and the pose to arrive. */
 export const SETTLE_SECONDS = 2;
 const REACH_DISTANCE = 0.7;
@@ -888,6 +894,13 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
     heading,
     revealS: phaseStart,
   };
+  // Height only: the root is still turning and stepping back to the seat, and must not be pinned yet.
+  const descent: AvatarMotionTarget = {
+    t: roundMs(phaseStart + SEAT_HEIGHT_HOLD_S),
+    until: roundMs(phaseStart + 2),
+    height: target.height,
+    revealS: phaseStart,
+  };
   const geometry = world.seatGeometry?.(object.id) ?? null;
   const legs = world.restLegLengths;
   const pelvisY = surfaceY + SEAT_HEIGHT_OFFSET;
@@ -920,7 +933,7 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
               phases: [{ prompt: SIT_PROMPT, startS: phaseStart }],
             }
           : {}),
-        targets: [...(start?.targets ?? []), target, ...legTargets],
+        targets: [...(start?.targets ?? []), descent, target, ...legTargets],
       },
       frame,
       expectedEnd: { root, heading },
