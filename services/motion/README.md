@@ -89,7 +89,7 @@ Other flags:
 - `--model` picks a different checkpoint.
 - `--device cpu` runs the motion model on the CPU (slow).
 - `--no-postprocess` turns off Kimodo's foot-skate cleanup.
-- `--seed N` makes generation repeatable.
+- `--seed N` makes generation repeatable. A request's own `seed` field overrides it for that request (see API.md).
 - `--keep-warm SECONDS` (default 120; `0` turns it off): after that much idle time, the service
   runs a tiny generation so the weights stay resident. Without it, the first request after hours
   idle spent about 11 s re-loading the text encoder on bija, instead of about 0.15 s.

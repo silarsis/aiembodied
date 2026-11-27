@@ -372,6 +372,28 @@ export class ContactBody {
     return this.shift.y.value;
   }
 
+  /**
+   * The body capsules as the bones are now (world metres): pelvis, chest and every limb segment, with the radii
+   * the solver uses. Read-only; the sit lab measures penetrations with them.
+   */
+  capsulesNow(rig: {
+    scene: THREE.Object3D;
+    restHipsHeight: number;
+  }): Array<{ name: string; p0: THREE.Vector3; p1: THREE.Vector3; radius: number }> {
+    const rest = rig.restHipsHeight > 0 ? rig.restHipsHeight : REFERENCE_HIPS_HEIGHT;
+    this.factor = (rest / REFERENCE_HIPS_HEIGHT) * (rig.scene.scale.x || 1);
+    this.hips?.updateWorldMatrix(true, true);
+    return this.capsules.map((segment) => {
+      this.pose(segment);
+      return {
+        name: segment.name,
+        p0: segment.p0.clone(),
+        p1: segment.p1.clone(),
+        radius: segment.radius * this.factor,
+      };
+    });
+  }
+
   /** Forgets the whole body shift without moving the root, for when the root has been put somewhere else. */
   resetLift(): void {
     for (const axis of AXES) this.forget(axis);

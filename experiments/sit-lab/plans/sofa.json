@@ -1,0 +1,41 @@
+{
+  "runId": "sofa",
+  "seatObjectId": "SOFA_ID",
+  "starts": {
+    "front": {
+      "bearingDeg": 0,
+      "distance": 2.0
+    },
+    "left": {
+      "bearingDeg": 90,
+      "distance": 2.0
+    },
+    "behind": {
+      "bearingDeg": 180,
+      "distance": 2.0
+    }
+  },
+  "startNames": ["front", "left", "behind"],
+  "seeds": [1, 2, 3],
+  "methods": [
+    {
+      "name": "baseline",
+      "method": "baseline"
+    },
+    {
+      "name": "WINNER_1",
+      "method": "METHOD_ID",
+      "params": {}
+    },
+    {
+      "name": "WINNER_2",
+      "method": "METHOD_ID",
+      "params": {}
+    },
+    {
+      "name": "WINNER_3",
+      "method": "METHOD_ID",
+      "params": {}
+    }
+  ]
+}

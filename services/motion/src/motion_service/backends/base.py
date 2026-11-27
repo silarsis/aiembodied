@@ -102,9 +102,13 @@ class Backend:
         """Return an opaque text-conditioning object for the prompt."""
         raise NotImplementedError
 
-    def generate(self, text, frames: int, steps: int) -> Motion:
-        """Generate a whole clip of `frames` frames."""
+    def generate(self, text, frames: int, steps: int, seed: int | None = None) -> Motion:
+        """Generate a whole clip of `frames` frames. `seed` (when not None) replaces the process-wide seed."""
         raise NotImplementedError
+
+    def effective_seed(self, seed: int | None) -> int | None:
+        """The seed a generation uses: the request's, else the process-wide one."""
+        return seed if seed is not None else self.options.seed
 
     def warm(self) -> None:
         """Run a tiny generation so the text encoder and model weights stay resident on the GPU."""
@@ -123,18 +127,20 @@ class Backend:
         phase_texts: Sequence | None = None,
         history: StreamHistory | None = None,
         constraint_weight: float = 2.0,
+        seed: int | None = None,
     ) -> Iterator[Chunk]:
         """Yield continuous chunks covering `frames` frames. Default: one chunk, constraints ignored.
 
         plan: a `ConstraintPlan` (model units, request-relative frames) or None.
         phase_texts: [(start_frame, text)] later prompts; each applies from the first chunk starting at or
             after its frame.
-        history: a `StreamHistory` from an earlier stream to continue in the same frame."""
+        history: a `StreamHistory` from an earlier stream to continue in the same frame.
+        seed: seeds the generator for this stream; None keeps the process-wide seed (if any)."""
         import time
 
         if (plan is not None or phase_texts or history is not None) and not type(self)._warned_constraints:
             type(self)._warned_constraints = True
             log.warning("the %s backend ignores paths, targets, phases and continue_from (they need ARDY)", self.name)
         t = time.perf_counter()
-        motion = self.generate(text, frames, steps)
+        motion = self.generate(text, frames, steps, seed=seed)
         yield Chunk(motion, 0, generate_ms=(time.perf_counter() - t) * 1000)

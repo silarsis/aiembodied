@@ -1,0 +1,9 @@
+{
+  "name": "sit-lab-driver",
+  "private": true,
+  "type": "module",
+  "description": "Node driver for the sit lab page. Not part of the pnpm workspace: run `npm install` here once.",
+  "dependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

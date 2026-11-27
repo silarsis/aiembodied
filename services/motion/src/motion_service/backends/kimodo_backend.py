@@ -67,11 +67,12 @@ class KimodoBackend(Backend):
         self.model.text_encoder.cache = {prompt: self.model.text_encoder.cache[prompt]}
         return prompt
 
-    def generate(self, text, frames: int, steps: int) -> Motion:
+    def generate(self, text, frames: int, steps: int, seed: int | None = None) -> Motion:
         import torch
 
-        if self.options.seed is not None:
-            torch.manual_seed(self.options.seed)
+        wanted = self.effective_seed(seed)
+        if wanted is not None:
+            torch.manual_seed(wanted)
         out = self.model(
             text,
             frames,

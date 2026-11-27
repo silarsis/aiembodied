@@ -155,3 +155,34 @@ def test_backend_load_failure_shows_in_health():
         assert h["ready"] is False and h["status"] == "error" and "no weights" in h["error"]
         r = c.post("/v1/motion/clip", json={"prompt": "x"})
         assert r.status_code == 503 and "no weights" in r.json()["error"]
+
+
+def test_seed_is_passed_to_clip_and_stream_and_overrides_the_process_seed():
+    from motion_service.backends.base import BackendOptions
+
+    backend = FakeBackend(BackendOptions(seed=7))
+    with TestClient(create_app(backend, load_in_background=False)) as c:
+        assert c.post("/v1/motion/clip", json={"prompt": "wave", "duration": 1.0, "seed": 42}).status_code == 200
+        assert c.post("/v1/motion/clip", json={"prompt": "wave", "duration": 1.0}).status_code == 200
+        r = c.post("/v1/motion/stream", json={"prompt": "wave", "duration": 1.0, "seed": 0})
+        assert r.status_code == 200 and json.loads(r.text.splitlines()[-1])["type"] == "done"
+    assert backend.seeds == [42, 7, 0]
+
+
+@pytest.mark.parametrize("seed", [-1, 1.5, "abc"])
+def test_bad_seed_is_a_400(client, seed):
+    r = client.post("/v1/motion/clip", json={"prompt": "wave", "seed": seed})
+    assert r.status_code == 400 and "seed" in r.json()["error"]
+
+
+def test_local_pages_may_call_the_service_from_the_browser(client):
+    headers = {
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type",
+    }
+    allowed = client.options("/v1/motion/stream", headers=headers)
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
+    refused = client.options("/v1/motion/stream", headers={**headers, "Origin": "https://example.com"})
+    assert "access-control-allow-origin" not in refused.headers
