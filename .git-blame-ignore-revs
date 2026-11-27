@@ -1,0 +1,3 @@
+# Formatting-only commits, skipped by `git blame` (git config blame.ignoreRevsFile .git-blame-ignore-revs; GitHub reads it automatically).
+# Prettier run over the TypeScript (#490)
+1878417b7213e8c8ab5ceba6f93ebd1dd2511221
