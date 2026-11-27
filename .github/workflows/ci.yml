@@ -37,6 +37,12 @@ jobs:
         run: pnpm format:check
       - name: Lint
         run: pnpm lint
+      - name: Unused code and dependencies (knip, against knip-baseline.json)
+        run: pnpm knip
+      - name: Import cycles
+        run: pnpm cycles
+      - name: File size ratchet
+        run: pnpm size-ratchet
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
@@ -54,11 +60,15 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install ruff
-        run: pip install ruff==0.16.9
+        run: pip install ruff==0.16.9 basedpyright==1.40.2
       - name: Lint
         run: ruff check services
       - name: Format check
         run: ruff format --check services
+      - name: Type check (basedpyright, against .basedpyright/baseline.json)
+        # Services' own dependencies are not installed, so imports of third-party packages are not
+        # resolved (see pyrightconfig.json); errors in our own code and the standard library are.
+        run: basedpyright
 
   coding-runner:
     runs-on: ubuntu-latest

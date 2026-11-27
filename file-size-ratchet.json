@@ -1,0 +1,11 @@
+{
+  "_comment": "Maximum line counts for source files over 1500 lines. Lower them with `pnpm size-ratchet --update` when a file shrinks; never raise them.",
+  "maxLines": {
+    "app/main/src/main.ts": 4930,
+    "app/main/tests/main.test.ts": 2004,
+    "app/renderer/src/App.tsx": 4587,
+    "app/renderer/src/realtime/local-voice-client.ts": 1528,
+    "app/renderer/src/settings/models-dialog.tsx": 1659,
+    "app/renderer/tests/App.test.tsx": 1552
+  }
+}
