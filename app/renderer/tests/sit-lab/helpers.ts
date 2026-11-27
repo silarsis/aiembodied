@@ -3,14 +3,14 @@ import { RoomPhysics } from '../../src/rooms/room-physics.js';
 import type { StreamRequestPlan } from '../../src/rooms/scene-actions.js';
 import type { Destination } from '../../src/sit-lab/destination.js';
 import { LabRig } from '../../src/sit-lab/lab-rig.js';
-import { FrameMeasurer } from '../../src/sit-lab/measure.js';
+import { FrameMeasurer, restSelfOverlaps } from '../../src/sit-lab/measure.js';
 import type { MethodContext, MotionClip } from '../../src/sit-lab/methods/types.js';
 import type { Quat } from '../../src/sit-lab/pose-math.js';
 import type { Pose } from '../../src/sit-lab/types.js';
 import { builtInRoom } from '../rooms/fixtures.js';
 
 /** A 0.95 m-hips avatar in its rest pose (arms out, facing +Z) as normalised bones. */
-export function buildStubRig(): LabRig {
+export function buildStubRig(hipSpacing = 0.09): LabRig {
   const scene = new THREE.Group();
   const bones = new Map<string, THREE.Object3D>();
   const add = (name: string, parent: string | null, x: number, y: number, z: number) => {
@@ -29,7 +29,7 @@ export function buildStubRig(): LabRig {
     ['left', 1],
     ['right', -1],
   ] as const) {
-    add(`${side}UpperLeg`, 'hips', sign * 0.09, -0.05, 0);
+    add(`${side}UpperLeg`, 'hips', sign * hipSpacing, -0.05, 0);
     add(`${side}LowerLeg`, `${side}UpperLeg`, 0, -0.43, 0);
     add(`${side}Foot`, `${side}LowerLeg`, 0, -0.42, 0);
     add(`${side}Toes`, `${side}Foot`, 0, -0.04, 0.12);
@@ -94,6 +94,7 @@ export function measurerFor(rig: LabRig, physics: RoomPhysics): FrameMeasurer {
     SOFA,
     { colliders: physics, surfaceAt: () => SOFA.surfaceY },
     { thigh: 0.43, shin: 0.42, ankleHeight: 0.08 },
+    restSelfOverlaps(rig.capsules()),
   );
 }
 

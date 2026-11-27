@@ -1,9 +1,10 @@
 /**
- * Methods 2 and 3: keep the model's pose exactly and move the whole body (and, for 3, turn it a little) so the
- * buttocks rest on the cushion and nothing is inside furniture. The move is found once, from the pose the motion
- * ends in, and blended in over the descent.
+ * Methods 2 and 3: keep the model's pose exactly and move the whole body (and, for 3, turn it a little) to the
+ * place that minimises furniture penetration and seat error together. The move is found once, from the pose the
+ * motion ends in, and blended in over the descent. A body that cannot be cleared without leaving the seat is
+ * placed at the best compromise and reported as infeasible.
  */
-import { furnitureDepth, type Capsule, type Colliders } from '../measure.js';
+import { FURNITURE_CLEAR, furnitureDepth, type Capsule, type Colliders } from '../measure.js';
 import { smoothstep, type Vec3 } from '../pose-math.js';
 import type { Pose } from '../types.js';
 import { seatedContactY } from '../../rooms/seat-fit.js';
@@ -16,19 +17,36 @@ import {
   type ParamSpec,
 } from './types.js';
 
-/** Capsules count as clear below this depth (metres). */
-const CLEAR = 0.004;
-/** Candidate shifts are searched in rings this far apart (metres), and yaws in steps of this many degrees. */
-const RING_STEP = 0.02;
-const YAW_STEP_DEG = 3;
+/**
+ * Search ranges. Sideways shift: within MAX_SHIFT of where the model put the pelvis. Vertical shift: from
+ * LOWER_DY below to UPPER_DY above the one that seats the buttocks exactly (lifting off the seat can free thighs
+ * that sink into the cushion, and costs seat error). Coarse grid steps, then a fine pass around the best one.
+ */
 const MAX_SHIFT = 0.3;
+const LOWER_DY = 0.02;
+const UPPER_DY = 0.06;
+const COARSE_STEP = 0.04;
+const FINE_STEP = 0.01;
+const YAW_STEP_DEG = 3;
+/**
+ * Objective, all in metres: deepest furniture penetration, plus seat error (vertical miss of the buttocks plus how
+ * far the pelvis is outside its tolerance of the sit point), plus a small cost for moving sideways and for turning.
+ * Penetration and seat error weigh the same, so a body that cannot clear the furniture without leaving the seat
+ * is placed where the two errors are smallest together.
+ */
+const SEAT_WEIGHT = 1;
+const SIDEWAYS_COST = 0.1;
 
 interface RigidMove {
   shift: Vec3;
   yawDeg: number;
   /** World point the yaw turns about (the pelvis). */
   pivot: Vec3;
-  /** False when no move cleared everything within the search range: the best effort was used. */
+  /** Deepest penetration that remains after the move (metres). */
+  residual: number;
+  /** Buttocks height error plus pelvis distance beyond tolerance after the move (metres). */
+  seatError: number;
+  /** False when the best move still leaves more than `FURNITURE_CLEAR` of penetration. */
   cleared: boolean;
 }
 
@@ -48,40 +66,30 @@ function moved(capsule: Capsule, shift: Vec3, yawDeg: number, pivot: Vec3): Caps
   return { ...capsule, p0: place(capsule.p0), p1: place(capsule.p1) };
 }
 
+/** Deepest penetration of the moved body; stops counting as soon as it passes `cutoff`. */
 function deepest(
   colliders: Colliders | null,
   capsules: readonly Capsule[],
   seatId: string,
-  shift: Vec3,
-  yawDeg: number,
-  pivot: Vec3,
+  move: { shift: Vec3; yawDeg: number; pivot: Vec3 },
+  cutoff: number,
 ): number {
   if (!colliders) return 0;
   let worst = 0;
   for (const capsule of capsules) {
     worst = Math.max(
       worst,
-      furnitureDepth(colliders, moved(capsule, shift, yawDeg, pivot), seatId),
+      furnitureDepth(colliders, moved(capsule, move.shift, move.yawDeg, move.pivot), seatId),
     );
-    if (worst > CLEAR) return worst;
+    if (worst >= cutoff) return worst;
   }
   return worst;
 }
 
-/** The ring of offsets (x, z) at `radius`, every `RING_STEP` or so along it. */
-function ring(radius: number): Array<[number, number]> {
-  if (radius === 0) return [[0, 0]];
-  const count = Math.max(8, Math.round((2 * Math.PI * radius) / RING_STEP));
-  return Array.from({ length: count }, (_, k) => {
-    const angle = (2 * Math.PI * k) / count;
-    return [radius * Math.cos(angle), radius * Math.sin(angle)];
-  });
-}
-
 /**
- * The smallest move (shift plus turn) of the posed body that seats the buttocks on the surface (the vertical
- * shift is fixed by that), keeps the pelvis within `pelvisTol` of the sit point and clears every collider.
- * Cost is the length of the shift plus `yawCost` metres per degree turned.
+ * The move (shift in x, y and z plus a turn about the pelvis) of the posed body that minimises the objective
+ * above: furniture penetration, seat error and a small movement cost. Never ignores penetration: when no move
+ * within the ranges clears the furniture, the best compromise is returned with `cleared` false.
  */
 function solveRigidMove(
   ctx: MethodContext,
@@ -93,45 +101,84 @@ function solveRigidMove(
   rig.placeRoot([0, 0, 0]);
   const capsules = rig.capsules();
   const hips = rig.world('hips');
-  const dy = dest.surfaceY - seatedContactY(hips[1], rig.restHipsHeight, dest.scale);
+  const dySeat = dest.surfaceY - seatedContactY(hips[1], rig.restHipsHeight, dest.scale);
   const pivot: Vec3 = [hips[0], hips[1], hips[2]];
   const yaws = [0];
   for (let yaw = YAW_STEP_DEG; yaw <= limits.maxYawDeg + 1e-9; yaw += YAW_STEP_DEG)
     yaws.push(yaw, -yaw);
 
-  type Best = { cost: number; shift: Vec3; yawDeg: number; depth: number };
-  const search = (pelvisTol: number | null): Best | null => {
-    let best: Best | null = null;
-    for (const yawDeg of yaws) {
-      const yawCost = limits.yawCost * Math.abs(yawDeg);
-      for (let radius = 0; radius <= MAX_SHIFT + 1e-9; radius += RING_STEP) {
-        // Rings only get longer: a clear ring is the cheapest for this yaw, and further ones cannot beat the best.
-        if (best && Math.hypot(radius, dy) + yawCost >= best.cost) break;
-        let found: Best | null = null;
-        for (const [dx, dz] of ring(radius)) {
-          if (
-            pelvisTol !== null &&
-            Math.hypot(hips[0] + dx - dest.sitPoint[0], hips[2] + dz - dest.sitPoint[2]) > pelvisTol
-          )
-            continue;
-          const shift: Vec3 = [dx, dy, dz];
-          const depth = deepest(colliders, capsules, dest.seatId, shift, yawDeg, pivot);
-          if (depth > CLEAR) continue;
-          const cost = Math.hypot(dx, dy, dz) + yawCost;
-          if (!found || cost < found.cost) found = { cost, shift, yawDeg, depth };
-        }
-        if (found) {
-          if (!best || found.cost < best.cost) best = found;
-          break;
+  const seatErrorAt = (dx: number, dy: number, dz: number): number =>
+    Math.abs(dy - dySeat) +
+    Math.max(
+      0,
+      Math.hypot(hips[0] + dx - dest.sitPoint[0], hips[2] + dz - dest.sitPoint[2]) -
+        limits.pelvisTol,
+    );
+
+  type Best = { cost: number; shift: Vec3; yawDeg: number };
+  let best: Best = { cost: Infinity, shift: [0, dySeat, 0], yawDeg: 0 };
+  const consider = (dx: number, dy: number, dz: number, yawDeg: number): void => {
+    const seat = SEAT_WEIGHT * seatErrorAt(dx, dy, dz);
+    const cost0 = seat + SIDEWAYS_COST * Math.hypot(dx, dz) + limits.yawCost * Math.abs(yawDeg);
+    if (cost0 >= best.cost) return;
+    const shift: Vec3 = [dx, dy, dz];
+    const pen = deepest(
+      colliders,
+      capsules,
+      dest.seatId,
+      { shift, yawDeg, pivot },
+      best.cost - cost0,
+    );
+    const cost = cost0 + pen;
+    if (cost < best.cost) best = { cost, shift, yawDeg };
+  };
+  const sweep = (
+    centre: Vec3,
+    reach: { xz: number; below: number; above: number },
+    step: number,
+    yawList: readonly number[],
+  ): void => {
+    for (const yawDeg of yawList) {
+      for (let dx = centre[0] - reach.xz; dx <= centre[0] + reach.xz + 1e-9; dx += step) {
+        for (let dz = centre[2] - reach.xz; dz <= centre[2] + reach.xz + 1e-9; dz += step) {
+          if (Math.hypot(dx, dz) > MAX_SHIFT + 1e-9) continue;
+          for (
+            let dy = centre[1] - reach.below;
+            dy <= centre[1] + reach.above + 1e-9;
+            dy += step / 2
+          ) {
+            consider(dx, dy, dz, yawDeg);
+          }
         }
       }
     }
-    return best;
   };
+  // Coarse over the whole range (every yaw), then fine around the winner (its yaw only).
+  consider(0, dySeat, 0, 0);
+  sweep([0, dySeat, 0], { xz: MAX_SHIFT, below: LOWER_DY, above: UPPER_DY }, COARSE_STEP, yaws);
+  const coarse = best;
+  sweep(
+    coarse.shift,
+    { xz: COARSE_STEP, below: COARSE_STEP / 2, above: COARSE_STEP / 2 },
+    FINE_STEP,
+    [coarse.yawDeg],
+  );
 
-  const best = search(limits.pelvisTol) ?? search(null);
-  if (best) return { shift: best.shift, yawDeg: best.yawDeg, pivot, cleared: true };
-  return { shift: [0, dy, 0], yawDeg: 0, pivot, cleared: false };
+  const residual = deepest(
+    colliders,
+    capsules,
+    dest.seatId,
+    { shift: best.shift, yawDeg: best.yawDeg, pivot },
+    Infinity,
+  );
+  return {
+    shift: best.shift,
+    yawDeg: best.yawDeg,
+    pivot,
+    residual,
+    seatError: seatErrorAt(...best.shift),
+    cleared: residual <= FURNITURE_CLEAR,
+  };
 }
 
 const BLEND_PARAMS: readonly ParamSpec[] = [
@@ -151,7 +198,7 @@ const BLEND_PARAMS: readonly ParamSpec[] = [
   },
   {
     name: 'pelvisTol',
-    doc: 'The pelvis must end within this many metres of the sit point (relaxed if nothing fits).',
+    doc: 'The pelvis may be this many metres from the sit point before that counts as seat error.',
     default: 0.05,
     min: 0,
     max: 0.08,
@@ -168,6 +215,13 @@ function blended(
   const start = ctx.sitStartS + blend.startS;
   return {
     appPipeline: false,
+    report: {
+      infeasible: !move.cleared,
+      residualPenetration: move.residual,
+      seatError: move.seatError,
+      shift: move.shift,
+      yawDeg: move.yawDeg,
+    },
     frame: (_index, timeS) => {
       const weight = smoothstep((timeS - start) / blend.durationS);
       ctx.rig.placeRoot(

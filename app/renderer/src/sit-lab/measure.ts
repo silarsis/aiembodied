@@ -38,8 +38,10 @@ export interface Colliders {
 export interface FrameMeasure {
   /** Deepest body capsule inside furniture or a wall (metres, 0 when clear). */
   furniturePen: number;
-  /** Deepest overlap of two body parts that should not touch (metres). */
+  /** Deepest overlap of two body parts beyond what the avatar's rest pose already has (metres, see `selfPenetration`). */
   selfPen: number;
+  /** The pair behind `selfPen`, like `leftThigh/rightThigh`; null when nothing overlaps. */
+  selfPenPair: string | null;
   /** Buttocks height minus the seat surface under them: positive floats, negative sinks. */
   seatGap: number;
   hips: Vec3;
@@ -76,6 +78,9 @@ function fromYTo(to: Vec3): Quat {
   const length = Math.hypot(z, -x, w);
   return [z / length, 0, -x / length, w / length];
 }
+
+/** A body capsule counts as clear of furniture below this depth (metres). */
+export const FURNITURE_CLEAR = 0.004;
 
 /**
  * Depth a capsule is inside furniture or walls. The floor is not counted (the motion model owns the floor), and
@@ -126,19 +131,69 @@ function selfPairs(names: readonly string[]): Array<[string, string]> {
   return pairs;
 }
 
-/** Deepest overlap among the parts that must not touch (metres, 0 when none). */
-function selfPenetration(capsules: readonly Capsule[]): number {
+/** Overlap in excess of rest below this (metres) is pose noise, not a penetration, and is reported as none. */
+const SELF_PEN_NOISE = 0.001;
+
+/** The overlap of each pair that must stay apart in the avatar's own rest pose, by pair key (see `restSelfOverlaps`). */
+export type RestOverlaps = ReadonlyMap<string, number>;
+
+function pairKey(a: string, b: string): string {
+  return `${a}/${b}`;
+}
+
+function overlapOf(first: Capsule, second: Capsule): number {
+  return first.radius + second.radius - segmentDistance(first.p0, first.p1, second.p0, second.p1);
+}
+
+function checkedPairs(
+  capsules: readonly Capsule[],
+): Array<{ key: string; first: Capsule; second: Capsule }> {
   const byName = new Map(capsules.map((c) => [c.name, c]));
-  let deepest = 0;
+  const found: Array<{ key: string; first: Capsule; second: Capsule }> = [];
   for (const [a, b] of selfPairs([...byName.keys()])) {
     const first = byName.get(a);
     const second = byName.get(b);
-    if (!first || !second) continue;
-    const depth =
-      first.radius + second.radius - segmentDistance(first.p0, first.p1, second.p0, second.p1);
-    if (depth > deepest) deepest = depth;
+    if (first && second) found.push({ key: pairKey(a, b), first, second });
   }
-  return deepest;
+  return found;
+}
+
+/**
+ * How much each checked pair overlaps with the avatar standing at rest. The thigh capsules of the two legs share
+ * the hips and overlap there in every pose, so only overlap beyond this counts as a self penetration. Compute it
+ * once, when the avatar loads.
+ */
+export function restSelfOverlaps(capsules: readonly Capsule[]): RestOverlaps {
+  return new Map(
+    checkedPairs(capsules).map(({ key, first, second }) => [
+      key,
+      Math.max(0, overlapOf(first, second)),
+    ]),
+  );
+}
+
+/**
+ * Deepest overlap among the parts that must not touch (metres, 0 when none), in excess of the pair's rest overlap.
+ * A hand against a thigh or the pelvis counts only once the hand's own axis is inside that part: resting a hand
+ * on the lap is natural contact, not a penetration.
+ */
+function selfPenetration(
+  capsules: readonly Capsule[],
+  rest: RestOverlaps,
+): { depth: number; pair: string | null } {
+  let deepest = SELF_PEN_NOISE;
+  let pair: string | null = null;
+  for (const { key, first, second } of checkedPairs(capsules)) {
+    const hand = /Hand$/.test(first.name) ? first : null;
+    const lap = /Thigh$|^pelvis$/.test(second.name);
+    const handAllowance = hand && lap ? hand.radius : 0;
+    const depth = overlapOf(first, second) - (rest.get(key) ?? 0) - handAllowance;
+    if (depth > deepest) {
+      deepest = depth;
+      pair = key;
+    }
+  }
+  return pair === null ? { depth: 0, pair } : { depth: deepest, pair };
 }
 
 export interface MeasureWorld {
@@ -153,7 +208,13 @@ export class FrameMeasurer {
     private readonly dest: Destination,
     private readonly world: MeasureWorld,
     private readonly legs: RestLegLengths | null,
+    private readonly restOverlaps: RestOverlaps,
   ) {}
+
+  /** The self penetration of a set of body capsules against this avatar's rest overlaps. */
+  selfPenetration(capsules: readonly Capsule[]): { depth: number; pair: string | null } {
+    return selfPenetration(capsules, this.restOverlaps);
+  }
 
   measure(): FrameMeasure {
     const { rig, dest } = this;
@@ -171,11 +232,13 @@ export class FrameMeasurer {
     const hips = rig.world('hips');
     const surface = this.world.surfaceAt(hips[0], hips[2]) ?? dest.surfaceY;
     const ankleHeight = (this.legs?.ankleHeight ?? 0) * dest.scale;
+    const selfPen = this.selfPenetration(capsules);
     const leftAnkle = rig.world('leftFoot');
     const rightAnkle = rig.world('rightFoot');
     return {
       furniturePen,
-      selfPen: selfPenetration(capsules),
+      selfPen: selfPen.depth,
+      selfPenPair: selfPen.pair,
       seatGap: seatedContactY(hips[1], rig.restHipsHeight, dest.scale) - surface,
       hips,
       pelvisToSit: horizontalDistance(hips, dest.sitPoint),

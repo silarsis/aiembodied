@@ -6,18 +6,28 @@
 import * as THREE from 'three';
 import { solveTwoBone } from '../../rooms/contact-math.js';
 import { seatedContactY } from '../../rooms/seat-fit.js';
+import { CAPSULE_RADII } from '../../rooms/contact-body.js';
 import { alongSeat } from '../destination.js';
+import { FURNITURE_CLEAR, furnitureDepth } from '../measure.js';
 import { smoothstep, type Vec3 } from '../pose-math.js';
 import { STEP_S } from '../types.js';
 import { numberParam, type Corrector, type Method, type MethodContext } from './types.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-/** Where the foot bone should be on the floor in front of the seat: the model's own spot, pushed clear of the seat. */
+/** Metres a foot goal is pushed forward past a measured shin or foot penetration, on top of it. */
+const PUSH_MARGIN = 0.01;
+const MAX_PUSHES = 5;
+
+/**
+ * Where the foot bone should be on the floor in front of the seat: the model's own spot, pushed so the shin's
+ * surface (not just its axis) is `clearance` past the seat's front edge.
+ */
 function footGoal(ctx: MethodContext, ankle: Vec3, clearance: number): THREE.Vector3 {
   const { dest, legs } = ctx;
   const ankleY = dest.footFloorY + (legs?.ankleHeight ?? 0) * dest.scale;
-  const short = dest.frontEdge + clearance - alongSeat(dest, ankle);
+  const shin = CAPSULE_RADII.shin * dest.bodyFactor;
+  const short = dest.frontEdge + clearance + shin - alongSeat(dest, ankle);
   const push = Math.max(0, short);
   return new THREE.Vector3(
     ankle[0] + dest.forward[0] * push,
@@ -105,6 +115,37 @@ function reachWithLeg(ctx: MethodContext, side: 'left' | 'right', goal: THREE.Ve
   rig.updateWorld();
 }
 
+/** Deepest of a leg's shin and foot capsules in furniture now (metres). */
+function legDepth(ctx: MethodContext, side: 'left' | 'right'): number {
+  if (!ctx.colliders) return 0;
+  let worst = 0;
+  for (const capsule of ctx.rig.capsules()) {
+    if (capsule.name !== `${side}Shin` && capsule.name !== `${side}Foot`) continue;
+    worst = Math.max(worst, furnitureDepth(ctx.colliders, capsule, ctx.dest.seatId));
+  }
+  return worst;
+}
+
+/**
+ * Pushes the foot goal forward and reaches again while the shin or foot is inside furniture (the knee may sit
+ * behind the front edge even when the ankle is past it). Returns the penetration that is left.
+ */
+function clearShins(
+  ctx: MethodContext,
+  side: 'left' | 'right',
+  goal: THREE.Vector3,
+  forward: readonly [number, number],
+): number {
+  let depth = legDepth(ctx, side);
+  for (let push = 0; push < MAX_PUSHES && depth > FURNITURE_CLEAR; push += 1) {
+    goal.x += forward[0] * (depth + PUSH_MARGIN);
+    goal.z += forward[1] * (depth + PUSH_MARGIN);
+    reachWithLeg(ctx, side, goal);
+    depth = legDepth(ctx, side);
+  }
+  return depth;
+}
+
 export const hipsOnlyIK: Method = {
   id: 'hipsOnlyIK',
   label: 'Hips-only IK',
@@ -126,7 +167,7 @@ export const hipsOnlyIK: Method = {
     },
     {
       name: 'footClearance',
-      doc: 'Metres past the seat front edge the ankles are kept at least.',
+      doc: 'Metres between the seat front edge and the shin surface, at least (the shin radius is added to the ankle goal; goals are then pushed forward until the shin and foot capsules clear the furniture).',
       default: 0.03,
       min: 0,
       max: 0.15,
@@ -148,8 +189,10 @@ export const hipsOnlyIK: Method = {
     const follow = 1 - Math.exp(-numberParam(params, 'settleDamping') * STEP_S);
     const clearance = numberParam(params, 'footClearance');
     const offset: Vec3 = [0, 0, 0];
+    const report = { infeasible: false, residualLegPenetration: 0 };
     return {
       appPipeline: false,
+      report,
       frame: (index, timeS) => {
         const weight = smoothstep((timeS - start) / blend);
         const raw = motion.poses[Math.min(index, motion.poses.length - 1)];
@@ -169,13 +212,19 @@ export const hipsOnlyIK: Method = {
           .node('hips')
           ?.position.set(raw.hips[0] + turned.x, raw.hips[1] + turned.y, raw.hips[2] + turned.z);
         rig.updateWorld();
+        let legDepthNow = 0;
         for (const [i, side] of (['left', 'right'] as const).entries()) {
           const ankle = ankles[i];
           if (!ankle) continue;
           const goal = footGoal(ctx, ankle, clearance);
           const raw3 = new THREE.Vector3(ankle[0], ankle[1], ankle[2]);
-          reachWithLeg(ctx, side, raw3.lerp(goal, weight));
+          const target = raw3.lerp(goal, weight);
+          reachWithLeg(ctx, side, target);
+          legDepthNow = Math.max(legDepthNow, clearShins(ctx, side, target, dest.forward));
         }
+        // The last frame's value is the one left in the report.
+        report.residualLegPenetration = legDepthNow;
+        report.infeasible = legDepthNow > FURNITURE_CLEAR;
       },
     };
   },

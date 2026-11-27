@@ -9,6 +9,7 @@ function measure(over: Partial<FrameMeasure> = {}): FrameMeasure {
   return {
     furniturePen: 0,
     selfPen: 0,
+    selfPenPair: null,
     seatGap: 0,
     hips: [0, 0.5, 0],
     pelvisToSit: 0.02,
@@ -32,6 +33,7 @@ function input(over: Partial<MetricsInput> = {}): MetricsInput {
     fps: 30,
     measures: Array.from({ length: frames }, () => measure()),
     raw: Array.from({ length: frames }, () => pose()),
+    rawMeasures: Array.from({ length: frames - 2 }, () => measure()),
     final: Array.from({ length: frames }, () => pose()),
     rawHips: Array.from({ length: frames }, () => [0, 0.5, 0]),
     translation: Array.from({ length: frames }, () => 0),
@@ -106,6 +108,42 @@ describe('trial metrics', () => {
     );
     expect(broken.hingeBreaks.count).toBe(1);
     expect(broken.failures).toContain('hingeBreaks');
+  });
+
+  it('names the joint and component of each hinge break', () => {
+    const twisted = quatMultiply(axisAngle([1, 0, 0], 80), axisAngle([0, 1, 0], 70));
+    const sideways = quatMultiply(axisAngle([1, 0, 0], 80), axisAngle([0, 0, 1], 50));
+    const metrics = computeMetrics(
+      input({
+        final: Array.from({ length: 10 }, () =>
+          pose({ leftLowerLeg: twisted, rightLowerArm: sideways }),
+        ),
+      }),
+    );
+    const byJoint = Object.fromEntries(metrics.hingeBreaks.joints.map((j) => [j.joint, j]));
+    expect(byJoint.leftLowerLeg?.component).toBe('twist');
+    expect(byJoint.leftLowerLeg?.excessDeg).toBeGreaterThan(30);
+    expect(metrics.hingeBreaks.joints[0]?.excessDeg).toBe(metrics.hingeBreaks.maxDeg);
+  });
+
+  it('reports the raw model output separately from the final pose', () => {
+    const twisted = quatMultiply(axisAngle([1, 0, 0], 80), axisAngle([0, 1, 0], 70));
+    const metrics = computeMetrics(
+      input({
+        raw: Array.from({ length: 10 }, () => pose({ leftLowerLeg: twisted })),
+        rawMeasures: Array.from({ length: 8 }, () =>
+          measure({ furniturePen: 0.07, selfPen: 0.03, selfPenPair: 'leftThigh/rightThigh' }),
+        ),
+      }),
+    );
+    expect(metrics.rawHingeJoint).toBe('leftLowerLeg');
+    expect(metrics.rawHingeComponent).toBe('twist');
+    expect(metrics.rawHingeMaxDeg).toBeGreaterThan(30);
+    expect(metrics.rawFurnitureEnd).toBe(0.07);
+    expect(metrics.rawSelfPen).toBe(0.03);
+    expect(metrics.rawSelfPenPair).toBe('leftThigh/rightThigh');
+    expect(metrics.hingeBreaks.count).toBe(0);
+    expect(metrics.furnitureMaxPenetrationEnd).toBe(0);
   });
 
   it('reports the time the body takes to go still after the motion', () => {

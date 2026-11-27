@@ -51,9 +51,12 @@ function jointTargets(
   ctx: MethodContext,
   points: LegPoints,
   span: { t: number; until: number; revealS: number },
+  root: [number, number],
 ): AvatarMotionTarget[] {
+  // ARDY drops a joint target on a frame whose pelvis x/z is not constrained too, so each carries the seat's root.
   return LEG_JOINTS.map(([joint, key]) => ({
     ...span,
+    root,
     joint,
     position: motionPoint(ctx, points[key]),
   }));
@@ -77,6 +80,11 @@ function seatTarget(request: StreamRequestPlan): AvatarMotionTarget {
     .sort((a, b) => b.t - a.t)[0];
   if (!found) throw new Error('The sit plan has no seat target.');
   return found;
+}
+
+function seatRoot(seat: AvatarMotionTarget): [number, number] {
+  if (!seat.root) throw new Error('The sit plan has no seat target.');
+  return seat.root;
 }
 
 const LEG_TARGET_PARAMS: readonly ParamSpec[] = [
@@ -137,15 +145,17 @@ function legTargetRequest(
 ): StreamRequestPlan {
   const points = legPoints(ctx.dest, requireLegs(ctx), ctx.hipHalfSpacing, options.spec);
   const until = round(base.duration - TARGET_END_MARGIN_S);
+  const root = seatRoot(seatTarget(base));
   return {
     ...base,
     targets: [
       ...withoutJointTargets(base),
-      ...jointTargets(ctx, points, {
-        t: round(until - options.holdS),
-        until,
-        revealS: options.revealS,
-      }),
+      ...jointTargets(
+        ctx,
+        points,
+        { t: round(until - options.holdS), until, revealS: options.revealS },
+        root,
+      ),
     ],
   };
 }
@@ -362,7 +372,7 @@ export const landThenSettle: Method = {
       observed,
       targets: [
         { ...seat, ...hold, heading: seat.heading ?? worldYawToMotion(ctx.frame, ctx.dest.facing) },
-        ...jointTargets(ctx, goals, hold),
+        ...jointTargets(ctx, goals, hold, seatRoot(seat)),
       ],
     };
     return { motion: await ctx.generateContinuation(landed, request, ctx.seed) };

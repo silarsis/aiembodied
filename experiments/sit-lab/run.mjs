@@ -1,6 +1,6 @@
 // Runs a plan of trials in the sit lab page, one at a time, and writes results/<runId>/.
 // Usage: node run.mjs --plan plans/smoke.json --room <room.json> --avatar <avatar.vrm> [--assets <dir>]
-//   [--run-id <id>] [--url http://localhost:5199] [--headed] [--only <method name>]
+//   [--run-id <id>] [--url http://localhost:5199] [--headed] [--only <method name>] [--motion-url <url>]
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -104,12 +104,17 @@ function saveImage(file, dataUrl) {
   writeFileSync(file, Buffer.from(dataUrl.split(',')[1], 'base64'));
 }
 
+/** Reads a JSON file; a leading byte order mark (Windows PowerShell 5.1 writes one) is dropped. */
+function readJson(file) {
+  return JSON.parse(readFileSync(resolve(file), 'utf8').replace(/^\uFEFF/, ''));
+}
+
 const args = parseArgs(process.argv.slice(2));
 for (const need of ['plan', 'room', 'avatar']) {
   if (!args[need]) throw new Error(`Missing --${need}`);
 }
-const plan = JSON.parse(readFileSync(resolve(args.plan), 'utf8'));
-const roomJson = JSON.parse(readFileSync(resolve(args.room), 'utf8'));
+const plan = readJson(args.plan);
+const roomJson = readJson(args.room);
 const seat = roomJson.objects.find((object) => object.id === plan.seatObjectId);
 if (!seat) {
   const ids = roomJson.objects.map((object) => `${object.id} (${object.name})`).join(', ');
@@ -121,7 +126,7 @@ mkdirSync(runDir, { recursive: true });
 const url = args.url ?? 'http://localhost:5199';
 const assetsDir = args.assets ? resolve(args.assets) : null;
 
-const motionUrl = plan.motionUrl ?? 'http://127.0.0.1:8190';
+const motionUrl = args['motion-url'] ?? plan.motionUrl ?? 'http://127.0.0.1:8190';
 await waitForMotion(motionUrl);
 const viteChild = await ensureVite(url);
 const browser = await chromium.launch(

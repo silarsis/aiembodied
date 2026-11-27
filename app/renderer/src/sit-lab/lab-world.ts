@@ -8,6 +8,7 @@ import type { RoomStage } from '../rooms/room-stage.js';
 import type { PlanWorld } from '../rooms/scene-actions.js';
 import { initPhysics } from '../rooms/room-physics.js';
 import { LabRig } from './lab-rig.js';
+import { restSelfOverlaps, type RestOverlaps } from './measure.js';
 import { STEP_S, type LabSpec, type Pose, type StartSpec } from './types.js';
 
 const CANVAS_WIDTH = 960;
@@ -33,6 +34,8 @@ export class LabWorld {
     private readonly neutral: Pose,
     /** The root's height when the avatar stands on the floor (the soles' lift included). */
     private readonly groundY: number,
+    /** How much each checked pair of body parts overlaps in the avatar's neutral pose, measured once at load. */
+    readonly restOverlaps: RestOverlaps,
   ) {}
 
   static async create(spec: LabSpec, host: HTMLElement): Promise<LabWorld> {
@@ -95,6 +98,7 @@ export class LabWorld {
       rest,
       rig.readPose(),
       vrm.scene.position.y,
+      restSelfOverlaps(rig.capsules()),
     );
   }
 

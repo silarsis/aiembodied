@@ -69,12 +69,30 @@ const STILL_DEG = 0.5;
 /** A foot is planted while its sole is within this height of the floor (metres). */
 const PLANTED_SOLE = 0.03;
 
+type HingeComponent = 'twist' | 'sideways';
+
+interface HingeBreak {
+  joint: string;
+  component: HingeComponent;
+  /** Degrees past the tight limit of that component, at the worst frame. */
+  excessDeg: number;
+}
+
+interface HingeBreaks {
+  count: number;
+  maxDeg: number;
+  /** One entry per joint that broke, worst first. */
+  joints: HingeBreak[];
+}
+
 export interface MetricsInput {
   fps: number;
   /** Measurements of the final pose, one per frame. */
   measures: readonly FrameMeasure[];
   /** The motion model's own pose, one per frame. */
   raw: readonly Pose[];
+  /** Measurements of the raw poses with no method and no joint limits, from `sitStartFrame` on. */
+  rawMeasures: readonly FrameMeasure[];
   /** The pose after the method, one per frame. */
   final: readonly Pose[];
   /** Hips in the world with the root at its start and the raw pose, one per frame. */
@@ -94,6 +112,15 @@ export interface TrialMetrics {
   furnitureMaxPenetrationEnd: number;
   furnitureMaxPenetrationDescent: number;
   selfPenetrationMax: number;
+  /** The pair behind `selfPenetrationMax`; null when there is none. */
+  selfPenPair: string | null;
+  /** What the motion model did on its own, before any method or joint limit: separates model faults from method faults. */
+  rawFurnitureEnd: number;
+  rawSelfPen: number;
+  rawSelfPenPair: string | null;
+  rawHingeMaxDeg: number;
+  rawHingeJoint: string | null;
+  rawHingeComponent: HingeComponent | null;
   seatGap: number;
   pelvisToSitPoint: number;
   footFloorError: number;
@@ -101,7 +128,7 @@ export interface TrialMetrics {
   shapeChangeMeanDeg: number;
   shapeChangeMaxDeg: number;
   translationUsed: number;
-  hingeBreaks: { count: number; maxDeg: number };
+  hingeBreaks: HingeBreaks;
   jerkPeak: number;
   jerkPeakRaw: number;
   settleTimeS: number | null;
@@ -169,11 +196,14 @@ function shapeChange(
   return { mean: frames > 0 ? total / frames : 0, max };
 }
 
-/** How far past the tight limits a hinge joint's rotation is, in degrees (negative inside them). */
-function hingeExcess(q: Quat, twistAxis: 0 | 1): number {
+/** How far past the tight limits a hinge joint's rotation is, in degrees (negative inside them), and which part is worse. */
+function hingeExcess(q: Quat, twistAxis: 0 | 1): { excess: number; component: HingeComponent } {
   const { twistDeg, swing } = swingTwist(q, twistAxis);
-  const sideways = (Math.abs(swing[2]) * 180) / Math.PI;
-  return Math.max(sideways - HINGE_SIDEWAYS_LIMIT_DEG, Math.abs(twistDeg) - HINGE_TWIST_LIMIT_DEG);
+  const sideways = (Math.abs(swing[2]) * 180) / Math.PI - HINGE_SIDEWAYS_LIMIT_DEG;
+  const twist = Math.abs(twistDeg) - HINGE_TWIST_LIMIT_DEG;
+  return sideways > twist
+    ? { excess: sideways, component: 'sideways' }
+    : { excess: twist, component: 'twist' };
 }
 
 /** The worst excess over the tight limits among the elbows and knees of one pose (0 when all are inside). */
@@ -181,24 +211,28 @@ export function hingeExcessDeg(pose: Pose): number {
   let worst = 0;
   for (const [name, twistAxis] of HINGES) {
     const q = pose.bones[name];
-    if (q) worst = Math.max(worst, hingeExcess(q, twistAxis));
+    if (q) worst = Math.max(worst, hingeExcess(q, twistAxis).excess);
   }
   return worst;
 }
 
-function hingeBreaks(final: readonly Pose[], from: number): { count: number; maxDeg: number } {
-  let count = 0;
-  let maxDeg = 0;
+/** The worst excess of each hinge joint over the frames from `from`, joints that broke only, worst first. */
+function hingeBreaks(poses: readonly Pose[], from: number): HingeBreaks {
+  const joints: HingeBreak[] = [];
   for (const [name, twistAxis] of HINGES) {
-    let worst = 0;
-    for (let i = from; i < final.length; i += 1) {
-      const q = at(final, i).bones[name];
-      if (q) worst = Math.max(worst, hingeExcess(q, twistAxis));
+    let worst: HingeBreak | null = null;
+    for (let i = from; i < poses.length; i += 1) {
+      const q = at(poses, i).bones[name];
+      if (!q) continue;
+      const { excess, component } = hingeExcess(q, twistAxis);
+      if (excess > 0 && (!worst || excess > worst.excessDeg)) {
+        worst = { joint: name, component, excessDeg: excess };
+      }
     }
-    if (worst > 0) count += 1;
-    maxDeg = Math.max(maxDeg, worst);
+    if (worst) joints.push(worst);
   }
-  return { count, maxDeg };
+  joints.sort((a, b) => b.excessDeg - a.excessDeg);
+  return { count: joints.length, maxDeg: joints[0]?.excessDeg ?? 0, joints };
 }
 
 /** Frames after the motion until every joint moves less than 0.5 degrees per frame for good; null if it never does. */
@@ -243,12 +277,26 @@ export function computeMetrics(input: MetricsInput): TrialMetrics {
   const window = measures.slice(Math.max(from, 0));
   const shape = shapeChange(raw, final, Math.max(from, 0));
   const hinge = hingeBreaks(final, Math.max(from, 0));
+  const rawHinge = hingeBreaks(raw, Math.max(from, 0)).joints[0] ?? null;
+  const rawEnd = last(input.rawMeasures);
+  const selfWorst = window.reduce((worst, m) => (m.selfPen > worst.selfPen ? m : worst), end);
+  const rawSelfWorst = input.rawMeasures.reduce(
+    (worst, m) => (m.selfPen > worst.selfPen ? m : worst),
+    rawEnd,
+  );
   const descent = measures.slice(Math.max(from, 0), input.motionEndFrame + 1);
 
   const metrics: Omit<TrialMetrics, 'pass' | 'failures'> = {
     furnitureMaxPenetrationEnd: end.furniturePen,
     furnitureMaxPenetrationDescent: Math.max(0, ...descent.map((m) => m.furniturePen)),
     selfPenetrationMax: Math.max(0, ...window.map((m) => m.selfPen)),
+    selfPenPair: selfWorst.selfPen > 0 ? selfWorst.selfPenPair : null,
+    rawFurnitureEnd: rawEnd.furniturePen,
+    rawSelfPen: rawSelfWorst.selfPen,
+    rawSelfPenPair: rawSelfWorst.selfPen > 0 ? rawSelfWorst.selfPenPair : null,
+    rawHingeMaxDeg: rawHinge?.excessDeg ?? 0,
+    rawHingeJoint: rawHinge?.joint ?? null,
+    rawHingeComponent: rawHinge?.component ?? null,
     seatGap: end.seatGap,
     pelvisToSitPoint: end.pelvisToSit,
     footFloorError: Math.max(Math.abs(end.sole[0]), Math.abs(end.sole[1])),

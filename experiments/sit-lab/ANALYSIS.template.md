@@ -10,6 +10,16 @@ One row per method (and tuned variant). Median over its trials.
 | ------ | ------ | --------- | ------------------------- | -------------------------- | ------------------- | --------------------- | -------------------- |
 |        |        |           |                           |                            |                     |                       |                      |
 
+## Model vs method
+
+Compare the raw columns (the motion model's own output, no method, no joint limits) with the same trials' final columns. One row per method, medians.
+
+| method | rawFurnitureEnd | furnitureEnd | rawSelfPen | selfPen | rawHingeMaxDeg (joint, twist or sideways) | hingeMaxDeg after limits | limitClamps (joint, deg) |
+| ------ | --------------- | ------------ | ---------- | ------- | ----------------------------------------- | ------------------------ | ------------------------ |
+|        |                 |              |            |         |                                           |                          |                          |
+
+Say which failures are already in the raw output (the model's fault: twisted feet or elbows, legs through the chair) and which a method adds or fails to remove. Note trials where `methodReport.infeasible` is true.
+
 ## Failure patterns
 
 For each failure that repeats, name the criterion, the methods and starts it affects, and list the trial ids (for example `hipsOnlyIK/behind-s3`). Say what the pictures show.

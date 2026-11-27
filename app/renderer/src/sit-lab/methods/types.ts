@@ -39,6 +39,8 @@ export interface Planned {
 export interface Corrector {
   appPipeline: boolean;
   frame(index: number, timeS: number): void;
+  /** What the method found that the metrics alone do not show, written to the trial's JSON. */
+  report?: Record<string, number | boolean | string | number[]>;
 }
 
 export interface MethodContext {

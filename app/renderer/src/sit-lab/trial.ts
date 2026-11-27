@@ -5,7 +5,7 @@ import { evaluateRawPoses } from './raw-poses.js';
 import { FrameMeasurer, type FrameMeasure } from './measure.js';
 import { computeMetrics, type TrialMetrics } from './metrics.js';
 import { appendTracks, requestMotion, toWire, tracksFromChunks } from './motion-source.js';
-import { vecLength, vecSub, type Vec3 } from './pose-math.js';
+import { quatAngleDeg, vecLength, vecSub, type Vec3 } from './pose-math.js';
 import { withSitPrompt } from './methods/best-of-n.js';
 import { findMethod } from './methods/index.js';
 import { resolveParams, type MethodContext, type MotionClip } from './methods/types.js';
@@ -28,6 +28,8 @@ const VIEW_DISTANCE = 2.4;
 /** How far inside the walls a close-up camera stays. */
 const WALL_MARGIN = 0.15;
 const MAX_VIEW_FOV = 100;
+/** A joint the app's limits turned by less than this (degrees) is not reported. */
+const CLAMP_REPORT_DEG = 0.1;
 
 interface TrialCaptures {
   final: Record<ViewName, string>;
@@ -55,6 +57,10 @@ export interface TrialResult {
   modelCalls: number;
   modelMs: number;
   notes: string[];
+  /** What the method reports about itself (for example that it could not clear the furniture), or null. */
+  methodReport: Record<string, number | boolean | string | number[]> | null;
+  /** Joints the app's joint limits turned at the end pose, and by how many degrees. */
+  limitClamps: Array<{ joint: string; deg: number }>;
   poses: { raw: Pose[]; final: Pose[]; rootShift: Vec3[] };
   captures: TrialCaptures;
 }
@@ -172,6 +178,7 @@ export async function runTrial(
       surfaceAt: (x, z) => world.stage.surfaceHeightAt(spec.seatObjectId, x, z, dest.sitPoint[1]),
     },
     plan.restLegLengths ?? null,
+    world.restOverlaps,
   );
 
   let modelCalls = 0;
@@ -250,10 +257,11 @@ export async function runTrial(
   const rawHips: Vec3[] = [];
   const translation: number[] = [];
   const sitShots: string[] = [];
+  const limitClamps: Array<{ joint: string; deg: number }> = [];
   for (let i = 0; i < total; i += 1) {
     const pose = motion.poses[Math.min(i, motionFrames - 1)];
     if (!pose) throw new Error('The motion has no frames.');
-    if (corrector.appPipeline) world.limits.restore();
+    world.limits.restore();
     rig.writePose(pose);
     if (!corrector.appPipeline) rig.placeRoot([0, 0, 0]);
     if (corrector.appPipeline) {
@@ -265,9 +273,16 @@ export async function runTrial(
     }
     const began = performance.now();
     corrector.frame(i, i * STEP_S);
-    if (corrector.appPipeline) {
-      world.controller.solveContact(STEP_S);
-      world.limits.apply();
+    if (corrector.appPipeline) world.controller.solveContact(STEP_S);
+    const unlimited = i === total - 1 ? rig.readPose() : null;
+    world.limits.apply();
+    if (unlimited) {
+      const limited = rig.readPose();
+      for (const [joint, before] of Object.entries(unlimited.bones)) {
+        const after = limited.bones[joint];
+        const deg = after ? quatAngleDeg(before, after) : 0;
+        if (deg > CLAMP_REPORT_DEG) limitClamps.push({ joint, deg });
+      }
     }
     computeMs += performance.now() - began;
     world.vrm.update(STEP_S);
@@ -291,10 +306,20 @@ export async function runTrial(
   const request = sent[0];
   if (!request) throw new Error('The trial made no model call.');
 
+  // The model's own poses with no method and no joint limits, root at its base, for the raw-output metrics.
+  const rawMeasures: FrameMeasure[] = [];
+  for (let i = Math.max(sitStartFrame, 0); i < raw.length; i += 1) {
+    const pose = raw[i];
+    if (!pose) continue;
+    rig.placeRoot([0, 0, 0]);
+    rig.writePose(pose);
+    rawMeasures.push(measurer.measure());
+  }
   const metrics = computeMetrics({
     fps: FPS,
     measures,
     raw,
+    rawMeasures,
     final,
     rawHips,
     translation,
@@ -306,6 +331,10 @@ export async function runTrial(
   });
   const notes: string[] = [];
   if (corrector.appPipeline) notes.push('app pipeline: seat fit, contact solver and joint limits');
+  else notes.push('joint limits applied after the method, as the app does');
+  if (corrector.report?.infeasible === true) {
+    notes.push(`infeasible: ${JSON.stringify(corrector.report)}`);
+  }
   return {
     method: method.id,
     params,
@@ -320,6 +349,8 @@ export async function runTrial(
     modelCalls,
     modelMs,
     notes,
+    methodReport: corrector.report ?? null,
+    limitClamps,
     poses: { raw, final, rootShift },
     captures: { final: finalShots, sit: sitShots },
   };

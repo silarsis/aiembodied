@@ -1,6 +1,6 @@
 {
   "runId": "sofa",
-  "seatObjectId": "SOFA_ID",
+  "seatObjectId": "sofa",
   "starts": {
     "front": {
       "bearingDeg": 0,

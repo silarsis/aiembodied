@@ -1,6 +1,6 @@
 {
   "runId": "smoke",
-  "seatObjectId": "SEAT_ID",
+  "seatObjectId": "armchair",
   "starts": {
     "front": {
       "bearingDeg": 0,
