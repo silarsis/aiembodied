@@ -11,7 +11,6 @@ import {
   hingeAngle,
   projectToHinge,
   rotationAngle,
-  smallestRotation,
   solveTwoBone,
   stepSpring,
   type Spring,
@@ -19,31 +18,6 @@ import {
 
 const X = new THREE.Vector3(1, 0, 0);
 const deg = (d: number) => (d * Math.PI) / 180;
-
-describe('smallestRotation', () => {
-  it('turns a downward segment so its end moves up by the depth', () => {
-    const dir = new THREE.Vector3(0, -1, 0);
-    const normal = new THREE.Vector3(0, 0, 1);
-    const q = new THREE.Quaternion();
-    const angle = smallestRotation(dir, normal, 0.05, 0.4, q);
-    expect(angle).toBeCloseTo(Math.atan2(0.05, 0.4), 9);
-    const moved = new THREE.Vector3(0, -0.4, 0).applyQuaternion(q);
-    expect(moved.z).toBeGreaterThan(0.04);
-    expect(moved.y).toBeGreaterThan(-0.4);
-    expect(q.angleTo(new THREE.Quaternion())).toBeCloseTo(angle, 9);
-  });
-
-  it('is identity when the push is along the bone or there is nothing to do', () => {
-    const q = new THREE.Quaternion(0.1, 0.2, 0.3, 0.9);
-    expect(
-      smallestRotation(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 1, 0), 0.05, 0.4, q),
-    ).toBe(0);
-    expect(q.angleTo(new THREE.Quaternion())).toBe(0);
-    expect(
-      smallestRotation(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0), 0, 0.4, q),
-    ).toBe(0);
-  });
-});
 
 describe('joint limits', () => {
   it('measures the hinge angle about an axis', () => {

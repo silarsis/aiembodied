@@ -16,6 +16,7 @@ import { degToRad } from './room-geometry.js';
 import type { WorldSeatGeometry } from './seat-geometry.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { worldTag } from './room-tags.js';
+import { hipsAboveSeat } from './seat-fit.js';
 import {
   heightToMotion,
   worldToMotion,
@@ -186,7 +187,6 @@ const TURN_LOOKAHEAD = 0.4;
 /** Seconds the walk waits after the turn has finished. */
 const TURN_SETTLE_S = 0.2;
 const SIT_APPROACH = 0.45;
-const SEAT_HEIGHT_OFFSET = 0.08;
 /** Radius of a thigh above the cushion, avatar metres: the knee joint sits this far above the seat top. */
 const THIGH_RADIUS = 0.07;
 /** Half the distance between the knees when seated, avatar metres. */
@@ -195,6 +195,12 @@ const KNEE_HALF_SPACING = 0.09;
 const KNEE_PAST_EDGE = 0.03;
 /** The leg targets are held over the last stretch of the sit (seconds), inside the root target's span. */
 const LEG_HOLD_S = 0.5;
+/**
+ * When, after the sit phase starts, the pelvis is first held at the seat height (seconds). The full seat
+ * target only starts at 2 s; without this the motion model, which knows nothing of the seat, had already
+ * lowered the hips to about 0.26 m by then (sofa on bija, 2026-11-27) and had to climb back up.
+ */
+const SEAT_HEIGHT_HOLD_S = 1.2;
 /** The settle stream after a contact miss: long enough for one chunk and the pose to arrive. */
 export const SETTLE_SECONDS = 2;
 const REACH_DISTANCE = 0.7;
@@ -880,17 +886,25 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   const heading = worldYawToMotion(frame, facing);
   // The tag height is a guess (an LLM's, or a default); the rendered surface at the anchor is the truth.
   const surfaceY = world.seatSurfaceY?.(object.id, seat[0], seat[2]) ?? seat[1];
+  // The same hips-to-buttocks distance seat fit uses, so the planned pelvis is the one seat fit keeps.
+  const pelvisY = surfaceY + hipsAboveSeat(world.restHipsHeight, frame.scale);
   const target: AvatarMotionTarget = {
     t: roundMs(phaseStart + 2),
     until: roundMs(duration - 0.1),
     root,
-    height: heightToMotion(frame, surfaceY + SEAT_HEIGHT_OFFSET),
+    height: heightToMotion(frame, pelvisY),
     heading,
+    revealS: phaseStart,
+  };
+  // Height only: the root is still turning and stepping back to the seat, and must not be pinned yet.
+  const descent: AvatarMotionTarget = {
+    t: roundMs(phaseStart + SEAT_HEIGHT_HOLD_S),
+    until: roundMs(phaseStart + 2),
+    height: target.height,
     revealS: phaseStart,
   };
   const geometry = world.seatGeometry?.(object.id) ?? null;
   const legs = world.restLegLengths;
-  const pelvisY = surfaceY + SEAT_HEIGHT_OFFSET;
   const legTargets =
     geometry && legs
       ? sitLegTargets(frame, seat, facing, pelvisY, geometry, legs, {
@@ -920,7 +934,7 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
               phases: [{ prompt: SIT_PROMPT, startS: phaseStart }],
             }
           : {}),
-        targets: [...(start?.targets ?? []), target, ...legTargets],
+        targets: [...(start?.targets ?? []), descent, target, ...legTargets],
       },
       frame,
       expectedEnd: { root, heading },

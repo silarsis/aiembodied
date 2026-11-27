@@ -426,7 +426,20 @@ describe('RoomSceneController contact body', () => {
   });
 
   it('gives bones the mixer does not key their animated pose back when the room is left', async () => {
-    const { instance, bones, animated } = await seatedOnSofa();
+    const { instance, avatar, bones } = await seatedOnSofa();
+    // Stood on open floor with the feet 6 cm into it: planting them rotates the legs, which nothing else keys.
+    avatar.position.set(-2, 0, 1);
+    bones.get('hips')!.position.y = 0.72;
+    for (const side of ['left', 'right']) {
+      bones.get(`${side}UpperLeg`)!.quaternion.identity();
+      bones.get(`${side}LowerLeg`)!.quaternion.identity();
+    }
+    avatar.updateWorldMatrix(true, true);
+    const animated = new Map([...bones].map(([name, bone]) => [name, bone.quaternion.clone()]));
+    for (let i = 0; i < 40; i += 1) {
+      for (const [name, q] of animated) bones.get(name)!.quaternion.copy(q);
+      instance.solveContact(1 / 60);
+    }
     const corrected = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'].filter(
       (name) => !bones.get(name)!.quaternion.equals(animated.get(name)!),
     );

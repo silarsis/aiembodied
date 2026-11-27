@@ -44,7 +44,6 @@ export const HEAD_SETTLE_SECONDS = 0.8;
 /** The target correction of a joint may grow by at most this per second (radians), so one bad frame cannot fling a limb. */
 export const MAX_OFFSET_RATE = (90 * Math.PI) / 180;
 
-const TMP_AXIS = new THREE.Vector3();
 const TMP_Q = new THREE.Quaternion();
 const TMP_Q2 = new THREE.Quaternion();
 const TMP_V = new THREE.Vector3();
@@ -56,29 +55,6 @@ export function hingeAngle(q: THREE.Quaternion, axis: THREE.Vector3): number {
   let angle = 2 * Math.atan2(along, q.w);
   if (angle > Math.PI) angle -= 2 * Math.PI;
   else if (angle < -Math.PI) angle += 2 * Math.PI;
-  return angle;
-}
-
-/**
- * The smallest rotation (a quaternion about the joint) that moves the point `reach` metres along `dir`
- * from the joint towards `normal` by `depth`. Returns the angle, or 0 (and identity) when `dir` and
- * `normal` are parallel, where no rotation about the joint moves the point that way.
- */
-export function smallestRotation(
-  dir: THREE.Vector3,
-  normal: THREE.Vector3,
-  depth: number,
-  reach: number,
-  out: THREE.Quaternion,
-): number {
-  TMP_AXIS.crossVectors(dir, normal);
-  const length = TMP_AXIS.length();
-  if (length < 1e-6 || depth <= 0 || reach <= 1e-6) {
-    out.identity();
-    return 0;
-  }
-  const angle = Math.atan2(depth, reach);
-  out.setFromAxisAngle(TMP_AXIS.multiplyScalar(1 / length), angle);
   return angle;
 }
 

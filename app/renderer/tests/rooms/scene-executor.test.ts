@@ -31,6 +31,10 @@ class FakeEnv implements SceneEnv {
   pose: RootPose = { x: 0, z: -0.3, yaw: 0 };
   calls: string[] = [];
   held: string | null = null;
+  approached: string[] = [];
+  approachSeat(objectId: string): void {
+    this.approached.push(objectId);
+  }
   planWorld(): PlanWorld {
     return {
       room,
@@ -228,6 +232,9 @@ describe('SceneActionExecutor', () => {
   it('sits, holds, and keeps the session, then inserts a stand before walking', async () => {
     executor.submit([{ kind: 'sit', objectId: 'sofa' }]);
     await until(() => bridge.requests.length === 1);
+    // The seat holds the body up from the moment the sit starts, not only once it is held.
+    await until(() => env.approached.length === 1);
+    expect(env.approached).toEqual(['sofa']);
     const verdict = await playStream(
       executor,
       bridge,

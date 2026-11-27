@@ -22,6 +22,7 @@ import type {
 import { LIVE_MOTION_SOURCE } from './live-motion.js';
 import { pinHipsHorizontal } from './hips-pinning.js';
 import { JumpDetector } from '../rooms/jump-detector.js';
+import { JointLimits } from './joint-limits.js';
 import { PoseBlend } from './pose-blend.js';
 import type { VisemeFrame } from '../audio/viseme-driver.js';
 import { createClipFromVrma, createMixerForVrm } from './animations/index.js';
@@ -149,6 +150,7 @@ export class AvatarActor {
 
   private readonly hasRoom: () => boolean;
   private vrm: VRM | null = null;
+  private limits: JointLimits | null = null;
   private parent: THREE.Object3D | null = null;
   private restSkeleton: AvatarRestSkeleton | null = null;
   private mixer: THREE.AnimationMixer | null = null;
@@ -354,6 +356,7 @@ export class AvatarActor {
     parent.add(vrm.scene);
     this.parent = parent;
     this.vrm = vrm;
+    this.limits = new JointLimits(vrm.humanoid, vrm.meta?.metaVersion === '0');
     this.restSkeleton = restSkeleton;
     this.baseX = vrm.scene.position.x;
     this.baseZ = vrm.scene.position.z;
@@ -422,6 +425,7 @@ export class AvatarActor {
     }
     disposeVrm(this.vrm);
     this.vrm = null;
+    this.limits = null;
     this.restSkeleton = null;
     options.onDetach?.();
     this.jumpDetector.track(null, null, []);
@@ -467,6 +471,7 @@ export class AvatarActor {
     this.waveAction = null;
     this.expressionManager = null;
     this.vrm = null;
+    this.limits = null;
     this.parent = null;
     this.restSkeleton = null;
     setAvatarRestSkeleton(null, this.id);
@@ -518,6 +523,7 @@ export class AvatarActor {
       manager.update();
     }
 
+    this.limits?.restore();
     for (const stopHandedOver of this.handedOver.splice(0)) stopHandedOver();
     this.mixer?.update(delta);
     hooks.afterMixer?.();
@@ -532,6 +538,7 @@ export class AvatarActor {
     this.idleScheduler?.update(delta);
     this.poseBlend.apply(delta);
     hooks.beforeVrmUpdate?.();
+    this.limits?.apply();
     this.vrm?.update(delta);
   }
 

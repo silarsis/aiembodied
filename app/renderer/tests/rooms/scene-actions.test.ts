@@ -344,11 +344,19 @@ describe('sit and stand', () => {
     expect(request.duration).toBe(phase.startS + 4);
 
     const target = request.targets!.at(-1)!;
+    // The pelvis is held at the seat height before the full target, so the descent cannot sink into the seat.
+    const descent = request.targets!.at(-2)!;
+    expect(descent).toEqual({
+      t: phase.startS + 1.2,
+      until: phase.startS + 2,
+      height: target.height,
+      revealS: phase.startS,
+    });
     const sit = stage.worldTag('sofa', 'sit')!;
     const [sx, sz] = motionToWorld(world.frame, target.root![0], target.root![1]);
     expect(sx).toBeCloseTo(sit.position[0], 6);
     expect(sz).toBeCloseTo(sit.position[2], 6);
-    expect(target.height).toBeCloseTo(0.42 + 0.08, 6);
+    expect(target.height).toBeCloseTo(0.42 + 0.09, 6);
     expect(target.heading).toBeCloseTo(0, 6); // the sofa faces +Z like the avatar
     expect(target.t).toBe(phase.startS + 2);
     expect(target.revealS).toBe(phase.startS);
@@ -360,7 +368,7 @@ describe('sit and stand', () => {
     const stream = streamOf(
       planAction(worldAt(0, -0.3, 0, 1.25), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }),
     );
-    expect(stream.request.targets!.at(-1)!.height).toBeCloseTo((0.42 + 0.08) / 1.25, 6);
+    expect(stream.request.targets!.at(-1)!.height).toBeCloseTo((0.42 + 0.09 * 1.25) / 1.25, 6);
   });
 
   it('turns the heading into the avatar frame for a rotated armchair', () => {
@@ -384,7 +392,8 @@ describe('sit and stand', () => {
     expect(stream.request.phases).toBeUndefined();
     expect(stream.request.prompt).toBe('a person turns around and sits down on a chair');
     expect(stream.request.duration).toBe(4);
-    expect(stream.request.targets![0]!.t).toBe(2);
+    expect(stream.request.targets![0]).toMatchObject({ t: 1.2, until: 2, revealS: 0 });
+    expect(stream.request.targets![1]!.t).toBe(2);
   });
 
   it('aims the hips at the measured seat surface instead of the tag height when the world can measure it', () => {
@@ -1013,8 +1022,8 @@ describe('sit leg targets', () => {
     const stream = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
     expect(stream.settle?.prompt).toBe('a person sits still on a chair, looking ahead');
     expect(stream.settle?.targets[0]).toMatchObject({
-      root: stream.request.targets![0]!.root,
-      heading: stream.request.targets![0]!.heading,
+      root: stream.request.targets![1]!.root,
+      heading: stream.request.targets![1]!.heading,
       revealS: 0,
       t: 0,
       until: stream.settle!.duration,

@@ -16,10 +16,15 @@ export const SEAT_OFFSET_EPSILON = 0.0005;
 /** Easing rate of the offset, 1/seconds (time constant of about 0.15 s). */
 export const SEAT_EASE_RATE = 7;
 
+/** World distance from the hips bone down to the buttocks for this avatar; `scale` is the avatar root scale. */
+export function hipsAboveSeat(restHipsHeight: number, scale = 1): number {
+  const rest = restHipsHeight > 0 ? restHipsHeight : REFERENCE_HIPS_HEIGHT;
+  return BUTTOCKS_BELOW_HIPS * (rest / REFERENCE_HIPS_HEIGHT) * scale;
+}
+
 /** World height of the lowest seated contact for a pelvis at `hipsY`; `scale` is the avatar root scale. */
 export function seatedContactY(hipsY: number, restHipsHeight: number, scale = 1): number {
-  const rest = restHipsHeight > 0 ? restHipsHeight : REFERENCE_HIPS_HEIGHT;
-  return hipsY - BUTTOCKS_BELOW_HIPS * (rest / REFERENCE_HIPS_HEIGHT) * scale;
+  return hipsY - hipsAboveSeat(restHipsHeight, scale);
 }
 
 /**

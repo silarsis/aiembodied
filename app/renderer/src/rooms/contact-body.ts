@@ -34,7 +34,6 @@ import {
   hingeAngle,
   projectToHinge,
   rotationAngle,
-  smallestRotation,
   solveTwoBone,
   stepSpring,
   type Spring,
@@ -42,11 +41,14 @@ import {
 
 /**
  * Kinematic contact solver for one avatar. The animation (streamed ARDY motion) knows nothing about
- * furniture, so a seated avatar's thighs and shins sink into the cushion. After the animation, grip and
- * seat fit, and before the VRM copies its normalised bones to the raw ones, this measures body capsules
- * against the room's exact colliders, lifts the pelvis a little and rotates limb joints by the smallest
- * rotation that pushes each limb out. It is deterministic (no motors, no simulation state beyond easing).
- * Open-space motion is untouched: with no contact the corrections are exactly identity.
+ * furniture, so a seated avatar's thighs and arms sink into the cushion and armrests. After the animation,
+ * grip and seat fit, and before the VRM copies its normalised bones to the raw ones, this measures body
+ * capsules against the room's exact colliders and moves the whole body (the root, eased by springs) to a
+ * place where they are clear. The pose is never bent to get out of furniture: only grounded feet are planted
+ * again, with two-bone IK inside the joint limits, so a shifted or lifted body does not leave its feet
+ * floating. A limb that is still in furniture after the shift (the shift is capped, or a planted foot pulled
+ * a leg back in) is reported as a miss. It is deterministic (no motors, no simulation state beyond easing).
+ * Open-space motion is untouched: with no contact the shift is exactly zero.
  */
 
 /** The pelvis height the capsule radii below are specified for (metres). */
@@ -65,9 +67,11 @@ export const CAPSULE_RADII = {
 } as const;
 /** The pelvis is never lifted more than this (metres, absolute). */
 export const MAX_PELVIS_LIFT = 0.08;
-/** Smoothing time of the pelvis lift spring (seconds). */
+/** The body is never moved sideways (x and z together) more than this to get clear of furniture (metres, absolute). */
+const MAX_BODY_SHIFT = 0.15;
+/** Smoothing time of the body shift springs (seconds). */
 export const PELVIS_LIFT_SMOOTH_TIME = 0.12;
-/** Solver passes over all limbs per frame. */
+/** Solver passes over all capsules per frame. */
 export const SOLVER_ITERATIONS = 4;
 /** Time constant of a correction ramping in while its limb is in contact (seconds). */
 export const CORRECTION_IN_TAU = 0.05;
@@ -86,8 +90,6 @@ export const MISS_DISTANCE = 0.05;
 export const MISS_SECONDS = 0.25;
 /** Fallback segment lengths (reference scale metres) when a toes or middle finger bone is missing. */
 const FOOT_LENGTH = 0.12;
-/** A push whose horizontal part points this close (radians) to straight out from the body midline would abduct a leg: refused. */
-const ABDUCTION_ANGLE = Math.PI / 4;
 const HAND_LENGTH = 0.08;
 /** Time constant of the seated head settle easing in (about HEAD_SETTLE_SECONDS to 95%) and, quicker, out (seconds). */
 const HEAD_SETTLE_IN_TAU = HEAD_SETTLE_SECONDS / 3;
@@ -123,6 +125,8 @@ export interface ContactMiss {
 
 type Side = 'left' | 'right';
 type JointKind = 'hinge' | 'cone';
+type Axis = 'x' | 'y' | 'z';
+const AXES: readonly Axis[] = ['x', 'y', 'z'];
 
 interface Joint {
   bone: THREE.Object3D;
@@ -176,11 +180,11 @@ interface Limb {
   /** Object that pushed this limb this frame (null when none or the shell). */
   blocker: string | null;
   hit: boolean;
-  /** A hit this frame was refused (cap, abduction rule): the limb could not get clear. */
+  /** The limb could not get clear: a joint cap held a planted foot, or a segment is still in furniture after the shift. */
   refused: boolean;
-  /** Leg only: the animated ankle's height above the surface under it when the foot was grounded, else null. Measured before the pelvis lift. */
+  /** Leg only: the animated ankle's height above the surface under it when the foot was grounded, else null. Measured with the body shift taken out. */
   groundHeight: number | null;
-  /** Where that animated ankle was (world, before the lift; the lift only moves y). */
+  /** Where that animated ankle was (world, with the body shift taken out). */
   groundAt: THREE.Vector3;
 }
 
@@ -239,6 +243,7 @@ const TMP_Q3 = new THREE.Quaternion();
 const TMP_Q4 = new THREE.Quaternion();
 const TMP_CENTER = new THREE.Vector3();
 const TMP_ROT = new THREE.Quaternion();
+const ZERO = new THREE.Vector3();
 
 const shapes = new Map<string, RAPIER.Capsule>();
 /** One Rapier capsule per (half height, radius) rounded to the millimetre, shared by every avatar. */
@@ -281,15 +286,24 @@ export class ContactBody {
   private readonly chest: Segment | null;
   private readonly limbs: Limb[] = [];
   private readonly ends: EndTrack[] = [];
-  private readonly lift: Spring = { value: 0, velocity: 0 };
-  /** The lift the last frame asked for (metres), for the motion trace. */
-  private liftTarget = 0;
+  /** The shift added to the avatar root so far (metres, world axes), one spring per axis. */
+  private readonly shift: Record<Axis, Spring> = {
+    x: { value: 0, velocity: 0 },
+    y: { value: 0, velocity: 0 },
+    z: { value: 0, velocity: 0 },
+  };
+  /** The shift the last frame asked for (metres), for the motion trace. */
+  private readonly shiftTarget = new THREE.Vector3();
+  /** Scratch: the shift being solved, and how far it is from the applied one. */
+  private readonly candidate = new THREE.Vector3();
+  private readonly candidateStep = new THREE.Vector3();
+  private readonly capsules: Segment[] = [];
   private readonly listeners = new Set<(miss: ContactMiss) => void>();
   private debugLines: THREE.LineSegments | null = null;
   private debugCapacity = 0;
   /** World size of the avatar relative to the reference (hips height ratio times root scale). */
   private factor = 1;
-  /** The object the avatar is seated on, if any (resting contacts with it belong to the pelvis lift). */
+  /** The object the avatar is seated on, if any (resting contacts with it belong to seat fit). */
   private seatId: string | null = null;
   private readonly neck: HeadBone | null;
   private readonly head: HeadBone | null;
@@ -301,8 +315,6 @@ export class ContactBody {
   private headAnimDeg: [number, number, number] = [0, 0, 0];
   private headReset = false;
   private readonly headSeen: HeadAngles = { yaw: 0, pitch: 0, roll: 0, reset: false };
-  /** Horizontal unit vector along the body's left-right axis (from the hips). */
-  private readonly lateral = new THREE.Vector3(1, 0, 0);
 
   constructor(humanoid: BoneSource) {
     const bone = (name: string) => humanoid.getNormalizedBoneNode(name) ?? null;
@@ -350,22 +362,38 @@ export class ContactBody {
         });
       }
     }
+    if (this.pelvis) this.capsules.push(this.pelvis);
+    if (this.chest) this.capsules.push(this.chest);
+    for (const limb of this.limbs) this.capsules.push(...limb.segments);
   }
 
-  /** The pelvis lift currently added to the avatar root's y (metres). */
+  /** The lift currently added to the avatar root's y (metres). */
   get pelvisLift(): number {
-    return this.lift.value;
+    return this.shift.y.value;
   }
 
-  /** Forgets the lift without moving the root, for when the root has been put somewhere else. */
+  /** Forgets the whole body shift without moving the root, for when the root has been put somewhere else. */
   resetLift(): void {
-    this.lift.value = 0;
-    this.lift.velocity = 0;
+    for (const axis of AXES) this.forget(axis);
+  }
+
+  /**
+   * Forgets only the sideways shift without moving the root. For a root pose that was baked with the shift
+   * already in its origin: the shift is then part of where the avatar stands, and easing it out would slide it.
+   */
+  forgetHorizontalShift(): void {
+    this.forget('x');
+    this.forget('z');
+  }
+
+  private forget(axis: Axis): void {
+    this.shift[axis].value = 0;
+    this.shift[axis].velocity = 0;
   }
 
   /**
    * Gives the bones back to the animation: restores the animated rotation of every bone this solver wrote
-   * (and the mixer has not rewritten since), drops all corrections and the lift. For when the avatar leaves
+   * (and the mixer has not rewritten since), drops all corrections and the body shift. For when the avatar leaves
    * the room, since bones nothing else keys would keep the collision-adjusted pose.
    */
   release(): void {
@@ -398,15 +426,19 @@ export class ContactBody {
     return result;
   }
 
-  /** True while any capsule touches something or the pelvis is lifted: the motion trace samples then. */
+  /** True while any capsule touches something or the body is shifted: the motion trace samples then. */
   isInContact(): boolean {
-    if (this.lift.value !== 0 || this.liftTarget !== 0 || this.headWeight > 0) return true;
+    if (
+      this.headWeight > 0 ||
+      AXES.some((axis) => this.shift[axis].value !== 0 || this.shiftTarget[axis] !== 0)
+    )
+      return true;
     if (this.pelvis?.contact || this.chest?.contact) return true;
     return this.limbs.some((limb) => limb.segments.some((segment) => segment.contact));
   }
 
   /**
-   * A plain-data picture of the solver for the motion trace (see motion-trace.ts): pelvis lift, the segments
+   * A plain-data picture of the solver for the motion trace (see motion-trace.ts): the body shift, the segments
    * touching something, the joints currently corrected and whether the cap held them, and the misses. Only
    * called while tracing, so it may allocate.
    */
@@ -447,7 +479,11 @@ export class ContactBody {
       });
     }
     return {
-      pelvisLift: { target: r3(this.liftTarget), applied: r3(this.lift.value) },
+      pelvisLift: { target: r3(this.shiftTarget.y), applied: r3(this.shift.y.value) },
+      bodyShift: {
+        target: [r3(this.shiftTarget.x), r3(this.shiftTarget.y), r3(this.shiftTarget.z)],
+        applied: [r3(this.shift.x.value), r3(this.shift.y.value), r3(this.shift.z.value)],
+      },
       headSettle: {
         weight: r3(this.headWeight),
         animYawPitchRollDeg: this.headAnimDeg,
@@ -513,7 +549,6 @@ export class ContactBody {
     this.restoreAnimated();
     this.restoreHead();
     hips.updateWorldMatrix(true, true);
-    this.measureLateral();
     this.measureShapes(factor);
 
     for (const limb of this.limbs) {
@@ -527,22 +562,13 @@ export class ContactBody {
     if (this.chest) this.chest.contact = false;
 
     this.measureGrounded(physics);
-    this.liftPelvis(rig.scene, physics, exclude, dt);
+    this.shiftBody(rig.scene, physics, exclude, dt);
     for (const track of this.ends)
       positionOf(nth(track.limb.joints, track.joint).bone, track.animated);
 
     if (physics) {
-      for (let pass = 0; pass < SOLVER_ITERATIONS; pass += 1) {
-        // Planting every pass: pushing a thigh out of the cushion lifts the foot, and the foot must go back down.
-        for (const limb of this.limbs) if (limb.isLeg) this.plantFoot(limb, physics, exclude);
-        let any = false;
-        for (const limb of this.limbs)
-          any = this.solveLimb(limb, physics, exclude, pass === 0) || any;
-        if (!any) break;
-      }
-      // Grounded feet get the last word: the legs may end up a hair into furniture rather than a foot floating.
-      for (const limb of this.limbs)
-        if (limb.isLeg && limb.groundHeight !== null) this.plantFoot(limb, physics, exclude);
+      for (const limb of this.limbs) if (limb.isLeg) this.plantFoot(limb, physics, exclude);
+      this.markUnclearLimbs(physics, exclude);
     }
 
     this.writeBlended(dt);
@@ -765,16 +791,6 @@ export class ContactBody {
     (neck ?? head).bone.updateWorldMatrix(false, true);
   }
 
-  /** The body's left-right axis, flattened to the horizontal plane. */
-  private measureLateral(): void {
-    if (!this.hips) return;
-    worldQuaternionOf(this.hips, TMP_QW);
-    this.lateral.set(1, 0, 0).applyQuaternion(TMP_QW);
-    this.lateral.y = 0;
-    if (this.lateral.lengthSq() < 1e-6) this.lateral.set(1, 0, 0);
-    this.lateral.normalize();
-  }
-
   /** Fits each segment's shape to its current length and radius (lengths only change when the avatar is rescaled). */
   private measureShapes(factor: number): void {
     const fit = (segment: Segment) => {
@@ -818,67 +834,164 @@ export class ContactBody {
     this.endOf(segment, segment.p1);
   }
 
-  /** Deepest overlap of a segment's capsule, with the whole capsule shifted down by `dy`. */
+  /** Deepest overlap of a segment's capsule, with the whole capsule moved by `by` (world metres). */
   private probe(
     segment: Segment,
     physics: ContactPhysics,
     exclude: readonly string[],
-    dy = 0,
+    by: THREE.Vector3 = ZERO,
   ): PenetrationHit | null {
     if (!segment.shape) return null;
     TMP_DIR.subVectors(segment.p1, segment.p0);
     const length = TMP_DIR.length();
     if (length < 1e-6) return null;
     TMP_DIR.multiplyScalar(1 / length);
-    TMP_CENTER.addVectors(segment.p0, segment.p1).multiplyScalar(0.5);
-    TMP_CENTER.y -= dy;
+    TMP_CENTER.addVectors(segment.p0, segment.p1).multiplyScalar(0.5).add(by);
     TMP_ROT.setFromUnitVectors(Y_AXIS, TMP_DIR);
     return physics.penetration(segment.shape, TMP_CENTER, TMP_ROT, exclude);
   }
 
   /**
-   * Raises the root so the pelvis and thighs rest on whatever they sank into from above (other than the seat being sat on). The capsules are
-   * measured as if the current lift were not applied, so the target does not depend on the lift itself and
-   * falls back to zero once the contact is gone.
+   * Whether a hit on a segment capsule that was moved by `by` is a contact to get away from: deeper than the
+   * tolerance, and not one of the resting cases (a foot standing on the floor, which is normal and only counts
+   * once sunk deeper than its radius; the rounded hip end of a thigh resting on its seat, which is the buttocks
+   * and which seat fit places).
    */
-  private liftPelvis(
+  private isContact(segment: Segment, hit: PenetrationHit, by: THREE.Vector3): boolean {
+    if (hit.depth <= CONTACT_TOLERANCE) return false;
+    if (segment.isFoot && hit.objectId === null && hit.depth <= segment.shapeRadius) return false;
+    if (this.isThigh(segment) && this.seatId !== null && hit.objectId === this.seatId) {
+      TMP_DIR.subVectors(segment.p1, segment.p0).normalize();
+      TMP_B.set(hit.point.x, hit.point.y, hit.point.z).sub(segment.p0).sub(by);
+      if (TMP_B.dot(TMP_DIR) < segment.shapeRadius) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The pelvis or a thigh lying in the cushion of the seat being sat on. Seat fit owns that contact, and
+   * sliding sideways cannot clear it (a sloping thigh's tilted normal would only walk the body off the seat).
+   */
+  private isResting(segment: Segment, hit: PenetrationHit): boolean {
+    return (
+      (segment === this.pelvis || this.isThigh(segment)) &&
+      this.seatId !== null &&
+      hit.objectId === this.seatId &&
+      hit.normal.y > 0.5
+    );
+  }
+
+  private isThigh(segment: Segment): boolean {
+    return !!segment.limb?.isLeg && segment.joint === 0;
+  }
+
+  /**
+   * Moves the root so the body capsules are clear of what they sank into. The capsules are measured as if
+   * the shift already applied were not there, so the target does not depend on the shift itself and falls
+   * back to zero once the contact is gone. The target is found by pushing out of every hit and probing
+   * again, a few passes; pushes along one axis from several capsules do not add up (they would share one
+   * surface) but opposite ones cancel. Sideways pushes come from every hit, the room shell included. Lifting
+   * comes only from the pelvis and thighs sinking into furniture from above (the floor is the motion model's
+   * business, and seat fit is the only authority on hip height on the seat being sat on: the pelvis and
+   * thighs resting in it never lift, the thighs are cleared by the hips instead).
+   */
+  private shiftBody(
     scene: THREE.Object3D,
     physics: ContactPhysics | null,
     exclude: readonly string[],
     dt: number,
   ): void {
-    let target = 0;
+    const target = this.shiftTarget.set(0, 0, 0);
     if (physics) {
-      const dy = this.lift.value;
-      const consider = (segment: Segment | null | undefined) => {
-        if (!segment) return;
-        this.pose(segment);
-        const hit = this.probe(segment, physics, exclude, dy);
-        // The floor is the motion model's business (standing, floor sits); only furniture lifts the pelvis.
-        if (hit && hit.objectId !== null && hit.normal.y > 0.5) {
-          segment.contact = true;
-          segment.hit = hit;
-          // Seat fit is the only authority on hip height on the seat being sat on: the pelvis and thighs
-          // resting in it never drive the lift (the thighs are cleared by the hips instead).
-          if (hit.objectId === this.seatId) return;
-          target = Math.max(target, hit.depth * hit.normal.y);
+      const candidate = this.candidate.set(0, 0, 0);
+      const step = this.candidateStep;
+      for (let pass = 0; pass < SOLVER_ITERATIONS; pass += 1) {
+        step.set(
+          candidate.x - this.shift.x.value,
+          candidate.y - this.shift.y.value,
+          candidate.z - this.shift.z.value,
+        );
+        let posX = 0;
+        let negX = 0;
+        let posZ = 0;
+        let negZ = 0;
+        let up = 0;
+        for (const segment of this.capsules) {
+          this.pose(segment);
+          const hit = this.probe(segment, physics, exclude, step);
+          if (!hit || !this.isContact(segment, hit, step)) continue;
+          if (pass === 0) {
+            segment.contact = true;
+            segment.hit = hit;
+            if (segment.limb) {
+              segment.limb.hit = true;
+              segment.limb.blocker = hit.objectId;
+            }
+          }
+          if (this.isResting(segment, hit)) continue;
+          const pushX = hit.depth * hit.normal.x;
+          const pushZ = hit.depth * hit.normal.z;
+          posX = Math.max(posX, pushX);
+          negX = Math.min(negX, pushX);
+          posZ = Math.max(posZ, pushZ);
+          negZ = Math.min(negZ, pushZ);
+          if (
+            (segment === this.pelvis || this.isThigh(segment)) &&
+            hit.objectId !== null &&
+            hit.normal.y > 0.5
+          ) {
+            up = Math.max(up, hit.depth * hit.normal.y);
+          }
         }
-      };
-      consider(this.pelvis);
-      for (const limb of this.limbs) if (limb.isLeg) consider(limb.segments[0]);
-      target = Math.min(MAX_PELVIS_LIFT, Math.max(0, target));
+        const pushX = posX + negX;
+        const pushZ = posZ + negZ;
+        if (pushX === 0 && pushZ === 0 && up === 0) break;
+        candidate.x += pushX;
+        candidate.z += pushZ;
+        candidate.y = Math.min(MAX_PELVIS_LIFT, Math.max(0, candidate.y + up));
+        const sideways = Math.hypot(candidate.x, candidate.z);
+        if (sideways > MAX_BODY_SHIFT) {
+          candidate.x *= MAX_BODY_SHIFT / sideways;
+          candidate.z *= MAX_BODY_SHIFT / sideways;
+        }
+      }
+      target.copy(candidate);
     }
-    this.liftTarget = target;
-    const before = this.lift.value;
-    stepSpring(this.lift, target, dt, PELVIS_LIFT_SMOOTH_TIME);
-    const delta = this.lift.value - before;
-    if (delta !== 0) {
-      scene.position.y += delta;
-      this.hips?.updateWorldMatrix(true, true);
+    let moved = false;
+    for (const axis of AXES) {
+      const spring = this.shift[axis];
+      const before = spring.value;
+      stepSpring(spring, target[axis], dt, PELVIS_LIFT_SMOOTH_TIME);
+      const delta = spring.value - before;
+      if (delta !== 0) {
+        scene.position[axis] += delta;
+        moved = true;
+      }
+    }
+    if (moved) this.hips?.updateWorldMatrix(true, true);
+  }
+
+  /** Marks the limbs that are still in furniture where the shift is heading, so the scene planner can replan. */
+  private markUnclearLimbs(physics: ContactPhysics, exclude: readonly string[]): void {
+    const step = this.candidateStep.set(
+      this.shiftTarget.x - this.shift.x.value,
+      this.shiftTarget.y - this.shift.y.value,
+      this.shiftTarget.z - this.shift.z.value,
+    );
+    for (const limb of this.limbs) {
+      for (const segment of limb.segments) {
+        this.pose(segment);
+        const hit = this.probe(segment, physics, exclude, step);
+        if (!hit || hit.objectId === null || !this.isContact(segment, hit, step)) continue;
+        if (this.isResting(segment, hit)) continue;
+        limb.refused = true;
+        limb.hit = true;
+        limb.blocker = hit.objectId;
+      }
     }
   }
 
-  /** Notes which feet the animation has on the ground, before the lift moves the body. */
+  /** Notes which feet the animation has on the ground, before the body shift moves the body. */
   private measureGrounded(physics: ContactPhysics | null): void {
     for (const limb of this.limbs) {
       if (!limb.isLeg) continue;
@@ -886,8 +999,10 @@ export class ContactBody {
       const ankle = limb.joints[2]?.bone;
       if (!physics || !ankle) continue;
       positionOf(ankle, TMP_C);
-      // The lift of earlier frames is still on the root; the animated ankle is without it.
-      TMP_C.y -= this.lift.value;
+      // The shift of earlier frames is still on the root; the animated ankle is without it.
+      TMP_C.x -= this.shift.x.value;
+      TMP_C.y -= this.shift.y.value;
+      TMP_C.z -= this.shift.z.value;
       const surface = physics.surfaceAt(TMP_C.x, TMP_C.z, TMP_C.y + PLANT_RAY_LIFT * this.factor);
       if (surface === null) continue;
       const height = TMP_C.y - surface;
@@ -913,10 +1028,14 @@ export class ContactBody {
     positionOf(ankle.bone, TMP_C);
     const threshold = FOOT_PLANT_THRESHOLD * this.factor;
     if (limb.groundHeight !== null) {
-      // The ground under it has not moved, so the animated ankle position is the target, whatever the lift
-      // and the pushes on the legs did to it.
-      if (TMP_C.distanceTo(limb.groundAt) <= threshold) return;
-      TMP_D.copy(limb.groundAt);
+      // The ground under it has not moved, so the animated ankle position is the target, carried along
+      // sideways by the body shift (the height stays: lifting the body must not float the foot).
+      TMP_D.set(
+        limb.groundAt.x + this.shift.x.value,
+        limb.groundAt.y,
+        limb.groundAt.z + this.shift.z.value,
+      );
+      if (TMP_C.distanceTo(TMP_D) <= threshold) return;
     } else {
       const surface = physics.surfaceAt(TMP_C.x, TMP_C.z, TMP_C.y + PLANT_RAY_LIFT * this.factor);
       if (surface === null || TMP_C.y >= surface - threshold) return;
@@ -943,13 +1062,13 @@ export class ContactBody {
     TMP_DIR.subVectors(TMP_B, TMP_A).normalize();
     TMP_N.subVectors(TMP_F, TMP_A).normalize();
     TMP_QW.setFromUnitVectors(TMP_DIR, TMP_N);
-    this.rotateJoint(limb, 0, TMP_QW, 0, null, null, false);
+    this.rotateJoint(limb, 0, TMP_QW);
     positionOf(knee.bone, TMP_B);
     positionOf(ankle.bone, TMP_C);
     TMP_DIR.subVectors(TMP_C, TMP_B).normalize();
     TMP_N.subVectors(TMP_G, TMP_B).normalize();
     TMP_QW.setFromUnitVectors(TMP_DIR, TMP_N);
-    this.rotateJoint(limb, 1, TMP_QW, 0, null, null, false);
+    this.rotateJoint(limb, 1, TMP_QW);
   }
 
   /** True when a thigh from `hip` to `knee` (same length and radius as the real one) would sink into the seat being sat on. */
@@ -972,120 +1091,17 @@ export class ContactBody {
     return !!hit && hit.objectId === this.seatId && hit.depth > CONTACT_TOLERANCE;
   }
 
-  /** One pass over a limb's segments; true when any needed a correction. */
-  private solveLimb(
-    limb: Limb,
-    physics: ContactPhysics,
-    exclude: readonly string[],
-    first: boolean,
-  ): boolean {
-    let any = false;
-    for (const segment of limb.segments) {
-      this.pose(segment);
-      const hit = this.probe(segment, physics, exclude);
-      if (!hit || hit.depth <= CONTACT_TOLERANCE) continue;
-      // A foot standing on the floor is the normal case; only a foot sunk deeper than its radius counts.
-      if (segment.isFoot && hit.objectId === null && hit.depth <= segment.shapeRadius) continue;
-      // The rounded hip end of a thigh sitting on its seat is the buttocks resting, which rotating the hip
-      // cannot change (seat fit places the pelvis): leave it, or the hip would be driven to its cap for nothing.
-      if (
-        limb.isLeg &&
-        segment.joint === 0 &&
-        this.seatId !== null &&
-        hit.objectId === this.seatId
-      ) {
-        TMP_DIR.subVectors(segment.p1, segment.p0).normalize();
-        TMP_B.set(hit.point.x, hit.point.y, hit.point.z).sub(segment.p0);
-        if (TMP_B.dot(TMP_DIR) < segment.shapeRadius) continue;
-      }
-      if (first) {
-        segment.contact = true;
-        segment.hit = hit;
-      }
-      any = true;
-      limb.hit = true;
-      limb.blocker = hit.objectId;
-      TMP_DIR.subVectors(segment.p1, segment.p0);
-      const length = TMP_DIR.length();
-      TMP_DIR.multiplyScalar(1 / Math.max(length, 1e-6));
-      TMP_N.set(hit.normal.x, hit.normal.y, hit.normal.z);
-      TMP_POINT.set(hit.point.x, hit.point.y, hit.point.z);
-      if (limb.isLeg && this.pushesOutward(limb, TMP_N)) {
-        // Legs are never pushed out over an armrest: the contact stays, and counts as a miss.
-        limb.refused = true;
-        continue;
-      }
-      // Rotating about the start joint moves a point `reach` along the segment; aim at the contact itself.
-      const along = TMP_B.subVectors(TMP_POINT, segment.p0).dot(TMP_DIR) / Math.max(length, 1e-6);
-      const reach = Math.min(1, Math.max(0.25, along)) * length;
-      const angle = smallestRotation(TMP_DIR, TMP_N, hit.depth, reach, TMP_QW);
-      if (angle === 0) {
-        // The push is along the bone: rotating this joint cannot help, so ask the joint above.
-        if (segment.joint > 0) this.pushUp(limb, segment.joint, hit.depth);
-        continue;
-      }
-      this.rotateJoint(limb, segment.joint, TMP_QW, hit.depth, TMP_N, TMP_POINT, true);
-    }
-    return any;
-  }
-
-  /** True when the horizontal part of `normal` points away from the body midline, within ABDUCTION_ANGLE, on the side of this leg. */
-  private pushesOutward(limb: Limb, normal: THREE.Vector3): boolean {
-    const hips = this.hips;
-    const hip = limb.joints[0]?.bone;
-    if (!hips || !hip) return false;
-    const side =
-      TMP_A.subVectors(positionOf(hip, TMP_A), positionOf(hips, TMP_B)).dot(this.lateral) >= 0
-        ? 1
-        : -1;
-    const along = normal.dot(this.lateral) * side;
-    const horizontal = Math.hypot(normal.x, normal.z);
-    if (horizontal < 0.3) return false; // mostly vertical: a lift, not an abduction
-    return along / horizontal > Math.cos(ABDUCTION_ANGLE);
-  }
-
-  private pushUp(limb: Limb, joint: number, depth: number): void {
-    const parent = nth(limb.joints, joint - 1);
-    TMP_DIR.subVectors(
-      positionOf(nth(limb.joints, joint).bone, TMP_A),
-      positionOf(parent.bone, TMP_B),
-    ).normalize();
-    // Any perpendicular lets the parent swing the whole limb clear.
-    // A leg swings forward or back about the body's lateral axis, never sideways.
-    TMP_N.crossVectors(TMP_DIR, limb.isLeg ? this.lateral : Y_AXIS);
-    if (TMP_N.lengthSq() < 1e-6) TMP_N.crossVectors(TMP_DIR, X_AXIS);
-    TMP_N.normalize();
-    if (limb.isLeg && TMP_N.y < 0) TMP_N.negate();
-    const length = TMP_A.distanceTo(TMP_B);
-    const angle = smallestRotation(TMP_DIR, TMP_N, depth, length, TMP_QW);
-    if (angle > 0) this.rotateJoint(limb, joint - 1, TMP_QW, 0, null, null, false);
-  }
-
-  /**
-   * Rotates joint `index` of a limb by the world rotation `qWorld` about its position, within its limits.
-   * With `push`, whatever part of the requested move the limits refused is passed to the joint above, aimed
-   * at the same contact.
-   */
-  private rotateJoint(
-    limb: Limb,
-    index: number,
-    qWorld: THREE.Quaternion,
-    depth: number,
-    normal: THREE.Vector3 | null,
-    point: THREE.Vector3 | null,
-    push: boolean,
-  ): void {
+  /** Rotates joint `index` of a limb by the world rotation `qWorld` about its position, within its limits. */
+  private rotateJoint(limb: Limb, index: number, qWorld: THREE.Quaternion): void {
     const joint = nth(limb.joints, index);
     const bone = joint.bone;
     const parent = bone.parent;
-    const requested = rotationAngle(qWorld);
     // The same turn in the parent's frame.
     if (parent) worldQuaternionOf(parent, TMP_PW);
     else TMP_PW.identity();
     TMP_QL.copy(TMP_PW).invert().multiply(qWorld).multiply(TMP_PW);
     if (joint.kind === 'hinge') projectToHinge(TMP_QL, joint.axis, TMP_QL);
 
-    const old = TMP_Q1.copy(joint.offset);
     const next = TMP_Q2.copy(TMP_QL).multiply(joint.offset);
     // Limits apply to the whole local rotation, animation included.
     const total = TMP_QL.copy(next).multiply(joint.anim);
@@ -1102,7 +1118,7 @@ export class ContactBody {
       clampCone(total, joint.limit, rotationAngle(joint.anim), total);
     }
     joint.offset.copy(total).multiply(TMP_PW.copy(joint.anim).invert());
-    // The solver nudges, it never re-poses: whatever the cap refuses is a miss, not pushed up the chain.
+    // Whatever the cap refuses is a miss, not pushed up the chain.
     let capped: boolean;
     if (limb.isLeg && index === 0 && this.seatId !== null) {
       // Seated: the hip may flex (knee up) further than it may move any other way. Negative about the
@@ -1125,19 +1141,6 @@ export class ContactBody {
     if (capped) limb.refused = true;
     bone.quaternion.copy(joint.offset).multiply(joint.anim);
     bone.updateWorldMatrix(false, true);
-
-    if (capped || !push || index === 0 || !normal || !point || requested < 1e-6) return;
-    const achieved = rotationAngle(TMP_PW.copy(old).invert().multiply(joint.offset));
-    const remaining = depth * (1 - Math.min(1, achieved / requested));
-    if (remaining < CONTACT_TOLERANCE * 0.5) return;
-    // The limit stopped the move: swing the joint above instead, aimed at the same contact.
-    const above = nth(limb.joints, index - 1);
-    TMP_DIR.subVectors(point, positionOf(above.bone, TMP_A));
-    const reach = TMP_DIR.length();
-    if (reach < 1e-4) return;
-    TMP_DIR.multiplyScalar(1 / reach);
-    const turn = smallestRotation(TMP_DIR, normal, remaining, reach, TMP_QW);
-    if (turn > 0) this.rotateJoint(limb, index - 1, TMP_QW, remaining, normal, point, true);
   }
 
   /** Blends each bone's correction in or out by its weight and writes the result over the animated rotation. */
