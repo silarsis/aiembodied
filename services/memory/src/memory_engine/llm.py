@@ -21,6 +21,19 @@ class LlmError(RuntimeError):
     pass
 
 
+# Templates that ignore enable_thinking and read another variable, keyed by a lower-case
+# substring of the model id. Kept to the models that need it: gpt-oss reads reasoning_effort
+# as low/medium/high, so "none" must not go to every model.
+_MODEL_TEMPLATE_KWARGS: tuple[tuple[str, dict[str, Any]], ...] = (("inkling", {"reasoning_effort": "none"}),)
+
+
+def chat_template_kwargs(model: str) -> dict[str, Any]:
+    """The chat_template_kwargs that make a local model answer without reasoning first."""
+    model_id = model.lower()
+    extra = next((kwargs for match, kwargs in _MODEL_TEMPLATE_KWARGS if match in model_id), {})
+    return {"enable_thinking": False, **extra}
+
+
 def parse_json_object(text: str) -> dict[str, Any]:
     """The first JSON object in a reply, ignoring code fences or chatter around it."""
     text = text.strip()
@@ -56,8 +69,8 @@ class OpenAICompatibleLlm:
             "response_format": {"type": "json_schema", "json_schema": {"name": "result", "schema": schema}},
         }
         if "api.openai.com" not in self.base_url:
-            # llama-server running Qwen: answer straight away, without a thinking pass.
-            body["chat_template_kwargs"] = {"enable_thinking": False}
+            # Answer straight away, without a thinking pass (same table as the app's chat-template-kwargs.ts).
+            body["chat_template_kwargs"] = chat_template_kwargs(self.model)
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
